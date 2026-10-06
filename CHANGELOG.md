@@ -1,103 +1,24 @@
 # Changelog
 
-Release notes for ModuTeX Desktop. Add notes under `## [Unreleased]` as you work; run
-`npm run release --workspace=modutex-editor -- <patch|minor|major>` to cut a dated, numbered release.
+## [0.1.0] — Unreleased
 
-## [Unreleased]
+### Added
 
-## [0.1.0] - 2026-10-03
+- Document-focused desktop workspace with visual editing, LaTeX source editing, and PDF preview.
+- Equation and matrix insertion in the visual editor.
+- Table controls for rows, columns, column widths, and caption placement, with three-line, full-grid, and horizontal-rule presets.
+- Bundled Managed Tectonic compiler with automatic resource downloads from a fixed source and a persistent local cache.
+- English and Traditional Chinese interface options.
+- Windows x64 desktop package launched through a local npm tarball.
 
-- feat: added Typst support
-- feat: added visual Markdown support
-- feat: added comment support
-- feat: general UI enhancement
+### Fixed
 
-## [0.16.1] - 2026-08-02
+- Missing `tabularx` declarations after editing supported tables: the required package is added to a safely editable preamble without duplicating existing declarations.
+- Cached-only compilation failures when the Tectonic format or required resources are incomplete: the managed compiler can download missing resources automatically.
 
-- feat: the editor remembers where you left off in each file, across tab switches and restarts
-- feat: toolbars fold into a "..." when the window is narrow, instead of putting buttons out of reach
-- fix: math symbols insert reliably from the toolbar, and equations no longer steal the cursor
+### Compatibility
 
-## [0.16.0] - 2026-07-31
-
-- feat: a command palette on Ctrl+K (Cmd+K on macOS) to open a file, compile, and run editor actions without leaving the keyboard. The file name in the middle of the title bar opens it too
-- feat: Vim and Emacs keybindings for the source editor, chosen in Preferences
-- feat: multiple cursors in the source editor: Ctrl+Alt+Up and Ctrl+Alt+Down add a cursor, Ctrl+D selects the next occurrence
-- feat: the window title bar is now part of the app, putting the menus, the file name, and the window buttons on one row; the menus fold into a single button as the window narrows. macOS keeps its native menu bar and traffic lights
-- feat: connect Claude and other AI assistants to the editor over MCP, set up from Preferences
-- feat: large documents open, scroll, and type faster
-- feat: on Windows and Linux the window buttons are drawn by the system, so hovering Maximise on Windows 11 offers the snap layouts
-- fix: live mode no longer showed a blank grey page for any document that picks its font with fontspec. A family name containing a space, such as Times New Roman, made the page unreadable to the preview; this affected every language, English included
-- fix: Hebrew and Arabic render in live mode, reading right to left, with Arabic letters joined
-- fix: Greek, Cyrillic, and Japanese, Chinese, and Korean text render in live mode, including fonts taken from a TrueType collection
-- fix: live mode reports compile errors in the Problems panel. A document that still produced pages could fail silently, with nothing anywhere to say why
-- fix: typing in a right-to-left document no longer recompiles on every keystroke
-- fix: the macOS menu bar was missing every menu but Edit, and Window and Help were left in English
-- fix: in a shared session the PDF preview no longer stops working partway through
-- fix: guests in a shared session have the menus, with the actions a guest cannot perform left out
-- fix: the file explorer refreshes when you open another folder from within a workspace
-- fix: two compiles can no longer run at once and overwrite each other's output
-- fix: compiling no longer opens an empty terminal alongside the compile output
-
-## [0.15.0] - 2026-07-22
-
-- feat: experimental shared sessions for real time collaboration. Share a folder with a code from the home screen, no account needed, end to end encrypted so the relay server only forwards data it cannot read. Guests co-edit in both the visual and source editors, see where others are editing, and watch the host's compiled PDF and compile problems live
-- feat: work in several windows, with File > New Window and Open Folder in New Window; relaunching reopens every window on its last open file
-- feat: the app and the website are available in Simplified Chinese, Traditional Chinese, and German, picked in Preferences
-- feat: open files appear as tabs above the editor, and your open tabs come back when you reopen the folder
-- feat: the file explorer gains multi-select and drag and drop: select several files with Ctrl and Shift, drop files and folders in from your system's file manager, and paste images or copied files with Ctrl+V
-
-## [0.14.3] - 2026-07-18
-
-- fix: the What's new, update, and Preferences windows scroll long content instead of pushing their buttons off screen, and Esc closes them
-- fix: arrow keys no longer open autocomplete while moving the cursor
-- feat: automatic update notices wait until a release is 3 hours old; a manual check from the menu shows it right away
-- feat: the keyboard shortcuts window lists the source editor keys (go to definition, suggestions, math preview)
-
-## [0.14.2] - 2026-07-18
-
-- feat: spell check works in the source editor, checking prose but not commands, math, or comments
-- feat: autocomplete knows package and class names, per-package options and key-values, and bib entry types
-- feat: autocomplete suggests labels with their numbers, your macros, and glossary entries from every file in the project
-- feat: go-to-definition and hover work across files, and citation suggestions are searchable
-- feat: accepting a macro that takes an argument reopens the suggestions for that argument
-- feat: the math preview renders your own macros and can be dismissed with a click or Esc, with a Preferences toggle
-- fix: compile problems are read more accurately from MikTeX, pdfTeX, and dvipdfmx logs, and squiggles land on the exact token
-- feat: bibliography warnings jump to the entry in the .bib file
-- fix: reading the compile log no longer stalls the app on large documents
-- feat: reopening the last workspace also restores the last open file
-- feat: live mode renders exact pages at rest, and large documents only paint the pages in view
-- feat: live mode covers footnotes, beamer slides, tables inside floats, CJK text, and classic math fonts
-- fix: steadier typing in live mode, with fewer misplaced or drifting edits
-- fix: the Linux deb launches on Ubuntu 24.04 and newer
-- fix: the app icon appears in the Ubuntu launcher, and the Linux dock says Texpile instead of Texpile-desktop
-
-## [0.14.1] - 2026-07-17
-
-- fix: the source editor's line numbers sit between the warning and fold columns, so they no longer have a gap beside them
-- fix: double-clicking a line number or a fold arrow no longer selects it
-
-## [0.14.0] - 2026-07-16
-
-- feat: the source editor gets a table inserter and a math symbol palette
-- feat: autocomplete completes more macros and opens with a single backslash
-- feat: a new .tex in source mode offers a document skeleton you can take with Tab
-- feat: the terminal can shrink to the editor width
-- fix: File > New waits for you to name the file instead of creating untitled.tex before you can type
-- fix: switching files no longer flashes a placeholder before the editor appears
-- fix: the math symbol palette no longer disappears when switching between symbol groups
-- fix: the line number column keeps a steady width
-
-## [0.13.2] - 2026-07-15
-
-- feat: the What's New window shows the current release series on new installs and upgrades from older versions
-
-## [0.13.1] - 2026-07-15
-
-- fix: applying a highlight or text color to selected text froze the app
-- feat: updates now download and install from inside the app
-
-## [0.13.0] - 2026-07-14
-
-- feat: added live mode, allowing real-time preview of LuaLaTeX compilation
-- feat: various minor improvements to the user experience
+- Requires Node.js 24.19.0 and npm 11.17.0.
+- First compilation and uncached TeX resources require internet access.
+- Draw.io, Mermaid, visual section folding, and signed installers are not included in this release scope.
+- Additional limitations are documented in [Known limitations](docs/KNOWN_LIMITATIONS.md).

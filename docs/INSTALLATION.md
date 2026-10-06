@@ -32,10 +32,10 @@ npm ci
 npm run electron:dev
 ```
 
-若顯示找不到 `concurrently`，表示依賴未安裝完成；先處理 `npm ci` 的錯誤。不要從其他舊工作樹啟動。
+若顯示找不到 `concurrently`，表示依賴未安裝完成；請先確認 `npm ci` 成功。
 
-## 安全與驗證範圍
+## 安全設定
 
-MCP 預設關閉，只監聽 loopback；自訂指令另有權限設定。完整 MCP client 驗收尚未完成。
+MCP 預設關閉，只監聽 loopback；自訂指令另有權限設定。
 
-目前套件已完成建置與內容雜湊驗證，未新增聲稱此份 archive 已在乾淨 Windows 上完成 npx GUI smoke。其他限制見 [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md)。
+其他使用限制見 [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md)。
