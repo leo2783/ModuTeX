@@ -1,0 +1,164 @@
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { defineConfig } from 'vitest/config';
+import tailwindcss from '@tailwindcss/vite';
+import { paraglideVitePlugin } from '@inlang/paraglide-js';
+import wasm from 'vite-plugin-wasm';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { readChangelog } from './scripts/changelog.mjs';
+
+// pre-bundle every runtime dependency up front: lazy discovery re-optimizes mid-session and
+// forces a full page reload (mathlive and the CodeMirror language modes are the usual offenders)
+const require = createRequire(import.meta.url);
+const pkg = require('./package.json') as { version?: string; dependencies?: Record<string, string> };
+// __APP_VERSION__ comes from the ROOT package.json, the same field electron-builder stamps
+// into the installer, so the two can never drift apart.
+const rootPkg = require('../../package.json') as { version?: string };
+
+// build-only packages must not be pre-bundled for the browser
+const NO_PREBUNDLE = new Set([
+	'harper.js', // ships its own WASM worker; kept external (see optimizeDeps.exclude)
+	'@tailwindcss/vite', // a Vite plugin, not a runtime dependency
+	'@inlang/paraglide-js', // compiler/vite plugin; app code imports the generated $lib/paraglide output, not this package
+	'y-protocols', // no root export (only y-protocols/awareness, /sync); prebundling the bare package fails
+	// wasm-pack `--target=bundler` output: its glue does a bare `import * as wasm from './x_bg.wasm'`,
+	// which esbuild's pre-bundler cannot resolve. vite-plugin-wasm handles it in the main pipeline
+	// instead, so these must stay out of the optimizer (see optimizeDeps.exclude).
+	'texpile-typst-syntax-wasm'
+]);
+
+// y-protocols has no "." entry, so pre-bundle its subpaths instead of the bare package
+const prebundle = [...Object.keys(pkg.dependencies ?? {}).filter((d) => !NO_PREBUNDLE.has(d)), 'y-protocols/awareness', 'y-protocols/sync'];
+
+export default defineConfig(({ mode }) => ({
+	plugins: [
+		tailwindcss(),
+		// packages/typst-syntax-wasm is Typst's own parser built by wasm-pack; its glue imports the
+		// .wasm as an ES module, which Vite cannot do unaided
+		wasm(),
+		svelte(),
+		paraglideVitePlugin({
+			project: './project.inlang',
+			outdir: './src/lib/paraglide',
+			emitTsDeclarations: true
+		})
+	],
+
+	// relative asset URLs: the packaged app is served from the app:// scheme (electron/src/main.ts),
+	// so the bundle must not assume a server root
+	base: './',
+
+	// injected at build time (importing package.json fails Vite's dev fs-allow list). Every released
+	// changelog entry is bundled: the What's New modal shows each release the user skipped, so an
+	// upgrade across several versions doesn't silently swallow the features in between.
+	define: {
+		__APP_VERSION__: JSON.stringify(rootPkg.version ?? '0.0.0'),
+		__WHATS_NEW__: JSON.stringify(
+			readChangelog()
+				.filter((e) => e.released)
+				.map(({ version, date, notes }) => ({ version, date, notes }))
+		)
+	},
+	test: {
+		// unit tests live under tests/unit/ (mirroring src/); playwright's tests/integration/
+		// tree is deliberately outside this glob
+		include: ['tests/unit/**/*.{test,spec}.{js,ts}'],
+		// vitest externalizes node_modules to Node's loader by default, which cannot import a
+		// .wasm ES module. Inlining routes it back through Vite (and so through vite-plugin-wasm).
+		server: { deps: { inline: ['texpile-typst-syntax-wasm'] } },
+		// puts localStorage back under Node 26, whose own experimental global shadows jsdom's
+		setupFiles: ['./tests/setup/webStorage.ts']
+		// node by default (most tests are pure logic); component tests opt in per file with
+		// a `// @vitest-environment jsdom` docblock
+	},
+
+	resolve: {
+		// vitest would otherwise resolve svelte's server export, where mount() throws. scoped to
+		// test mode so the real build's condition resolution is untouched.
+		...(mode === 'test' ? { conditions: ['browser'] } : {}),
+		// 90+ source files (and the vitest suite) import through $lib, so keep it as a plain alias
+		alias: {
+			$lib: path.resolve(__dirname, 'src/lib')
+		},
+		// dynamically-loaded language packages must share one @codemirror/state instance
+		// (avoids instanceof failures)
+		dedupe: ['@codemirror/state', '@codemirror/view', '@codemirror/language']
+	},
+
+	optimizeDeps: {
+		include: [
+			...prebundle,
+			// dynamically loaded by @codemirror/language-data's .load(); transitive, so resolve
+			// through it with Vite's `a > b` syntax
+			'@codemirror/language-data > @codemirror/legacy-modes/mode/stex', // LaTeX highlighting
+			'@codemirror/language-data > @codemirror/lang-json',
+			// the pdf viewer is app source now, so these are its own direct deps rather than something
+			// reached through a package. Still listed explicitly: only the .mjs legacy entry is ever
+			// imported, and leaving it to lazy discovery re-optimizes mid-session and force-reloads
+			// the page, which white-screened the route-split views on the 504 the in-flight import got.
+			'pdfjs-dist/legacy/build/pdf.mjs'
+		],
+		exclude: ['harper.js', 'texpile-typst-syntax-wasm'],
+		// never discover a dep lazily. Discovery re-optimizes mid-session and force-reloads the
+		// page, which white-screens the route-split views when an in-flight chunk import 504s. The
+		// include list above is generated from package.json, so everything imported directly is
+		// covered; anything else (a language-data mode, say) is served unbundled instead, which is
+		// fine for ESM and fails loudly at first use rather than silently reloading the app.
+		noDiscovery: true,
+		esbuildOptions: {
+			target: 'esnext'
+		}
+	},
+
+	// pin the dev server to IPv4: binding plain `localhost` can land on ::1 only, and the
+	// Electron window (which loads ELECTRON_START_URL over IPv4) then sees ERR_CONNECTION_REFUSED
+	// while browsers happily connect over IPv6 - a white window with a "working" server
+	server: {
+		host: '127.0.0.1'
+	},
+
+	assetsInclude: ['**/*.wasm'],
+
+	worker: {
+		format: 'es'
+	},
+
+	build: {
+		sourcemap: false,
+		// This bundle only ever runs in the Electron Chromium we ship (43 = Chromium 150), never in
+		// a user's browser, so Vite's conservative default target buys nothing. It costs something:
+		// wasm-pack's glue initialises the module with a TOP-LEVEL AWAIT, which the default target
+		// rejects outright, and that is how the Typst parser loads.
+		target: 'esnext',
+		// CSS gets the SAME treatment, and it needs saying separately: cssTarget defaults to the JS
+		// target, where 'esnext' means "assume nothing" and esbuild keeps lowering modern colour
+		// syntax. Naming the actual engine stops it rewriting the oklch() and light-dark() the
+		// theme is built on.
+		cssTarget: 'chrome150',
+		// Electron ships a modern Chromium with native modulepreload, so drop Vite's polyfill: it is
+		// the only inline <script> Vite injects, and removing it lets the packaged app's CSP use a
+		// strict script-src 'self' with no inline allowance
+		modulePreload: { polyfill: false },
+		rollupOptions: {
+			output: {
+				// the big editor deps go into their own chunks so the workspace payload streams as
+				// parallel, independently-cacheable pieces instead of one blob
+				manualChunks(id: string) {
+					if (!id.includes('node_modules')) return;
+					if (id.includes('mathlive')) return 'mathlive';
+					if (id.includes('prosemirror')) return 'prosemirror';
+					// core only: language-data/legacy-modes/lang-* stay lazy, grouping them here
+					// would load every language mode with the editor
+					if (/@codemirror[\\/](state|view|language|commands|search|autocomplete|lint)[\\/]/.test(id)) return 'codemirror';
+					if (id.includes('@xterm')) return 'xterm';
+				}
+			}
+		}
+	},
+
+	// minification strips our comments but must keep third-party legal comments (/*! */,
+	// @license, @preserve): they're the bundled libraries' attribution requirements
+	esbuild: {
+		legalComments: 'inline'
+	}
+}));

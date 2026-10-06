@@ -1,0 +1,14 @@
+% The reported case: an ENGLISH document with one Hebrew run in it, which is what the report
+% actually is. Hebrew forces luaotfload onto the HarfBuzz renderer (harfloaded: filename), and
+% the run sits in a TRT box inside an otherwise left-to-right line -- so the page has to come
+% back uncertified as "dir" on the strength of that nested box alone.
+% and bidi=default makes the boxes TRT, so the page must come back uncertified as "dir".
+\documentclass{article}
+\usepackage[main=english, bidi=default]{babel}
+\babelprovide[import]{hebrew}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\babelfont[hebrew]{rm}{Times New Roman}
+\begin{document}
+This is a test for \foreignlanguage{hebrew}{עברית}.
+\end{document}

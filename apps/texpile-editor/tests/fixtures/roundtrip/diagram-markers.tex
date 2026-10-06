@@ -1,0 +1,16 @@
+\documentclass{article}
+\usepackage{graphicx}
+\begin{document}
+% modutex:diagram {"v":1,"id":"550e8400-e29b-41d4-a716-446655440000","type":"mermaid","source":"assets/diagrams/system-550e8400-e29b-41d4-a716-446655440000.mmd"}
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\linewidth]{assets/diagrams/system-550e8400-e29b-41d4-a716-446655440000.pdf}
+  \caption{Valid marker}
+\end{figure}
+
+% modutex:diagram {"v":9,"id":"not-a-uuid","type":"mermaid","source":"../unsafe.mmd"}
+\begin{figure}
+  \includegraphics{legacy-output.pdf}
+  \caption{Invalid marker remains ordinary LaTeX}
+\end{figure}
+\end{document}

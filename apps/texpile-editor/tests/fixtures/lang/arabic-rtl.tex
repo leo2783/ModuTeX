@@ -1,0 +1,11 @@
+% Arabic adds real shaping on top of RTL: harf substitutes presentation forms, so the glyphs'
+% char values no longer stand for the codepoints that produced them and only gi resolves them.
+\documentclass{article}
+\usepackage[main=english, bidi=default]{babel}
+\babelprovide[import]{arabic}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\babelfont[arabic]{rm}{Arial}
+\begin{document}
+Test \foreignlanguage{arabic}{العربية} end.
+\end{document}

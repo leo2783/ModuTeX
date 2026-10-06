@@ -1,0 +1,8 @@
+% The actual bug, with a font TeX Live ships everywhere: the family name has spaces, so
+% luaotfload reports it quoted and the font record used to be unparseable JSON.
+\documentclass{article}
+\usepackage{fontspec}
+\setmainfont{Latin Modern Roman}
+\begin{document}
+A plain Latin line.
+\end{document}

@@ -1,0 +1,145 @@
+# Type-check, lint, and unit-test on every pull request and protected integration branch.
+# workflow_call keeps the same verification job reusable without publishing artifacts.
+name: test
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+
+      - name: Verify runtime versions
+        shell: bash
+        run: |
+          [ "$(node --version)" = "v24.19.0" ]
+          [ "$(npm --version)" = "11.17.0" ]
+
+      - run: npm ci --ignore-scripts
+      - run: npm run verify:install-policy
+      - run: npm ci
+      - name: Verify signatures and capture JSON
+        id: registry-signatures
+        shell: bash
+        run: |
+          if npm audit signatures --json > signature-report.json; then
+            exit 0
+          else
+            exit $?
+          fi
+      - name: Run High audit and capture JSON
+        id: high-audit
+        shell: bash
+        run: |
+          if npm audit --audit-level=high --json > audit-report.json; then
+            exit 0
+          else
+            exit $?
+          fi
+      - name: Upload supply-chain reports
+        if: always() && (steps.registry-signatures.outcome != 'skipped')
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Linux-Supply-Chain-Reports
+          path: |
+            signature-report.json
+            audit-report.json
+          if-no-files-found: error
+      - run: npm run test:ci-policy
+      - run: npm run test:dependency-security
+      - run: npm run test:npm-desktop
+      - run: node --test scripts/tests/landing-ci-boundary.test.mjs
+      - run: node --test scripts/tests/verify-vendor-retained.test.mjs scripts/vendor/vendor-manifest.test.mjs scripts/vendor/vendor-artifact.test.mjs scripts/vendor/tectonic-vendor.test.mjs scripts/tests/verify-packaged-vendor.test.mjs
+      - run: node --test scripts/tests/issue-template-brand.test.mjs
+      - run: node --test scripts/tests/devalue-buffer-boundary.test.mjs
+
+      - run: npm run check --workspace=modutex-editor
+      - run: npm run lint --workspace=modutex-editor
+      - run: npm run testonce --workspace=modutex-editor
+      - run: npm run build --workspace=modutex-landing
+      # The Typst parser package. NO Rust toolchain is needed: its wasm-pack output (pkg/) is
+      # committed, and its build script is deliberately named `build:wasm` so the root
+      # workspace build does not try to invoke wasm-pack here.
+      - run: npm run test --workspace=texpile-typst-syntax-wasm
+      - run: npm exec --no -- tsc -p electron --noEmit
+      - run: npm run test:electron
+
+  test-windows:
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+      - name: Verify runtime versions
+        shell: pwsh
+        run: |
+          if ((node --version) -ne 'v24.19.0') { throw 'Node.js version mismatch' }
+          if ((npm --version) -ne '11.17.0') { throw 'npm version mismatch' }
+      - run: npm ci --ignore-scripts
+      - run: npm run verify:install-policy
+      - run: npm ci
+      - name: Verify signatures and capture JSON
+        id: registry-signatures
+        shell: pwsh
+        run: |
+          npm audit signatures --json > signature-report.json
+          $signatureExitCode = $LASTEXITCODE
+          exit $signatureExitCode
+      - name: Run High audit and capture JSON
+        id: high-audit
+        shell: pwsh
+        run: |
+          npm audit --audit-level=high --json > audit-report.json
+          $auditExitCode = $LASTEXITCODE
+          exit $auditExitCode
+      - name: Upload supply-chain reports
+        if: always() && (steps.registry-signatures.outcome != 'skipped')
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Windows-Supply-Chain-Reports
+          path: |
+            signature-report.json
+            audit-report.json
+          if-no-files-found: error
+      - run: npm run test:ci-policy
+      - run: npm run test:dependency-security
+      - run: npm run test:npm-desktop
+      - run: node --test scripts/tests/landing-ci-boundary.test.mjs
+      - run: node --test scripts/tests/verify-vendor-retained.test.mjs scripts/vendor/vendor-manifest.test.mjs scripts/vendor/vendor-artifact.test.mjs scripts/vendor/tectonic-vendor.test.mjs scripts/tests/verify-packaged-vendor.test.mjs
+      - run: node --test scripts/tests/issue-template-brand.test.mjs
+      - run: node --test scripts/tests/devalue-buffer-boundary.test.mjs
+      - run: npm run check --workspace=modutex-editor
+      - run: npm run lint --workspace=modutex-editor
+      - run: npm run testonce --workspace=modutex-editor
+      - run: npm run build --workspace=modutex-landing
+      - run: npm run test --workspace=texpile-typst-syntax-wasm
+      - run: npm exec --no -- tsc -p electron --noEmit
+      - run: npm run test:electron

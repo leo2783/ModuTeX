@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Live MathLive matrix picker fixture</title>
+		<style>
+			body {
+				margin: 24px;
+				font:
+					16px system-ui,
+					sans-serif;
+			}
+			#fixture-fields {
+				display: grid;
+				gap: 16px;
+				max-width: 48rem;
+			}
+			math-field {
+				display: block;
+				min-height: 3rem;
+				padding: 8px;
+				border: 1px solid #888;
+			}
+		</style>
+	</head>
+	<body>
+		<main id="fixture-fields" aria-label="Live MathLive matrix-picker fixture"></main>
+		<script type="module" src="./matrix-picker-entry.svelte.ts"></script>
+	</body>
+</html>

@@ -1,0 +1,32 @@
+.modutex-folded-section {
+	display: none;
+}
+
+.modutex-fold-toggle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.2rem;
+	height: 1.2rem;
+	margin-left: -1.45rem;
+	margin-right: 0.25rem;
+	border-radius: 0.25rem;
+	border: 0;
+	background: transparent;
+	color: var(--color-surface-500, #64748b);
+	cursor: pointer;
+	font-size: 0.75rem;
+	line-height: 1;
+}
+
+.modutex-fold-toggle:hover,
+.modutex-fold-toggle:focus-visible {
+	background: var(--color-surface-200, #e2e8f0);
+	color: var(--color-primary-600, #2563eb);
+	outline: none;
+}
+
+[data-mode='dark'] .modutex-fold-toggle:hover,
+[data-mode='dark'] .modutex-fold-toggle:focus-visible {
+	background: var(--color-surface-700, #334155);
+}

@@ -1,0 +1,11 @@
+% Greek: a non-Latin script that luaotfload still shapes in node mode. Left-to-right, so the
+% page must stay certified and fully record-renderable.
+\documentclass{article}
+\usepackage[main=english]{babel}
+\babelprovide[import]{greek}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\babelfont[greek]{rm}{Times New Roman}
+\begin{document}
+Test \foreignlanguage{greek}{Ελληνικά}.
+\end{document}

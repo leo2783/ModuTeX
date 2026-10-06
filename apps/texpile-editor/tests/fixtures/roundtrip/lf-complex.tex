@@ -1,0 +1,40 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,graphicx}
+\newcommand{\project}[2][default]{#1: #2}
+\begin{document}
+% standalone comment and unusual spacing stay exactly here
+繁體中文、Unicode αβγ, and a citation \cite[p.~4]{sample}.
+
+\begin{custompackageenv}[mode=x]
+  \begin{nested-unknown}
+    \project[選項]{內容}
+  \end{nested-unknown}
+\end{custompackageenv}
+
+\begin{verbatim}
+literal % \end{document} and     spaces
+\end{verbatim}
+
+\begin{figure*}[htbp]
+  \centering
+  \includegraphics[width=.75\linewidth,trim=0 0 0 0,clip]{figures/sample.pdf}
+  \caption[Short]{A long caption}
+  \label{fig:sample}
+\end{figure*}
+
+\begin{align*}
+a &= b + c \\
+d &= e
+\end{align*}
+
+\begin{table}[h]
+  \begin{tabular}{lr}
+    Name & Value \\
+    alpha & 1
+  \end{tabular}
+\end{table}
+
+\begin{lstlisting}[language=TeX]
+\unknownlistingcommand{literal body}
+\end{lstlisting}
+\end{document}

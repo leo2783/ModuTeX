@@ -1,0 +1,307 @@
+<script lang="ts">
+	// The markdown visual editor: its OWN ProseMirror over mdSchema, fully separate from the tex
+	// EditorView. Extensions are shared where they are schema-agnostic (they read state.schema);
+	// everything LaTeX-flavored (intellisense, citations, template views, latex clipboard,
+	// suggestion mode, the block-handle insert menu) is deliberately absent.
+	import { onDestroy, onMount } from 'svelte';
+	import { EditorState, TextSelection, type Transaction } from 'prosemirror-state';
+	import { EditorView } from 'prosemirror-view';
+	import type { Node as PMNode } from 'prosemirror-model';
+	import { keymap } from 'prosemirror-keymap';
+	import { baseKeymap, toggleMark, wrapIn } from 'prosemirror-commands';
+	import { undo as historyUndo, redo as historyRedo, history } from 'prosemirror-history';
+	import { gapCursor } from 'prosemirror-gapcursor';
+	import { dropCursor } from 'prosemirror-dropcursor';
+	import { columnResizing, fixTables, tableEditing, goToNextCell } from 'prosemirror-tables';
+	import { createListPlugins, listInputRules, listKeymap, createIndentListCommand, createDedentListCommand } from 'prosemirror-flat-list';
+	import { inputRules, textblockTypeInputRule, wrappingInputRule, InputRule, undoInputRule } from 'prosemirror-inputrules';
+	import { search } from 'prosemirror-search';
+	import { mdSchema } from './schema';
+	import { isMac } from '$lib/platform';
+	import { editorViewStore, referenceStore } from '$lib/stores/editorStore';
+	import { preferences } from '$lib/stores/preferencesStore.svelte';
+	import { toggleHeading } from '$lib/editor/helperCommands';
+	import { createMathField } from '$lib/editor/extensions/mathlivebridge/mlcommands';
+	import { createCodeBlock } from '$lib/editor/extensions/codemirrorbridge/cmcommands';
+	import { cmarrowHandlers } from '$lib/editor/extensions/codemirrorbridge/cmarrowhandler';
+	import { imagePlugin } from '$lib/editor/extensions/image';
+	import { createMarkdownImageSettings } from './imageSettings.svelte';
+	import { menuUpdatePlugin } from '$lib/editor/extensions/toolbarlistenerplugin';
+	import { createCursorPlugin } from '$lib/editor/extensions/cursor-plugin';
+	import { createLinkPlugin } from '$lib/editor/extensions/link';
+	import { pasteUUIDFixPlugin } from '$lib/editor/extensions/paste-uuid-fix';
+	import { placeholderPlugin } from '$lib/editor/extensions/placeholderplugin';
+	import { tablePlaceholderPlugin } from '$lib/editor/extensions/table/tablePlaceholderPlugin';
+	import { createWordCountPlugin } from '$lib/editor/extensions/wordcount/wordCountPlugin';
+	import { createTocPlugin } from '$lib/editor/extensions/tableofcontents/tocPlugin';
+	import { createPersistentSelectionPlugin } from '$lib/editor/extensions/persistentSelection/persistentSelectionPlugin';
+	import { proofreadPlugin, spellClickBoundaryPlugin } from '$lib/editor/extensions/spellcheck/spellcheckplugin';
+	import { createTrailingParagraphPlugin, buildTrailingParagraphTr } from '$lib/editor/extensions/trailing-paragraph-plugin';
+	import { createBoundaryClickPlugin } from '$lib/editor/extensions/boundary-click-plugin';
+	import { createBlockHandlePlugin } from '$lib/editor/extensions/block-handle-plugin.svelte';
+	import { createNodeFlashPlugin } from '$lib/editor/extensions/flash-plugin';
+	import { remoteCursorsPlugin } from '$lib/editor/extensions/remoteCursors';
+	import { MD_BLOCK_INSERT_ITEMS } from './blockInsertItems';
+	import CodeBlockView from '$lib/editor/extensions/codemirrorbridge/cmview';
+	import RawLatexView from '$lib/editor/extensions/raw-latex/rawLatexView';
+	import InlineLatexView from '$lib/editor/extensions/raw-latex/inlineLatexView';
+	import ContextMenu from '$lib/editor/comp/toolbar/ContextMenu.svelte';
+	import { pmComments } from '$lib/editor/extensions/pmComments';
+	import { syncPmComments } from '$lib/editor/extensions/pmCommentsSync.svelte';
+	import type { CommentAnchor } from '$lib/comments/anchor';
+	import type { CommentThread } from '$lib/comments/log';
+	import type { BibLaTeXReference } from '$lib/biblatex';
+	import 'prosemirror-view/style/prosemirror.css';
+	import 'prosemirror-tables/style/tables.css';
+	import 'prosemirror-gapcursor/style/gapcursor.css';
+	import 'prosemirror-flat-list/dist/style.css';
+	import 'prosemirror-search/style/search.css';
+	import '$lib/editor/extensions/image/styles/common.css';
+	import '$lib/editor/extensions/image/styles/withResize.css';
+	import '$lib/editor/extensions/image/styles/sideResize.css';
+	import '$lib/editor/styles/cursor.css';
+
+	interface Props {
+		localValue?: PMNode | null;
+		onLocalChange?: (value: PMNode) => void;
+		onSelectionChange?: () => void;
+		localReferences?: BibLaTeXReference[];
+		imageDir?: string;
+		placeholder?: string;
+		onHistoryBoundary?: (dir: 'undo' | 'redo') => boolean;
+		onReady?: () => void;
+		/** the link tooltip's Open action: return true when handled in-app (workspace-relative
+		 * markdown link), false to fall through to the browser. */
+		onOpenLink?: (href: string) => boolean;
+		/** review comments, same contract as the latex EditorView; see extensions/pmComments */
+		commentThreads?: CommentThread[];
+		selectedComment?: string | null;
+		onSelectComment?: (id: string, from: 'visual') => void;
+		onAddComment?: (anchor: CommentAnchor | null) => void;
+		onCommentsPlaced?: (lost: string[]) => void;
+		addCommentLabel?: string;
+	}
+
+	let {
+		localValue = null,
+		onLocalChange,
+		onSelectionChange,
+		localReferences = [],
+		imageDir,
+		placeholder = '',
+		onHistoryBoundary,
+		onReady,
+		onOpenLink,
+		commentThreads = [],
+		selectedComment = null,
+		onSelectComment,
+		onAddComment,
+		onCommentsPlaced,
+		addCommentLabel = 'Comment'
+	}: Props = $props();
+
+	$effect(() => {
+		referenceStore.set(localReferences);
+	});
+
+	let editor: HTMLElement = $state(null!);
+	let editorView: EditorView | null = $state(null);
+
+	// markdown-flavored autoformat: # headings, > quotes, ``` fences, --- rules
+	const mdInputRules = [
+		textblockTypeInputRule(/^(#{1,6})\s$/, mdSchema.nodes.heading, (m) => ({ level: m[1].length })),
+		wrappingInputRule(/^>\s$/, mdSchema.nodes.blockquote),
+		textblockTypeInputRule(/^```$/, mdSchema.nodes.code_block, { env: 'fence', args: '' }),
+		new InputRule(/^(?:---|\*\*\*)\s$/, (state, _match, start, end) =>
+			state.tr.replaceRangeWith(start, end, mdSchema.nodes.horizontal_rule.create())
+		)
+	];
+
+	onMount(async () => {
+		const { mathlivePlugin, mlarrowHandlers } = await import('$lib/editor/extensions/mathlivebridge/mlplugin');
+
+		const plugins = [
+			gapCursor(),
+			dropCursor({ color: 'var(--color-primary-500)', width: 2 }),
+			columnResizing(),
+			tableEditing(),
+			...createListPlugins({ schema: mdSchema }),
+			history(),
+			keymap(listKeymap),
+			inputRules({ rules: [...listInputRules, ...mdInputRules] }),
+			keymap({
+				// PM history first, then the workspace snapshot history (survives mode switches)
+				'Mod-z': (state, dispatch) => historyUndo(state, dispatch) || (onHistoryBoundary ? (onHistoryBoundary('undo'), true) : false),
+				'Mod-y': (state, dispatch) => historyRedo(state, dispatch) || (onHistoryBoundary ? (onHistoryBoundary('redo'), true) : false),
+				'Mod-Shift-z': (state, dispatch) => historyRedo(state, dispatch) || (onHistoryBoundary ? (onHistoryBoundary('redo'), true) : false),
+				Backspace: undoInputRule,
+				'Mod-b': toggleMark(mdSchema.marks.strong),
+				'Mod-i': toggleMark(mdSchema.marks.em),
+				'Mod-`': toggleMark(mdSchema.marks.code),
+				'Mod-Shift-x': toggleMark(mdSchema.marks.s),
+				'Mod-Shift-b': wrapIn(mdSchema.nodes.blockquote),
+				'Mod-Shift-`': createCodeBlock(),
+				// Word/Docs convention, same as the tex editor; markdown gets all six levels
+				'Mod-Alt-0': toggleHeading(0),
+				...Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [`Mod-Alt-${n}`, toggleHeading(n)])),
+				...(isMac ? {} : { 'Mod-Shift-1': toggleHeading(1), 'Mod-Shift-2': toggleHeading(2), 'Mod-Shift-3': toggleHeading(3) }),
+				'Mod-m': createMathField(),
+				'Mod-Shift-m': createMathField(true),
+				// table cell first, then list indent; always consume so focus stays in the editor
+				Tab: (state, dispatch) => goToNextCell(1)(state, dispatch) || createIndentListCommand()(state, dispatch) || true,
+				'Shift-Tab': (state, dispatch) => goToNextCell(-1)(state, dispatch) || createDedentListCommand()(state, dispatch) || true
+			}),
+			cmarrowHandlers,
+			mlarrowHandlers,
+			mathlivePlugin,
+			keymap(baseKeymap),
+			imagePlugin(createMarkdownImageSettings(imageDir)),
+			menuUpdatePlugin(),
+			createCursorPlugin(),
+			createLinkPlugin({ onOpen: onOpenLink }),
+			pasteUUIDFixPlugin,
+			search(),
+			placeholderPlugin(placeholder),
+			tablePlaceholderPlugin(),
+			createWordCountPlugin(),
+			createTocPlugin(),
+			createPersistentSelectionPlugin(),
+			spellClickBoundaryPlugin, // must precede proofreadPlugin; see its comment
+			proofreadPlugin,
+			createTrailingParagraphPlugin(),
+			createBoundaryClickPlugin(),
+			// the Notion-style + / drag / delete gutter, with the markdown insert set
+			createBlockHandlePlugin({ items: MD_BLOCK_INSERT_ITEMS }),
+			createNodeFlashPlugin(),
+			// Keep remote cursor decorations available for document providers.
+			remoteCursorsPlugin,
+			...pmComments({
+				onSelect: (id) => onSelectComment?.(id, 'visual'),
+				onAdd: onAddComment,
+				addLabel: addCommentLabel
+			})
+		];
+
+		let editorState = EditorState.create({ schema: mdSchema, plugins, doc: localValue ?? undefined });
+		const fix = fixTables(editorState);
+		if (fix) editorState = editorState.apply(fix.setMeta('addToHistory', false));
+		// trailing paragraphs at load, not lazily on first edit (byte-neutral; empty paragraphs
+		// serialize to nothing)
+		const trail = buildTrailingParagraphTr(editorState);
+		if (trail) editorState = editorState.apply(trail.setMeta('addToHistory', false));
+
+		editorView = new EditorView(editor, {
+			attributes: { class: 'TexpileEditor MarkdownEditor', spellcheck: 'false' },
+			state: editorState,
+			nodeViews: {
+				code_block: (node, view, getPos) => new CodeBlockView(node, view, getPos as () => number),
+				// md raw islands are html/markdown chunks: always the plain CM views, none of the
+				// latex-specific frontmatter/bibliography/figure specializations
+				raw_latex: (node, view, getPos) => new RawLatexView(node, view, getPos as () => number),
+				inline_latex: (node, view, getPos) => new InlineLatexView(node, view, getPos as () => number)
+			},
+			editable: () => true,
+			dispatchTransaction(transaction: Transaction) {
+				// async plugins (spellcheck) can dispatch into a destroyed view on tab switches
+				if (this.isDestroyed) return;
+				const newState = this.state.apply(transaction);
+				this.updateState(newState);
+				// collabRemotePatch: a collaborator's edit patched in from the shared doc. It is
+				// already IN the shared doc, so reporting it as a local change would echo it back
+				// out and the two peers would ping-pong the same edit
+				if (onLocalChange && transaction.docChanged && !transaction.getMeta('collabRemotePatch')) onLocalChange(newState.doc);
+				if (onSelectionChange && (transaction.selectionSet || transaction.docChanged)) onSelectionChange();
+			}
+		});
+
+		$editorViewStore = editorView;
+		editor?.classList?.remove('hidden');
+		editorView.focus();
+		onReady?.();
+	});
+
+	function scrollParent(el: HTMLElement | null): HTMLElement | null {
+		let cur = el?.parentElement ?? null;
+		while (cur) {
+			const oy = getComputedStyle(cur).overflowY;
+			if ((oy === 'auto' || oy === 'scroll') && cur.scrollHeight > cur.clientHeight) return cur;
+			cur = cur.parentElement;
+		}
+		return null;
+	}
+
+	// swap in a re-parsed doc without remounting (same contract as the tex EditorView): a fresh
+	// EditorState on the same view keeps the DOM and scroll; fires only when localValue changes
+	let mountedDoc: PMNode | null = null;
+	/** bumped only on doc SWAPS (see pmCommentsSync); typing maps ranges instead */
+	let docEpoch = $state(0);
+	$effect(() => {
+		const next = localValue;
+		if (!editorView || !next) return;
+		if (mountedDoc === null) {
+			mountedDoc = next;
+			return;
+		}
+		if (next === mountedDoc || next === editorView.state.doc) {
+			mountedDoc = next;
+			return;
+		}
+
+		const scroller = scrollParent(editorView.dom);
+		const savedTop = scroller?.scrollTop ?? 0;
+		const prevAnchor = editorView.state.selection.anchor;
+
+		let base = EditorState.create({ schema: mdSchema, plugins: editorView.state.plugins, doc: next });
+		const trail = buildTrailingParagraphTr(base);
+		if (trail) base = base.apply(trail.setMeta('addToHistory', false));
+		let restored = base;
+		try {
+			const pos = Math.min(Math.max(1, prevAnchor), base.doc.content.size);
+			restored = base.apply(base.tr.setSelection(TextSelection.near(base.doc.resolve(pos))).setMeta('addToHistory', false));
+		} catch {
+			restored = base;
+		}
+		editorView.updateState(restored);
+		mountedDoc = next;
+		docEpoch++;
+
+		if (scroller) {
+			scroller.scrollTop = savedTop;
+			requestAnimationFrame(() => (scroller.scrollTop = savedTop));
+		}
+	});
+
+	// after the swap effect, so the sync reads the newly-installed document
+	syncPmComments({
+		view: () => editorView,
+		threads: () => commentThreads,
+		epoch: () => docEpoch,
+		selected: () => selectedComment,
+		onPlaced: (lost) => onCommentsPlaced?.(lost)
+	});
+
+	$effect(() => {
+		if (editorView?.dom) {
+			(editorView.dom as HTMLElement).style.setProperty('zoom', `${preferences.zoom}`, 'important');
+		}
+	});
+
+	onDestroy(() => {
+		editorView?.destroy();
+		editorViewStore.set(null);
+	});
+</script>
+
+<main bind:this={editor} class="hidden"></main>
+
+<ContextMenu dialect="markdown" {onAddComment} />
+
+<style lang="postcss">
+	@reference "../../app.css";
+
+	/* the shared CodeBlockView card is tuned for tex (bright border + heavy shadow); markdown
+	   code blocks read better as a quiet inset */
+	:global(.MarkdownEditor .cm-wrapper) {
+		@apply border-surface-300-700 border shadow-none;
+	}
+</style>
