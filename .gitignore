@@ -125,9 +125,6 @@ dist
 # Stores Visual Studio Code versions used for testing Visual Studio Code extensions
 .vscode-test
 
-# pnpm
-.pnpm-store
-
 # yarn v3
 .pnp.*
 .yarn/*
@@ -147,3 +144,33 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# ModuTeX generated output and local context
+.DS_Store
+/build
+**/build/
+.svelte-kit/
+/package
+**/package/
+out/
+*.tsbuildinfo
+service-account.json
+CLAUDE.md
+AGENTS.md
+.claude/
+.codex/
+.worktrees/
+.verification-artifacts/
+.ua/
+/release/
+electron/dist/
+electron/server-dist/
+roundtrip-diff/
+
+# Required source-controlled build and parser fixtures
+!build/
+build/*
+!build/license.txt
+!build/icons/
+!build/deb-after-install.tpl
+!apps/texpile-editor/tests/unit/lib/latex-log/fixtures/*.log

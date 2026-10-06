@@ -1,0 +1,6 @@
+# Rust build output; large and reproducible
+target/
+
+# NOT ignored: pkg/ is committed on purpose. It is the wasm-pack output the app imports, so a
+# normal `pnpm install` needs no Rust toolchain. Rebuild it (pnpm --filter texpile-typst-syntax-wasm
+# build) whenever lib.rs or the typst-syntax version changes.

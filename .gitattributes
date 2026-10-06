@@ -1,0 +1,14 @@
+# LF in repo and working tree; system autocrlf must not rewrite anything
+* text=auto eol=lf
+
+# NSIS license page is a classic edit control, needs CRLF to render line breaks
+build/license.txt -text
+
+# Official Draw.io bytes include intentional CRLF/trailing whitespace; keep the retained webapp raw.
+vendor/drawio/src/main/webapp/** -text whitespace=-trailing-space,-space-before-tab
+
+# Keep the reviewed Tectonic Windows executable byte-identical in the Git index.
+vendor/tectonic/windows-x64/tectonic.exe -text
+
+# PDF xref records are fixed-width and include a required trailing space.
+apps/texpile-editor/tests/fixtures/pdf/lifecycle-red-square.pdf binary -eol

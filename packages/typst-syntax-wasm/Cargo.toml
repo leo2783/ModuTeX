@@ -1,0 +1,33 @@
+[package]
+name = "texpile-typst-syntax-wasm"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Typst's official parser, exposed to JavaScript as a Lezer-shaped syntax tree"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# typst-syntax comes from crates.io UNPATCHED. That is the whole point of this crate: the
+# alternative (codemirror-lang-typst) carries a fork of the Typst repo because it wanted
+# fine-grained tree deltas out of the reparser, which forced changes to node.rs and reparser.rs.
+# Rebuilding the flat buffer on each parse costs a cheap tree walk and needs none of that, so this
+# tracks published Typst releases by version bump alone.
+[dependencies]
+typst-syntax = "0.15"
+wasm-bindgen = "0.2"
+
+# wasm-pack ships its own wasm-opt, which predates the bulk-memory instructions (memory.copy /
+# memory.fill) that current rustc emits by default, so the default `-O` run rejects our own output.
+# Enabling the proposals is safe: they have been in every browser since Chromium 75, and this only
+# ever runs in the Electron Chromium we ship.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ['-O', '--enable-bulk-memory', '--enable-nontrapping-float-to-int']
+
+[profile.release]
+# the parser is shipped to every user; size matters more than the last few percent of speed
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

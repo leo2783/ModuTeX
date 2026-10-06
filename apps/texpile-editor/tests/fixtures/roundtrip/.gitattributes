@@ -1,0 +1,2 @@
+# Keep the CRLF fixture's bytes while ignoring only its intentional CRLF and trailing spaces.
+crlf-comments.tex -text whitespace=cr-at-eol,-trailing-space

@@ -1,0 +1,9 @@
+% A TrueType Collection through HarfBuzz: the walker must still find the .ttc face (sub) after
+% stripping the harfloaded: prefix off the path. Windows font; skipped where it is absent.
+\documentclass{article}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\newfontfamily\cjk{MS Mincho}[Renderer=HarfBuzz]
+\begin{document}
+Test {\cjk 日本語}.
+\end{document}

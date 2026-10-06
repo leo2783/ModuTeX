@@ -1,0 +1,118 @@
+appId: io.github.leo2783.modutex
+productName: ModuTeX
+copyright: Copyright © ModuTeX
+
+# .tex file associations; main.ts turns an opened file into an "open its folder" workspace action
+fileAssociations:
+  - ext: tex
+    name: LaTeX Document
+    role: Editor
+    mimeType: text/x-tex
+
+directories:
+  output: release
+
+# only the Electron shell goes into the asar; the renderer bundle ships as an extra resource,
+# served from the app:// protocol. The exclusions keep third-party sourcemaps/tests out.
+# node-pty runtime needs only its .node/.dll/.exe binaries (+ lib/ + bin/); the compiler
+# intermediates, sources and debug symbols below are ~20MB of dead weight per install.
+files:
+  - electron/dist/**/*
+  - electron/icon.png
+  - package.json
+  - '!**/*.map'
+  # node-pty's build-only N-API headers/tools are not part of its native runtime.
+  - '!**/node_modules/node-addon-api/**'
+  - '!**/node_modules/**/{test,tests,__mocks__}/**'
+  - '!**/node_modules/node-pty/lib/*.test.js'
+  - '!**/node_modules/node-pty/build/**/*.{iobj,ipdb,pdb,exp,lib,tlog}'
+  - '!**/node_modules/node-pty/build/{deps,obj}/**'
+  - '!**/node_modules/node-pty/build/Release/obj/**'
+  - '!**/node_modules/node-pty/build/Release/obj.target/**'
+  - '!**/node_modules/node-pty/build/*.{sln,gypi,mk}'
+  - '!**/node_modules/node-pty/build/Makefile'
+  - '!**/node_modules/node-pty/build/*.vcxproj*'
+  - '!**/node_modules/node-pty/{third_party,src,deps,scripts,typings}/**'
+  - '!**/node_modules/node-pty/prebuilds/**/*.pdb'
+
+# node-pty (its .node binary plus the Windows ConPTY runtime, conpty.dll / OpenConsole.exe) must
+# stay out of the asar so it can be dlopen'd at runtime
+asar:
+  unpack:
+    - '**/node_modules/node-pty/**'
+
+# restore the exec bit on node-pty's macOS spawn-helper (lost in packaging -> "posix_spawnp failed")
+afterPack: scripts/after-pack.cjs
+
+extraResources:
+  - from: apps/texpile-editor/dist
+    to: app-dist
+    filter:
+      - '**/*'
+  # Draft-mode engine (walker.lua / page-extract.lua). Ships OUTSIDE the asar so the
+  # user's spawned lualatex can read them by absolute path (reads aren't sandboxed;
+  # only writes are). Resolved at runtime via process.resourcesPath/lua.
+  - from: electron/lua
+    to: lua
+    filter:
+      - '**/*.lua'
+  - from: vendor
+    to: vendor
+    filter:
+      - tectonic/VERSION
+      - tectonic/windows-x64/tectonic.exe
+      - notices/TECTONIC-LICENSE.txt
+      - notices/TECTONIC-NOTICE.md
+      - drawio/VERSION
+      - drawio/LICENSE
+      - drawio/src/main/webapp/**/*
+      - notices/DRAWIO-LICENSE.txt
+      - notices/DRAWIO-NOTICE.md
+
+# Preserve the existing decision not to rebuild native modules during packaging.
+nativeModules:
+  npmRebuild: false
+
+# mac/win take the single 1024 PNG (electron-builder derives .ico/.icns). Linux needs the
+# pre-sized set in build/icons: Ubuntu's hicolor theme indexes nothing above 512, so a lone
+# 1024 icon is invisible to the launcher (generic gear in the app grid).
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Office
+  synopsis: A local, offline LaTeX editor
+  icon: build/icons
+
+appImage:
+  artifactName: ${productName}-${version}.${ext}
+deb:
+  artifactName: modutex-${version}.${ext}
+  # stock postinst probes userns as root, leaving chrome-sandbox non-SUID on Ubuntu 24.04+
+  # (AppArmor restricts unprivileged userns) -> app aborts at launch. Ours always SUIDs it.
+  afterInstall: build/deb-after-install.tpl
+
+mac:
+  # one universal (x64 + arm64) dmg so Intel Macs are covered; a host-arch build on the arm64
+  # runner ships an arm64-only dmg. node-pty has both darwin prebuilds, so the merge succeeds.
+  target:
+    - target: dmg
+      arch: universal
+  artifactName: ${productName}-${version}.${ext}
+  category: public.app-category.productivity
+  icon: electron/icon.png
+
+# NOTE: per-platform `files` blocks must NOT be used for the cross-platform prebuild pruning:
+# a file set containing only exclusions is implicitly '**/*' minus them, which once shipped the
+# entire repo inside the asar. The pruning lives in scripts/after-pack.cjs instead.
+win:
+  target:
+    - nsis
+  icon: electron/icon.png
+
+# show the AGPL text as an installer page (macOS/Linux installs have no comparable UI).
+# The artifact name must have no spaces: electron-builder's Trusted Signing signer space-joins
+# its Invoke-TrustedSigning -Files arg without quoting, so a spaced name gets split and signing fails.
+nsis:
+  license: build/license.txt
+  artifactName: ${productName}-Setup-${version}.${ext}

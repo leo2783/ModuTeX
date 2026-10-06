@@ -1,0 +1,92 @@
+{
+	"name": "modutex-desktop",
+	"version": "0.1.0",
+	"private": true,
+	"description": "ModuTeX desktop LaTeX editor",
+	"author": "ModuTeX contributors",
+	"license": "AGPL-3.0-only",
+	"homepage": "https://github.com/leo2783/latex",
+	"main": "electron/dist/main.js",
+	"packageManager": "npm@11.17.0",
+	"engines": {
+		"node": "24.19.0",
+		"npm": "11.17.0"
+	},
+	"workspaces": [
+		"packages/*",
+		"apps/*",
+		"landing"
+	],
+	"scripts": {
+		"build": "npm run build --workspaces --if-present",
+		"sync": "npm run sync --workspaces --if-present",
+		"verify:upstream": "node scripts/run-verification.mjs upstream",
+		"verify:modutex": "node scripts/run-verification.mjs modutex",
+		"verify:vendor": "node scripts/verify-vendor.mjs",
+		"verify:npm-desktop": "node scripts/verify-npm-desktop.mjs",
+		"stage:npm-desktop": "node scripts/stage-npm-desktop.mjs",
+		"test:npm-desktop": "node --test scripts/tests/npm-desktop-package.test.mjs",
+		"test:verification-runner": "node --test scripts/tests/run-verification.test.mjs",
+		"test:ci-policy": "node --test scripts/tests/ci-policy.test.mjs",
+		"test:electron": "npm exec --no -- vitest run --config electron/vitest.config.ts && node --test electron/tests/runtime-identity.test.mjs",
+		"test:dependency-security": "node --test scripts/tests/dependency-security-floor.test.mjs",
+		"test:fast-uri-consumer": "node --test scripts/tests/fast-uri-consumer.test.mjs",
+		"verify:install-policy": "node scripts/verify-install-policy.mjs",
+		"test:install-policy": "node --test scripts/tests/verify-install-policy.test.mjs",
+		"set-version": "node scripts/set-version.mjs",
+		"app:build": "npm run build --workspace=modutex-editor && npm run electron:build:prod",
+		"electron": "npm run electron:build && electron .",
+		"electron:build": "tsc -p electron --noEmit && node scripts/build-electron.mjs --dev",
+		"_comment:electron:dev": "--host/--strictPort keep Vite on the IPv4 address wait-on polls.",
+		"electron:dev": "concurrently -k -n vite,electron \"npm run dev --workspace=modutex-editor -- --host 127.0.0.1 --strictPort\" \"npm run electron:build && wait-on -t 180000 http-get://127.0.0.1:5173 && cross-env ELECTRON_START_URL=http://127.0.0.1:5173 electron .\"",
+		"electron:rebuild": "electron-rebuild -f -w node-pty",
+		"electron:build:prod": "tsc -p electron --noEmit && node scripts/build-electron.mjs",
+		"dist": "npm run app:build && electron-builder --publish never",
+		"dist:dir": "npm run app:build && electron-builder --dir",
+		"format": "prettier --write ."
+	},
+	"dependencies": {
+		"node-pty": "1.1.0"
+	},
+	"devDependencies": {
+		"@electron/rebuild": "4.2.0",
+		"@modelcontextprotocol/sdk": "1.30.0",
+		"@types/node": "24.13.3",
+		"chokidar": "5.0.0",
+		"concurrently": "9.2.4",
+		"cross-env": "7.0.3",
+		"electron": "43.5.0",
+		"electron-builder": "27.0.0-alpha.9",
+		"esbuild": "0.28.1",
+		"js-yaml": "4.3.2",
+		"prettier": "3.9.6",
+		"prettier-plugin-svelte": "4.1.1",
+		"prettier-plugin-tailwindcss": "0.8.0",
+		"shelljs": "0.8.5",
+		"simple-git": "3.36.0",
+		"typescript": "6.0.3",
+		"wait-on": "8.0.5",
+		"zod": "3.25.76"
+	},
+	"overrides": {
+		"@xmldom/xmldom": "0.8.15",
+		"brace-expansion@^1": "1.1.21",
+		"brace-expansion@^2": "2.1.7",
+		"brace-expansion@^5": "5.0.12",
+		"fast-uri": "3.1.8",
+		"joi": "18.2.6",
+		"js-yaml": "4.3.2",
+		"svelte": "5.56.9",
+		"undici@^6": "6.28.1",
+		"undici@^7": "7.29.1",
+		"wait-on@8.0.5": {
+			"axios": "1.20.0"
+		}
+	},
+	"allowScripts": {
+		"esbuild@0.28.1": true,
+		"fsevents@2.3.2": false,
+		"fsevents@2.3.3": false,
+		"node-pty@1.1.0": true
+	}
+}
