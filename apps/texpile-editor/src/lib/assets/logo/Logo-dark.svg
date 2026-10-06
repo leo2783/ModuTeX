@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 260" role="img" aria-label="ModuTeX">
+  <defs>
+    <linearGradient id="surface" x1="24" y1="16" x2="236" y2="244" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#143f61" />
+      <stop offset="1" stop-color="#081b2d" />
+    </linearGradient>
+    <linearGradient id="mark" x1="62" y1="68" x2="198" y2="184" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#18bfff" />
+      <stop offset="1" stop-color="#34e0b5" />
+    </linearGradient>
+  </defs>
+  <rect x="18" y="18" width="224" height="224" rx="54" fill="url(#surface)" />
+  <path d="M62 178V78l48 54 20-24 20 24 48-54v100" fill="none" stroke="url(#mark)" stroke-width="23" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M64 202h132" fill="none" stroke="#dff8ff" stroke-width="12" stroke-linecap="round" />
+  <text x="286" y="175" fill="#102f4b" font-family="Segoe UI, Arial, sans-serif" font-size="132" font-weight="700" letter-spacing="-5">Modu<tspan fill="#078dc7">TeX</tspan></text>
+</svg>

@@ -1,0 +1,23 @@
+{
+	"schemaVersion": 1,
+	"artifacts": {
+		"drawio-offline": {
+			"version": "31.1.8",
+			"archive": "drawio-31.1.8.zip",
+			"url": "https://github.com/jgraph/drawio/archive/refs/tags/v31.1.8.zip",
+			"sha256": "f315069ca6b326083b9f9b8dadfc8dbd29f4c2ef78c8e346c3f0f2e99a0603f7",
+			"license": "Apache-2.0",
+			"notice": "vendor/notices/DRAWIO-NOTICE.md",
+			"provenance": "https://github.com/jgraph/drawio/releases/tag/v31.1.8"
+		},
+		"tectonic-windows-x64": {
+			"version": "0.17.0",
+			"archive": "tectonic-0.17.0-x86_64-pc-windows-msvc.zip",
+			"url": "https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%400.17.0/tectonic-0.17.0-x86_64-pc-windows-msvc.zip",
+			"sha256": "f61ce51f0b0ade1015b7de7ef368541c5424e9756ecbd0d7af97d6d48030845f",
+			"license": "MIT",
+			"notice": "vendor/notices/TECTONIC-NOTICE.md",
+			"provenance": "https://github.com/tectonic-typesetting/tectonic/releases/tag/tectonic%400.17.0"
+		}
+	}
+}

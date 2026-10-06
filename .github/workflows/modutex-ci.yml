@@ -1,0 +1,143 @@
+name: ModuTeX CI
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-package:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Verify runtime versions
+        shell: pwsh
+        run: |
+          if ((node --version) -ne 'v24.19.0') { throw 'Node.js 24.19.0 required' }
+          if ((npm --version) -ne '11.17.0') { throw 'npm 11.17.0 required' }
+      - run: npm ci --ignore-scripts
+      - run: npm run verify:install-policy
+      - run: npm run test:dependency-security
+      - run: npm ci
+      - name: Create ignored evidence directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Path release -Force | Out-Null
+      - name: Verify signatures and capture JSON
+        id: registry-signatures
+        shell: pwsh
+        run: |
+          npm audit signatures --json > release/signature-report.json
+          $signatureExitCode = $LASTEXITCODE
+          exit $signatureExitCode
+      - name: Run High audit and capture JSON
+        id: high-audit
+        shell: pwsh
+        run: |
+          npm audit --audit-level=high --json > release/audit-report.json
+          $auditExitCode = $LASTEXITCODE
+          exit $auditExitCode
+      - name: Upload supply-chain reports
+        if: always() && (steps.registry-signatures.outcome != 'skipped')
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Windows-Supply-Chain-Reports
+          path: |
+            release/signature-report.json
+            release/audit-report.json
+          if-no-files-found: error
+      - run: npm run test:ci-policy
+      - run: npm run test:npm-desktop
+      - run: node --test scripts/tests/landing-ci-boundary.test.mjs
+      - run: node --test scripts/tests/verify-vendor-retained.test.mjs scripts/vendor/vendor-manifest.test.mjs scripts/vendor/vendor-artifact.test.mjs scripts/vendor/tectonic-vendor.test.mjs scripts/tests/verify-packaged-vendor.test.mjs
+      - run: node --test scripts/tests/issue-template-brand.test.mjs
+      - run: node --test scripts/tests/devalue-buffer-boundary.test.mjs
+      - run: npm run verify:modutex
+      - run: npm run build --workspace=modutex-landing
+      - name: Build production Windows x64 desktop payload
+        run: npm run dist:dir -- --win --x64 --publish never
+      - name: Stage and pack the production npm desktop package
+        shell: pwsh
+        run: |
+          $sourceCommit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Source revision unavailable' }
+          node scripts/stage-npm-desktop.mjs --package-name modutex-desktop --version 0.1.0 --source-commit $sourceCommit --payload-dir release/win-unpacked --output-dir release/npm-desktop-package
+          if ($LASTEXITCODE -ne 0) { throw 'Production npm staging failed' }
+          node scripts/verify-npm-desktop.mjs --package-dir release/npm-desktop-package --package-name modutex-desktop --version 0.1.0 --source-commit $sourceCommit
+          if ($LASTEXITCODE -ne 0) { throw 'Staged npm package verification failed' }
+          Push-Location release/npm-desktop-package
+          try {
+            $packJson = npm pack --pack-destination .. --ignore-scripts --json
+            if ($LASTEXITCODE -ne 0) { throw 'npm pack failed' }
+          } finally {
+            Pop-Location
+          }
+          $pack = @($packJson | ConvertFrom-Json)
+          if ($pack.Count -ne 1 -or $pack[0].filename -ne 'modutex-desktop-0.1.0.tgz') { throw 'Unexpected npm tarball' }
+          Set-Content -LiteralPath release/npm-pack.json -Value $packJson -Encoding utf8
+      - name: Generate SHA-256 and verify npm tarball
+        shell: pwsh
+        run: |
+          $tarballPath = 'release\modutex-desktop-0.1.0.tgz'
+          $checksumPath = 'release\modutex-desktop-0.1.0.tgz.sha256'
+          if (-not (Test-Path -LiteralPath $tarballPath -PathType Leaf)) { throw "Tarball not found: $tarballPath" }
+          $hash = (Get-FileHash -LiteralPath $tarballPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = "$hash  modutex-desktop-0.1.0.tgz"
+          Set-Content -LiteralPath $checksumPath -Value $expected -Encoding ascii -NoNewline
+          $record = Get-Content -LiteralPath $checksumPath -Raw
+          if ($record -ne $expected) { throw 'Tarball checksum record mismatch' }
+          $recordedHash = $record.Split(' ')[0]
+          node scripts/verify-npm-desktop.mjs --tarball $tarballPath --sha256 $recordedHash
+          if ($LASTEXITCODE -ne 0) { throw 'Tarball verification failed' }
+          New-Item -ItemType Directory -Path release/tarball-verification | Out-Null
+          tar -xzf $tarballPath -C release/tarball-verification
+          if ($LASTEXITCODE -ne 0) { throw 'npm tarball extraction failed' }
+          $sourceCommit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Source revision unavailable' }
+          node scripts/verify-npm-desktop.mjs --package-dir release/tarball-verification/package --package-name modutex-desktop --version 0.1.0 --source-commit $sourceCommit
+          if ($LASTEXITCODE -ne 0) { throw 'Packed npm package content verification failed' }
+      - name: Stage npm tarball and verification evidence
+        shell: pwsh
+        run: |
+          $artifactDirectory = 'release\artifact'
+          New-Item -ItemType Directory -Path $artifactDirectory | Out-Null
+          $files = @(
+            'release\modutex-desktop-0.1.0.tgz',
+            'release\modutex-desktop-0.1.0.tgz.sha256',
+            'release\npm-pack.json',
+            'release\audit-report.json',
+            'release\signature-report.json',
+            'release\npm-desktop-package\SOURCE-OFFER.md',
+            'release\npm-desktop-package\npm-desktop-inventory.json',
+            'release\npm-desktop-package\npm-desktop-inventory.sha256',
+            'LICENSE',
+            'build\license.txt',
+            'vendor\notices\TECTONIC-NOTICE.md',
+            'vendor\notices\TECTONIC-LICENSE.txt',
+            'vendor\notices\DRAWIO-NOTICE.md',
+            'vendor\notices\DRAWIO-LICENSE.txt'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing artifact component: $file" }
+            Copy-Item -LiteralPath $file -Destination $artifactDirectory
+          }
+      - name: Upload the specified Windows x64 artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Windows-x64-0.1.0
+          path: release/artifact
+          if-no-files-found: error

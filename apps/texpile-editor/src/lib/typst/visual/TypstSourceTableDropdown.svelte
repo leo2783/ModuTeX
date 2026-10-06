@@ -1,0 +1,123 @@
+<script lang="ts">
+	// Typst source-mode table inserter: the typst sibling of the LaTeX SourceTableDropdown. Same
+	// drag-a-grid gesture, but it writes a #table(...) skeleton (optionally wrapped in a captioned
+	// #figure) through computeTableSkeleton.
+	import { Popover, Portal, Switch } from '@skeletonlabs/skeleton-svelte';
+	import { Table as TableIcon } from '@lucide/svelte';
+	import { sourceCmView } from '$lib/stores/editorStore';
+	import { computeTableSkeleton } from './sourceInsert';
+	import { m } from '$lib/paraglide/messages';
+
+	const MAX = 10;
+
+	let open = $state(false);
+	let rows = $state(2);
+	let cols = $state(2);
+	let figure = $state(false);
+	let header = $state(true);
+
+	const cells = $derived(
+		Array.from({ length: MAX * MAX }, (_, i) => ({
+			row: Math.floor(i / MAX) + 1,
+			col: (i % MAX) + 1
+		}))
+	);
+
+	function preventFocusLoss(e: MouseEvent) {
+		e.preventDefault(); // keep the caret in the CodeMirror view
+	}
+
+	function insert(r: number, c: number) {
+		const view = $sourceCmView;
+		if (!view) return;
+		open = false;
+		view.dispatch(computeTableSkeleton(view.state, { rows: r, cols: c, header, figure }));
+		view.focus();
+	}
+</script>
+
+<Popover
+	{open}
+	onOpenChange={(e) => (open = e.open)}
+	positioning={{ placement: 'bottom-start', offset: { mainAxis: 0 } }}
+	autoFocus={false}
+>
+	<Popover.Trigger>
+		<button
+			class="toolbarButton flex items-center rounded p-1 hover:preset-tonal"
+			class:preset-tonal-primary={open}
+			aria-label={m.tbar_insert_table_aria()}
+			title={m.tbar_insert_table_aria()}
+			tabindex="-1"
+			onmousedown={preventFocusLoss}
+		>
+			<TableIcon class="h-4.5 w-4.5" />
+		</button>
+	</Popover.Trigger>
+
+	<Portal>
+		<Popover.Positioner class="z-floating-ui">
+			<Popover.Content class="card bg-surface-50-950 border-surface-300-700 border p-3 shadow-lg">
+				<div role="presentation" onmousedown={preventFocusLoss}>
+					<p class="mb-2 text-center text-sm">{rows}x{cols}</p>
+					<div class="mb-3 grid grid-cols-10 gap-1">
+						{#each cells as cell (`${cell.row}-${cell.col}`)}
+							<button
+								type="button"
+								class="h-6 w-6 rounded"
+								class:bg-surface-200-800={!(cell.row <= rows && cell.col <= cols)}
+								class:bg-blue={cell.row <= rows && cell.col <= cols}
+								tabindex="-1"
+								onmouseenter={() => {
+									rows = cell.row;
+									cols = cell.col;
+								}}
+								onfocus={() => {
+									rows = cell.row;
+									cols = cell.col;
+								}}
+								onclick={() => insert(cell.row, cell.col)}
+								aria-label={m.tbar_insert_table_size_aria({ rows: cell.row, cols: cell.col })}
+							></button>
+						{/each}
+					</div>
+
+					<div class="space-y-1.5">
+						<Switch
+							name="table-figure"
+							checked={figure}
+							onCheckedChange={(e) => (figure = e.checked)}
+							class="flex cursor-pointer items-center justify-between gap-6 text-sm"
+						>
+							<Switch.Label>{m.tbar_caption_and_label()}</Switch.Label>
+							<Switch.Control class="preset-filled-surface-200-800 data-[state=checked]:preset-filled-primary-500">
+								<Switch.Thumb />
+							</Switch.Control>
+							<Switch.HiddenInput />
+						</Switch>
+						<Switch
+							name="table-header"
+							checked={header}
+							onCheckedChange={(e) => (header = e.checked)}
+							class="flex cursor-pointer items-center justify-between gap-6 text-sm"
+						>
+							<Switch.Label>{m.tbar_header_row()}</Switch.Label>
+							<Switch.Control class="preset-filled-surface-200-800 data-[state=checked]:preset-filled-primary-500">
+								<Switch.Thumb />
+							</Switch.Control>
+							<Switch.HiddenInput />
+						</Switch>
+					</div>
+				</div>
+			</Popover.Content>
+		</Popover.Positioner>
+	</Portal>
+</Popover>
+
+<style lang="postcss">
+	@reference "../../../app.css";
+
+	.toolbarButton {
+		@apply rounded-base transition-all ease-in-out;
+	}
+</style>

@@ -1,0 +1,1219 @@
+@import 'tailwindcss';
+
+@import '@skeletonlabs/skeleton-svelte';
+
+@import '@skeletonlabs/skeleton';
+
+@tailwind utilities;
+
+@import '../texpile-default-theme';
+
+@custom-variant dark (&:where([data-mode=dark], [data-mode=dark] *));
+
+/* set the page base explicitly so roots without their own bg (workspace shell, start screen)
+   get the right base in dark mode */
+html,
+body {
+	background-color: var(--color-surface-50);
+	color: var(--color-surface-950);
+}
+html {
+	color-scheme: light; /* native controls (checkboxes, scrollbars) follow the mode */
+}
+html[data-mode='dark'] {
+	color-scheme: dark;
+}
+html[data-mode='dark'],
+html[data-mode='dark'] body {
+	background-color: var(--color-surface-950);
+	color: var(--color-surface-50);
+}
+
+/* focus ring around a focused mathfield (mlview sets it inline, so it has to be a var) */
+html {
+	--mathfield-focus-border: var(--color-surface-950);
+}
+html[data-mode='dark'] {
+	--mathfield-focus-border: var(--color-surface-400);
+}
+
+/* the theme's error reds are tuned for white backgrounds and lose contrast as text on dark;
+   lift the text-relevant steps while preserving the scale's ordering */
+html[data-mode='dark'] {
+	--color-error-400: oklch(71% 0.19 354.34deg);
+	--color-error-500: oklch(67% 0.2 358.61deg);
+	--color-error-600: oklch(62.5% 0.2 358.29deg);
+	--color-error-700: oklch(58% 0.19 358.24deg);
+}
+
+/* no focus outlines app-wide: the browser ring stacked on components' own borders and read
+   as a double outline. focus is conveyed by the components' own styles. */
+:focus,
+:focus-visible {
+	outline: none;
+}
+
+/* CodeMirror's base theme paints its own `1px dotted #212121` on the WRAPPER (.cm-editor), not
+   the focused contenteditable, so the rule above never sees it - a black dotted ring, glaring
+   on dark surfaces. Individual views used to each re-disable it; do it once, for every instance. */
+.cm-editor.cm-focused {
+	outline: none;
+}
+
+/* Thematic breaks. Skeleton styles `hr` as a UTILITY CLASS, which an element the schema emits
+   never gets, so a bare <hr> fell through to Tailwind preflight - whose border-color defaults to
+   currentColor, i.e. the TEXT colour: a glaring near-white bar in dark mode. */
+.TexpileEditor hr {
+	border-top-width: 1px;
+	border-color: var(--color-surface-200-800);
+	margin: 1.5rem 0;
+}
+
+/* CodeMirror doesn't auto-theme, so dark-theme its chrome to match the dark editor */
+[data-mode='dark'] .cm-gutters {
+	background-color: transparent;
+	color: var(--color-surface-500);
+	border-right: 1px solid color-mix(in srgb, var(--color-surface-100) 10%, transparent);
+}
+[data-mode='dark'] .cm-activeLineGutter {
+	background-color: transparent;
+	color: var(--color-surface-300);
+}
+[data-mode='dark'] .cm-activeLine {
+	background-color: color-mix(in srgb, var(--color-surface-100) 5%, transparent);
+}
+[data-mode='dark'] .cm-cursor,
+[data-mode='dark'] .cm-dropCursor {
+	border-left-color: var(--color-surface-100);
+}
+[data-mode='dark'] .cm-selectionBackground,
+[data-mode='dark'] .cm-focused .cm-selectionBackground,
+[data-mode='dark'] .cm-content ::selection {
+	background-color: color-mix(in srgb, var(--color-primary-500) 35%, transparent) !important;
+}
+
+/* ONE selection colour for the visual editor - and the same colour for every simulated one.
+   Node views (math fields, code chips) sit outside the browser's ::selection painting, so
+   cursor-plugin shades them with .pm-selected-node when a range crosses them; the blurred-editor
+   simulation (.pm-blur-selection) and the keep-visible-under-menu rule (ContextMenu.svelte) are
+   the same species. They all read this variable, because any drift between them showed as
+   patchwork inside a single drag: solid Tailwind blue boxes over math, native blue over prose.
+   Scoped to .ProseMirror so every visual editor (latex, markdown, typst) gets the pair together;
+   dark matches the source editor's 35% primary, light is lighter over a white page. */
+.ProseMirror {
+	--editor-selection: color-mix(in srgb, var(--color-primary-500) 30%, transparent);
+}
+html[data-mode='dark'] .ProseMirror {
+	--editor-selection: color-mix(in srgb, var(--color-primary-500) 35%, transparent);
+}
+.ProseMirror ::selection {
+	background-color: var(--editor-selection);
+}
+.ProseMirror .pm-selected-node {
+	background-color: var(--editor-selection);
+}
+[data-mode='dark'] .cm-panels {
+	background-color: var(--color-surface-900);
+	color: var(--color-surface-100);
+}
+/* CodeMirror ships light panel controls (white textfields, gradient buttons) that glare in a dark panel */
+[data-mode='dark'] .cm-textfield {
+	background-color: var(--color-surface-800);
+	border: 1px solid var(--color-surface-600);
+	color: var(--color-surface-100);
+}
+[data-mode='dark'] .cm-button {
+	background-image: none;
+	background-color: var(--color-surface-800);
+	border: 1px solid var(--color-surface-600);
+	color: var(--color-surface-100);
+}
+[data-mode='dark'] .cm-button:active {
+	background-image: none;
+	background-color: var(--color-surface-700);
+}
+/* the PM gap cursor defaults to solid black, invisible on dark; !important so the
+   override wins regardless of stylesheet order */
+[data-mode='dark'] .ProseMirror-gapcursor:after {
+	border-top: 1px solid var(--color-surface-50) !important;
+}
+/* CM autocomplete/tooltips (rendered in <body> via tooltipsInBody) default light, showed white in dark mode */
+[data-mode='dark'] .cm-tooltip,
+[data-mode='dark'] .cm-tooltip.cm-tooltip-autocomplete,
+[data-mode='dark'] .cm-completionInfo {
+	background-color: var(--color-surface-900);
+	border: 1px solid var(--color-surface-700);
+	color: var(--color-surface-100);
+}
+[data-mode='dark'] .cm-tooltip-autocomplete > ul > li {
+	color: var(--color-surface-200);
+}
+[data-mode='dark'] .cm-tooltip-autocomplete > ul > li[aria-selected] {
+	background-color: var(--color-primary-500);
+	color: white;
+}
+[data-mode='dark'] .cm-completionMatchedText {
+	color: var(--color-primary-300);
+}
+
+/* Skeleton's .input transparent bg leaks the OS-default white on <select> (native form chrome
+   ignores transparent). force dark bg + color-scheme so the control and the <option> popup go dark. */
+[data-mode='dark'] select.input,
+[data-mode='dark'] select {
+	background-color: var(--color-surface-900);
+	color: var(--color-surface-50);
+	color-scheme: dark;
+}
+[data-mode='dark'] select.input option,
+[data-mode='dark'] select option {
+	background-color: var(--color-surface-900);
+	color: var(--color-surface-50);
+}
+
+/* block handle gutter, rendered on document.body by block-handle-plugin */
+.block-handle-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--color-surface-400);
+	cursor: pointer;
+	transition: background-color 0.12s ease;
+}
+.block-handle-btn:hover {
+	background: var(--color-surface-200);
+	color: var(--color-surface-700);
+}
+[data-mode='dark'] .block-handle-btn:hover {
+	background: var(--color-surface-700);
+	color: var(--color-surface-200);
+}
+/* destructive, so tint red on hover */
+.block-handle-btn-danger:hover {
+	background: color-mix(in srgb, var(--color-error-500) 15%, transparent);
+	color: var(--color-error-600);
+}
+[data-mode='dark'] .block-handle-btn-danger:hover {
+	background: color-mix(in srgb, var(--color-error-500) 22%, transparent);
+	color: var(--color-error-300);
+}
+.block-handle-menu {
+	min-width: 11rem;
+	max-height: 60vh;
+	overflow-y: auto;
+	padding: 0.25rem;
+	border-radius: var(--radius-base, 6px);
+	border: 1px solid var(--color-surface-300);
+	background: var(--color-surface-50);
+	box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+}
+[data-mode='dark'] .block-handle-menu {
+	border-color: var(--color-surface-700);
+	background: var(--color-surface-950);
+}
+.block-handle-menu-item {
+	display: block;
+	width: 100%;
+	padding: 0.3rem 0.55rem;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	text-align: left;
+	font-size: 0.875rem;
+	color: var(--color-surface-800);
+	cursor: pointer;
+}
+.block-handle-menu-item:hover {
+	background: var(--color-surface-200);
+}
+[data-mode='dark'] .block-handle-menu-item {
+	color: var(--color-surface-200);
+}
+[data-mode='dark'] .block-handle-menu-item:hover {
+	background: var(--color-surface-800);
+}
+
+/* first-line indent from the Tab toggle (data-indent). 'noindent' renders flush like 'auto', so it
+   gets a label in the left margin to tell the two apart. The block handle shares that margin, so it
+   drops a line for these paragraphs (see block-handle-plugin).
+
+   Abbreviated, and small, because the margin is 48px (EditorPane's px-12) and that is a hard
+   ceiling: on a narrow window the mx-auto centering collapses and there is nothing else. Spelt in
+   full at 0.8em the label wanted ~70px and got cut from the LEFT, so \noindent rendered as
+   "indent" - the one thing it must never say. max-width pins the failure direction: if it ever
+   doesn't fit, the tail goes, not the head. */
+.ProseMirror p[data-indent='indent'] {
+	text-indent: 1.5em;
+}
+.ProseMirror p[data-indent='noindent'] {
+	position: relative;
+}
+.ProseMirror p[data-indent='noindent']::before {
+	content: '\\noind';
+	position: absolute;
+	top: 0;
+	right: 100%;
+	margin-right: 0.4em;
+	max-width: 2.6rem;
+	overflow: hidden;
+	color: var(--color-surface-400);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 0.7em;
+	white-space: nowrap;
+	user-select: none;
+	pointer-events: none;
+}
+
+/* dark-mode scrollbars for the app's own scrollers; the PDF viewer (shadow DOM) and terminal style their own */
+[data-mode='dark'] ::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+[data-mode='dark'] ::-webkit-scrollbar-track {
+	background: transparent;
+}
+[data-mode='dark'] ::-webkit-scrollbar-thumb {
+	background-color: var(--color-surface-700);
+	border-radius: 5px;
+	border: 2px solid transparent;
+	background-clip: padding-box;
+}
+[data-mode='dark'] ::-webkit-scrollbar-thumb:hover {
+	background-color: var(--color-surface-600);
+}
+
+/* Custom title bar drag regions. Global rather than scoped per component, for two reasons: there is
+   no Tailwind utility for -webkit-app-region, and the class often has to land on a CHILD COMPONENT's
+   root (Menu.Trigger, the menu bar's nav) where a scoped rule would neither apply nor even survive -
+   Svelte prunes it as an unused selector. One definition, used by TitleBar / WorkspaceMenuBar.
+   Anything clickable inside a drag region needs app-no-drag, or the region swallows the click. */
+.app-drag {
+	-webkit-app-region: drag;
+}
+.app-no-drag {
+	-webkit-app-region: no-drag;
+}
+
+/* Aligning the app mark with the menu labels beside it, and ONLY in our own title bar - hence the
+   ancestor selector rather than a loose utility. Anywhere else the mark stands alone and should sit
+   exactly where its box puts it.
+
+   The mark is a square with two arms extending past its top-left corner. Typographically the SQUARE
+   is the letterform: in the wordmark its top edge sits on the cap line of "Texpile" and the arms rise
+   above it the way an ascender does. So next to text it is the square, not the icon's bounding box,
+   that has to line up with the cap height - centring the bounding box hangs the square a touch low
+   and pushes the arms up into the ascender space, which is what reads as "off".
+
+   The square's top edge is a STROKE, not a line: in the artwork it spans y=128.41 (outer, where the
+   arms rise from) to y=199.93 (inner, where the counter begins) of a 493.03 viewBox. The cap line
+   goes through the MIDDLE of that stroke, so the label's caps read as sitting on the square's top
+   border rather than above or below it.
+
+   Measured in a replica of the real row (32px tall, 16px mark, 14px labels): at -2px the stroke's
+   centre lands at 11.48px from the row top against a cap top of 11.50px. The neighbouring whole
+   pixels are both visibly wrong - -1px leaves the border a pixel low, -3px puts the cap line on the
+   stroke's inner edge instead of its middle. */
+.app-titlebar-icon {
+	transform: translateY(-2px);
+}
+
+/* Room at the end of the title bar for the window buttons Chromium draws (main.ts's
+   titleBarOverlay). The element is empty: this rule is the whole component.
+
+   Ask the overlay how wide it is rather than assuming, on BOTH platforms. env(titlebar-area-width)
+   is the DRAGGABLE span of the bar, so whatever the viewport has left over is precisely what the
+   buttons took.
+
+   Linux needs this because the button set is a user setting - GNOME ships close alone, other
+   desktops show three, and some put them on the left. Windows turned out to need it too: three
+   buttons are 138px only at 100% scaling, because Chromium rounds each one to whole PHYSICAL
+   pixels, so at 157.5% they measure 150 CSS px rather than 138. A constant cannot follow that, and
+   under-reserving slides the bar's own content under the buttons.
+
+   No --zoom-factor correction, and its absence is the point: env() reports CSS pixels and already
+   tracks both the display scale and setZoomFactor. A device-pixel constant would have needed the
+   division; a measurement does not.
+
+   The fallbacks are the disabled case. With no overlay, titlebar-area-width falls back to 100vw
+   and titlebar-area-x to 0, the calc is 0, and we reserve nothing - correct, because then nothing
+   is being drawn over us. */
+.app-window-controls {
+	width: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px));
+}
+/* thin always-present scrollbar on the toolbar: the macOS overlay scrollbar hides until you
+   scroll, which made off-screen toolbar icons look simply missing */
+/* Chrome bars scroll by wheel and trackpad, but never show a bar. A horizontal scrollbar inside a
+   fixed-height strip has to take its space from somewhere: the toolbar's content is min-h-9 in a
+   min-h-10 bar, so the 6px it used to claim did not fit and grew the whole bar by 2px, shoving the
+   editor down. The PDF toolbar has shorter controls, absorbed the same 6px in its own slack, and
+   did not move - which is the entire reason the two looked inconsistent. */
+.toolbar-hscroll {
+	scrollbar-width: none;
+}
+
+/* The "add comment" pill that floats in the source editor's left margin. Its geometry is set by
+   the CodeMirror extension; the colours are here because a baseTheme cannot branch on dark mode,
+   and this has to read as part of the app's chrome rather than as part of the document. */
+.cm-comment-add {
+	border: 1px solid var(--color-surface-300);
+	border-radius: 6px;
+	background-color: var(--color-surface-50);
+	color: var(--color-surface-700);
+	box-shadow: 0 2px 4px rgb(0 0 0 / 0.18);
+}
+.cm-comment-add:hover {
+	background-color: var(--color-surface-100);
+	color: var(--color-primary-600);
+}
+html[data-mode='dark'] .cm-comment-add {
+	border-color: var(--color-surface-700);
+	background-color: var(--color-surface-900);
+	color: var(--color-surface-200);
+	box-shadow: 0 2px 4px rgb(0 0 0 / 0.4);
+}
+html[data-mode='dark'] .cm-comment-add:hover {
+	background-color: var(--color-surface-800);
+	color: var(--color-primary-400);
+}
+
+/* Review-comment highlights in the visual editor: the same tints as the source editor's
+   .cm-comment (extensions/comments.ts baseTheme), so a thread looks like the same thread on
+   either side of a mode switch. */
+.TexpileEditor .pm-comment {
+	background-color: rgba(234, 179, 8, 0.14);
+}
+.TexpileEditor .pm-comment-focused {
+	background-color: rgba(234, 179, 8, 0.3);
+}
+
+/* Hold a scroll container's scrollbar 3px in from its right edge, for panes that sit against a
+   divider: the collapse lozenge straddles the rule and overhangs 3px into each side, and what lives
+   hard against a pane's inner edge is exactly its scrollbar. 3px is the whole overhang and not a
+   pixel more - the two end up flush, which is as close as they can be without overlapping again.
+   A transparent BORDER rather than margin or padding, because the border box keeps its full width -
+   so any border-top or border-bottom the same element draws still runs all the way to the divider.
+   Reserving space between the panes instead would have meant every horizontal rule that meets the
+   divider - tab strip, format toolbar, TOC split, terminal dock, PDF toolbar - reaching across a
+   gap, at heights that move with the view mode and the TOC fraction. */
+.scroll-inset-r {
+	border-right: 3px solid transparent;
+}
+/* CodeMirror builds its own DOM, so its scroller cannot be given the class in markup */
+.cm-scroller {
+	border-right: 3px solid transparent;
+}
+
+@theme {
+	--line-height-2: 0.5rem;
+
+	--color-dark: #0b2949;
+	--color-dark-4: #536c73;
+	--color-gray-1000: #ebf6ff;
+	--color-blue: #0088f7;
+	--color-gray-1100: #d0d4e9;
+	--color-gray-1200: #fbfbfb;
+	--color-gray-1300: #f4f4f4;
+
+	--shadow-3xl: 0px 4px 25px 0px rgba(0, 0, 0, 0.1);
+
+	--breakpoint-xs: 490px;
+	--breakpoint-sm: 576px;
+	--breakpoint-md: 768px;
+	--breakpoint-md2: 833px;
+	--breakpoint-lg: 992px;
+	--breakpoint-xl: 1200px;
+	--breakpoint-2xl: 1366px;
+	--breakpoint-3xl: 1600px;
+	--breakpoint-4xl: 1700px;
+
+	/* z-index scale, see styles/z-index-scale.md */
+	--z-index-sticky-header: 100;
+	--z-index-header: 101;
+	--z-index-floating-ui: 200;
+	--z-index-search: 200;
+	--z-index-dropdown: 210;
+	--z-index-tooltip: 220;
+	--z-index-dialog: 1000;
+	--z-index-modal: 1000;
+	--z-index-banner: 1100;
+	--z-index-overlay-critical: 1100;
+	--z-index-special-modal: 2000;
+	--z-index-template-picker: 2000;
+	--z-index-fullscreen-modal: 3000;
+	--z-index-pdf-viewer: 3000;
+
+	--gradient-box-bg: linear-gradient(113deg, rgba(0, 136, 247, 0.06) 0%, rgba(0, 214, 249, 0.06) 100%);
+	--gradient-card-bg: linear-gradient(113deg, #0088f7 0%, #00d6f9 100%);
+
+	--font-family-work-sans: 'Work Sans', sans-serif;
+}
+
+@utility bg-box-bg {
+	background-image: var(--gradient-box-bg);
+}
+
+@utility bg-card-bg {
+	background-image: var(--gradient-card-bg);
+}
+
+@utility font-Work-Sans {
+	font-family: var(--font-family-work-sans);
+}
+
+@utility z-sticky-header {
+	z-index: var(--z-index-sticky-header) !important;
+}
+
+@utility z-header {
+	z-index: var(--z-index-header) !important;
+}
+
+@utility z-floating-ui {
+	z-index: var(--z-index-floating-ui) !important;
+}
+
+@utility z-search {
+	z-index: var(--z-index-search) !important;
+}
+
+@utility z-dropdown {
+	z-index: var(--z-index-dropdown) !important;
+}
+
+@utility z-tooltip {
+	z-index: var(--z-index-tooltip) !important;
+}
+
+@utility z-dialog {
+	z-index: var(--z-index-dialog) !important;
+}
+
+@utility z-modal {
+	z-index: var(--z-index-modal) !important;
+}
+
+@utility z-banner {
+	z-index: var(--z-index-banner) !important;
+}
+
+@utility z-overlay-critical {
+	z-index: var(--z-index-overlay-critical) !important;
+}
+
+@utility z-special-modal {
+	z-index: var(--z-index-special-modal) !important;
+}
+
+@utility z-template-picker {
+	z-index: var(--z-index-template-picker) !important;
+}
+
+@utility z-fullscreen-modal {
+	z-index: var(--z-index-fullscreen-modal) !important;
+}
+
+@utility z-pdf-viewer {
+	z-index: var(--z-index-pdf-viewer) !important;
+}
+
+@keyframes dialog-fade-in {
+	0% {
+		opacity: 0;
+	}
+	100% {
+		opacity: 1;
+	}
+}
+
+@keyframes dialog-scale-in {
+	0% {
+		opacity: 0;
+		transform: scale(0.95);
+	}
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+@keyframes dialog-fade-out {
+	0% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+	}
+}
+
+@keyframes dialog-scale-out {
+	0% {
+		opacity: 1;
+		transform: scale(1);
+	}
+	100% {
+		opacity: 0;
+		transform: scale(0.95);
+	}
+}
+
+[data-scope='dialog'][data-part='backdrop'] {
+	animation: dialog-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-scope='dialog'][data-part='positioner'] > [data-part='content'] {
+	animation: dialog-scale-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* closing animations require JS to add data-state="closing" */
+[data-scope='dialog'][data-state='closing'][data-part='backdrop'] {
+	animation: dialog-fade-out 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-scope='dialog'][data-state='closing'][data-part='positioner'] > [data-part='content'] {
+	animation: dialog-scale-out 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.box-show .preview-box {
+	position: fixed;
+	right: -52%;
+}
+
+.box-show .w-100 {
+	width: 100%;
+}
+
+.button-blue {
+	@apply border-blue bg-blue hover:text-blue font-Work-Sans rounded border font-semibold text-white transition-all duration-500 ease-in-out hover:bg-transparent;
+}
+
+.button-white {
+	@apply text-blue border-blue hover:bg-blue font-Work-Sans rounded border font-semibold transition-all duration-500 ease-in-out hover:text-white;
+}
+.scroll::-webkit-scrollbar {
+	display: none;
+}
+
+.scroll {
+	-ms-overflow-style: none;
+	/* IE and Edge */
+	scrollbar-width: none;
+	/* Firefox */
+}
+
+.scroll2::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+
+.scroll2::-webkit-scrollbar-track {
+	background: #f1f1f1;
+}
+
+.scroll2::-webkit-scrollbar-thumb {
+	background: #888;
+}
+
+#cta-button-sidebar::-webkit-scrollbar {
+	display: none;
+}
+
+#cta-button-sidebar {
+	-ms-overflow-style: none; /* IE and Edge */
+	scrollbar-width: none; /* Firefox */
+}
+.sideBar {
+	transform: translateX(0);
+}
+.overlay {
+	height: 100vh;
+	overflow-y: hidden;
+}
+.overlay::after {
+	position: absolute;
+	content: '';
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background: linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3));
+	z-index: 1;
+}
+
+@media (max-width: 991px) {
+	.moble-box .preview-box {
+		right: 0;
+		z-index: 99999;
+	}
+
+	.preview-box {
+		overflow-y: auto;
+	}
+
+	.box-show .preview-box {
+		position: fixed;
+		right: -200%;
+	}
+}
+
+/* template blocks: data-style "style-1".."style-6", or semantic aliases (style-blue, style-green, ...) */
+.texpile-template-block {
+	padding: 16px;
+	margin: 24px 0;
+	border-radius: var(--radius-base, 6px);
+	position: relative;
+	border-left: 4px solid;
+}
+
+.texpile-template-block .template-block-content {
+	display: flow-root; /* contain floated images */
+}
+
+/* the label is rendered by the nodeview component */
+.texpile-template-block::before {
+	display: none;
+}
+
+.texpile-template-block[data-style='style-1'],
+.texpile-template-block[data-style='style-blue'] {
+	border-left-color: var(--color-primary-500);
+	background: color-mix(in srgb, var(--color-primary-500) 5%, transparent);
+}
+
+.texpile-template-block[data-style='style-1'] .template-block-label,
+.texpile-template-block[data-style='style-blue'] .template-block-label {
+	color: var(--color-primary-600);
+}
+
+.texpile-template-block[data-style='style-1']:hover,
+.texpile-template-block[data-style='style-blue']:hover {
+	background: color-mix(in srgb, var(--color-primary-500) 8%, transparent);
+}
+
+.texpile-template-block[data-style='style-2'],
+.texpile-template-block[data-style='style-green'] {
+	border-left-color: var(--color-success-500);
+	background: color-mix(in srgb, var(--color-success-500) 5%, transparent);
+}
+
+.texpile-template-block[data-style='style-2'] .template-block-label,
+.texpile-template-block[data-style='style-green'] .template-block-label {
+	color: var(--color-success-600);
+}
+
+.texpile-template-block[data-style='style-2']:hover,
+.texpile-template-block[data-style='style-green']:hover {
+	background: color-mix(in srgb, var(--color-success-500) 8%, transparent);
+}
+
+.texpile-template-block[data-style='style-3'],
+.texpile-template-block[data-style='style-cyan'] {
+	border-left-color: var(--color-secondary-500);
+	background: color-mix(in srgb, var(--color-secondary-500) 5%, transparent);
+}
+
+.texpile-template-block[data-style='style-3'] .template-block-label,
+.texpile-template-block[data-style='style-cyan'] .template-block-label {
+	color: var(--color-secondary-600);
+}
+
+.texpile-template-block[data-style='style-3']:hover,
+.texpile-template-block[data-style='style-cyan']:hover {
+	background: color-mix(in srgb, var(--color-secondary-500) 8%, transparent);
+}
+
+.texpile-template-block[data-style='style-4'],
+.texpile-template-block[data-style='style-yellow'] {
+	border-left-color: var(--color-warning-500);
+	background: color-mix(in srgb, var(--color-warning-500) 5%, transparent);
+}
+
+.texpile-template-block[data-style='style-4'] .template-block-label,
+.texpile-template-block[data-style='style-yellow'] .template-block-label {
+	color: var(--color-warning-600);
+}
+
+.texpile-template-block[data-style='style-4']:hover,
+.texpile-template-block[data-style='style-yellow']:hover {
+	background: color-mix(in srgb, var(--color-warning-500) 8%, transparent);
+}
+
+.texpile-template-block[data-style='style-5'],
+.texpile-template-block[data-style='style-gray'] {
+	border-left-color: var(--color-tertiary-500);
+	background: color-mix(in srgb, var(--color-tertiary-500) 5%, transparent);
+}
+
+.texpile-template-block[data-style='style-5'] .template-block-label,
+.texpile-template-block[data-style='style-gray'] .template-block-label {
+	color: var(--color-tertiary-600);
+}
+
+.texpile-template-block[data-style='style-5']:hover,
+.texpile-template-block[data-style='style-gray']:hover {
+	background: color-mix(in srgb, var(--color-tertiary-500) 8%, transparent);
+}
+
+.texpile-template-block[data-style='style-6'],
+.texpile-template-block[data-style='style-red'] {
+	border-left-color: var(--color-error-500);
+	background: color-mix(in srgb, var(--color-error-500) 5%, transparent);
+}
+
+.texpile-template-block[data-style='style-6'] .template-block-label,
+.texpile-template-block[data-style='style-red'] .template-block-label {
+	color: var(--color-error-600);
+}
+
+.texpile-template-block[data-style='style-6']:hover,
+.texpile-template-block[data-style='style-red']:hover {
+	background: color-mix(in srgb, var(--color-error-500) 8%, transparent);
+}
+
+.texpile-template-block[data-orphaned='true'] {
+	border-left-color: var(--color-warning-500);
+	background: color-mix(in srgb, var(--color-warning-500) 8%, transparent);
+}
+
+.texpile-template-block[data-orphaned='true'] .template-block-label {
+	color: var(--color-warning-700);
+}
+
+.template-block-warning {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 12px;
+	margin-bottom: 12px;
+	background: color-mix(in srgb, var(--color-warning-500) 15%, transparent);
+	border: 1px solid var(--color-warning-500);
+	border-radius: var(--radius-base, 6px);
+	color: var(--color-warning-700);
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.template-block-warning .warning-icon {
+	flex-shrink: 0;
+	color: var(--color-warning-600);
+}
+
+.texpile-template-block[data-orphaned='true']::before {
+	color: var(--color-warning-700);
+}
+
+/* orphaned message; the template-loading state below overrides it */
+.texpile-template-block[data-orphaned='true']::after {
+	content: 'This feature is not supported in this template';
+	display: block;
+	font-size: 11px;
+	color: var(--color-warning-700);
+	font-weight: 500;
+	margin-top: -8px;
+	margin-bottom: 8px;
+	padding: 4px 8px;
+	background: color-mix(in srgb, var(--color-warning-500) 15%, transparent);
+	border-radius: var(--radius-base, 4px);
+	width: fit-content;
+}
+
+/* during template load, show "Loading..." instead of the orphaned warning */
+.ProseMirror[data-template-loading='true'] .texpile-template-block[data-orphaned='true'] {
+	border-left-color: var(--color-surface-400);
+	background: color-mix(in srgb, var(--color-surface-400) 5%, transparent);
+}
+
+.ProseMirror[data-template-loading='true'] .texpile-template-block[data-orphaned='true']::before {
+	color: var(--color-surface-500);
+}
+
+.ProseMirror[data-template-loading='true'] .texpile-template-block[data-orphaned='true']::after {
+	content: 'Loading template...';
+	color: var(--color-surface-500);
+	background: color-mix(in srgb, var(--color-surface-400) 10%, transparent);
+}
+
+/* duplicate block (allowMultiple: false) */
+.texpile-template-block[data-duplicate='true'] {
+	border-left-color: var(--color-error-500);
+	background: color-mix(in srgb, var(--color-error-500) 8%, transparent);
+}
+
+.texpile-template-block[data-duplicate='true']::before {
+	color: var(--color-error-700);
+}
+
+.texpile-template-block[data-duplicate='true']::after {
+	content: 'Duplicate section (only one allowed)';
+	display: block;
+	font-size: 11px;
+	color: var(--color-error-700);
+	font-weight: 500;
+	margin-top: -8px;
+	margin-bottom: 8px;
+	padding: 4px 8px;
+	background: color-mix(in srgb, var(--color-error-500) 15%, transparent);
+	border-radius: var(--radius-base, 4px);
+	width: fit-content;
+}
+
+/* heading section numbers via CSS counters, toggled by [data-show-section-numbers] */
+.ProseMirror[data-show-section-numbers='true'] {
+	counter-reset: h1;
+}
+
+.ProseMirror[data-show-section-numbers='true'] h1 {
+	counter-increment: h1;
+	counter-reset: h2;
+}
+
+.ProseMirror[data-show-section-numbers='true'] h2 {
+	counter-increment: h2;
+	counter-reset: h3;
+}
+
+.ProseMirror[data-show-section-numbers='true'] h3 {
+	counter-increment: h3;
+	counter-reset: h4;
+}
+
+.ProseMirror[data-show-section-numbers='true'] h4 {
+	counter-increment: h4;
+	counter-reset: h5;
+}
+
+.ProseMirror[data-show-section-numbers='true'] h5 {
+	counter-increment: h5;
+}
+
+.ProseMirror[data-show-section-numbers='true'] h1::before {
+	content: counter(h1) '. ';
+	color: var(--color-surface-700);
+	font-weight: 700;
+	margin-right: 0.5em;
+	user-select: none;
+}
+
+.ProseMirror[data-show-section-numbers='true'] h2::before {
+	content: counter(h1) '.' counter(h2) '. ';
+	color: var(--color-surface-600);
+	font-weight: 600;
+	margin-right: 0.5em;
+	user-select: none;
+}
+
+.ProseMirror[data-show-section-numbers='true'] h3::before {
+	content: counter(h1) '.' counter(h2) '.' counter(h3) '. ';
+	color: var(--color-surface-600);
+	font-weight: 600;
+	margin-right: 0.5em;
+	user-select: none;
+}
+
+.ProseMirror[data-show-section-numbers='true'] h4::before {
+	content: counter(h1) '.' counter(h2) '.' counter(h3) '.' counter(h4) '. ';
+	color: var(--color-surface-500);
+	font-weight: 500;
+	margin-right: 0.5em;
+	user-select: none;
+}
+
+.ProseMirror[data-show-section-numbers='true'] h5::before {
+	content: counter(h1) '.' counter(h2) '.' counter(h3) '.' counter(h4) '.' counter(h5) '. ';
+	color: var(--color-surface-500);
+	font-weight: 500;
+	margin-right: 0.4em;
+	user-select: none;
+}
+
+/* unnumbered headings (\section*) show no number and, like LaTeX, don't advance the counters */
+.ProseMirror[data-show-section-numbers='true'] h1[data-unnumbered='true'],
+.ProseMirror[data-show-section-numbers='true'] h2[data-unnumbered='true'],
+.ProseMirror[data-show-section-numbers='true'] h3[data-unnumbered='true'] {
+	counter-increment: none;
+	counter-reset: none;
+}
+.ProseMirror[data-show-section-numbers='true'] h1[data-unnumbered='true']::before,
+.ProseMirror[data-show-section-numbers='true'] h2[data-unnumbered='true']::before,
+.ProseMirror[data-show-section-numbers='true'] h3[data-unnumbered='true']::before {
+	content: none;
+}
+
+/* figure counter: only numbered images with a non-empty label count */
+.ProseMirror
+	.imagePluginRoot[imageplugin-label]:not([imageplugin-label='']):not([imageplugin-label='null']):not([imageplugin-numbered='false']) {
+	counter-increment: figure;
+}
+
+/* "Figure X: " caption prefix, numbered images only */
+.ProseMirror
+	.imagePluginRoot[imageplugin-label]:not([imageplugin-label='']):not([imageplugin-label='null']):not([imageplugin-numbered='false'])
+	.text::before {
+	content: 'Figure ' counter(figure) ': ';
+	font-weight: 600;
+	color: var(--color-surface-700);
+	margin-right: 0.25em;
+}
+
+/* follow the app toggle (data-mode), not the OS preference */
+[data-mode='dark']
+	.ProseMirror
+	.imagePluginRoot[imageplugin-label]:not([imageplugin-label='']):not([imageplugin-label='null']):not([imageplugin-numbered='false'])
+	.text::before {
+	color: var(--color-surface-300);
+}
+
+.ProseMirror .imagePluginRoot[imageplugin-showCaption='false'] .text {
+	display: none;
+}
+
+/* figure counter root; equation numbering itself is handled by JS */
+.ProseMirror {
+	counter-reset: figure;
+}
+
+/* "(X)" to the right of single-line equations, from data-equation-number */
+.ProseMirror
+	.block-math-container[data-numbered='true'][data-label]:not([data-label='']):not([data-label='null']):not([data-environment])::after,
+.ProseMirror
+	.block-math-container[data-numbered='true'][data-label]:not([data-label='']):not([data-label='null'])[data-environment='']::after,
+.ProseMirror .block-math-container[data-numbered='true'][data-equation-number][data-environment='multline']::after {
+	content: '(' attr(data-equation-number) ')';
+	position: absolute;
+	right: 1rem;
+	top: 50%;
+	transform: translateY(-50%);
+	font-weight: 500;
+	color: var(--color-surface-600);
+	user-select: none;
+	pointer-events: none;
+}
+
+/* per-line environments (align, gather) are numbered by JS; multline keeps the single ::after */
+.ProseMirror .block-math-container[data-environment]:not([data-environment='']):not([data-environment='multline'])::after {
+	display: none;
+}
+
+.ProseMirror .block-math-container .equation-numbers {
+	position: absolute;
+	right: 1rem;
+	top: 50%;
+	transform: translateY(-50%);
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 0.5rem;
+	pointer-events: none;
+	user-select: none;
+}
+
+.ProseMirror .block-math-container .equation-number-line {
+	font-weight: 500;
+	color: var(--color-surface-600);
+	font-size: 0.95em;
+}
+
+/* inline chips for unknown/unhandled macros */
+.ProseMirror code.inline-latex {
+	font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+	font-size: 0.9em;
+	padding: 0.1em 0.3em;
+	margin: 0 0.1em;
+	border-radius: 3px;
+	background-color: color-mix(in srgb, var(--color-surface-500) 10%, transparent);
+	color: var(--color-surface-700);
+	border: 1px solid var(--color-surface-300);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+[data-mode='dark'] .ProseMirror code.inline-latex {
+	background-color: color-mix(in srgb, var(--color-surface-400) 15%, transparent);
+	color: var(--color-surface-300);
+	border-color: var(--color-surface-600);
+}
+
+/* generic editable LaTeX environment block; the env name lives in the node-view header, so no ::before badge */
+.tex-environment {
+	position: relative;
+	border: 1px solid var(--color-surface-300-700, #d4d4d8);
+	border-radius: var(--radius-base, 0.25rem);
+	padding: 0.5rem 0.75rem;
+	margin: 0.75rem 0;
+}
+.tex-environment-body > :last-child {
+	margin-bottom: 0;
+}
+
+/* persistent caret/selection while the editor is blurred (persistentSelectionPlugin). the anchor
+   is zero-width inline so it never nudges layout; the caret is an out-of-flow pseudo-element. */
+.pm-blur-cursor {
+	position: relative;
+	display: inline;
+	pointer-events: none;
+}
+.pm-blur-cursor::before {
+	content: '';
+	position: absolute;
+	left: 0;
+	top: 50%;
+	height: 1.1em;
+	width: 1px;
+	transform: translateY(-50%);
+	background-color: currentColor; /* text-coloured 1px, like a native Chromium caret */
+	animation: pm-caret-blink 1.06s step-end infinite;
+}
+@keyframes pm-caret-blink {
+	0%,
+	49.9% {
+		opacity: 1;
+	}
+	50%,
+	100% {
+		opacity: 0;
+	}
+}
+.pm-blur-selection {
+	/* the same colour a live selection has, so blurring for a menu doesn't visibly recolour it */
+	background-color: var(--editor-selection);
+}
+
+/* \title/\author/\date rendered as in-place editable fields (frontmatterView.ts) */
+.frontmatter-block {
+	margin: 0.75rem 0;
+}
+.frontmatter-input {
+	width: 100%;
+	border: none;
+	background: transparent;
+	outline: none;
+	font: inherit;
+	color: inherit;
+	padding: 0.1rem 0.25rem;
+	border-radius: var(--radius-base, 4px);
+}
+.frontmatter-input:hover,
+.frontmatter-input:focus {
+	background: color-mix(in srgb, var(--color-surface-500) 8%, transparent);
+}
+.frontmatter-title .frontmatter-input {
+	text-align: center;
+	font-size: 1.6rem;
+	font-weight: 700;
+	line-height: 1.25;
+}
+.frontmatter-author .frontmatter-input,
+.frontmatter-date .frontmatter-input {
+	text-align: center;
+}
+.frontmatter-label {
+	display: block;
+	text-align: center;
+	font-size: 0.7rem;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--color-surface-500);
+	margin-bottom: 2px;
+}
+
+/* structural placeholder commands (\maketitle, \tableofcontents, ...) rendered as a subtle selectable marker */
+.latex-placeholder {
+	text-align: center;
+	font-size: 0.7rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--color-surface-400);
+	user-select: none;
+	cursor: pointer;
+	padding: 0.2rem 0;
+	margin: 0.5rem 0;
+	border-radius: var(--radius-base, 4px);
+}
+.latex-placeholder:hover {
+	color: var(--color-surface-500);
+}
+.latex-placeholder-selected {
+	outline: 2px solid var(--color-primary-500);
+	color: var(--color-primary-500);
+}
+
+/* inline placeholder (e.g. \today): the dotted underline hints it's a resolved command, not typed text */
+.latex-placeholder-inline {
+	user-select: none;
+	cursor: pointer;
+	border-bottom: 1px dotted var(--color-surface-400);
+}
+.latex-placeholder-inline:hover {
+	background: color-mix(in srgb, var(--color-primary-500) 12%, transparent);
+}
+.latex-placeholder-inline.latex-placeholder-selected {
+	border-radius: var(--radius-base, 4px);
+	outline-offset: 1px;
+}
+
+/* missing image source: bundled placeholder with a clear marker (imageNodeView.ts) */
+.image-not-found {
+	outline: 2px dashed var(--color-error-500);
+	outline-offset: 2px;
+	opacity: 0.7;
+	max-width: 240px;
+	height: auto !important;
+	width: auto !important;
+}
+
+/* math preview tooltip: structure lives in the extension's baseTheme, only surface colors
+   here so they follow the app mode */
+.cm-tooltip.cm-math-preview {
+	background-color: var(--color-surface-50);
+	border: 1px solid var(--color-surface-300);
+	color: var(--color-surface-950);
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+[data-mode='dark'] .cm-tooltip.cm-math-preview {
+	background-color: var(--color-surface-900);
+	border-color: var(--color-surface-700);
+	color: var(--color-surface-50);
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+/* synctex inverse-search flash. amber matches the PDF forward-search highlight;
+   duration tracks FLASH_MS in synctexFlash.ts. */
+@keyframes synctex-flash {
+	from {
+		background-color: rgba(255, 196, 0, 0.5);
+	}
+	to {
+		background-color: transparent;
+	}
+}
+.cm-synctex-flash {
+	animation: synctex-flash 1.4s ease-out;
+}
+/* mode-switch scroll-sync flash, same amber so both flashes read as one feature */
+.mode-sync-flash {
+	animation: synctex-flash 1.4s ease-out;
+	border-radius: 4px;
+}
+
+/* svelte-pdf-view exposes --pdf-* hooks with light defaults; set them so the viewer chrome follows
+   the app mode. page canvases are inverted by the darkMode prop (PDFViewer.svelte). */
+[data-mode='dark'] .pdf-viewer-container {
+	--pdf-viewer-bg: var(--color-surface-950);
+	--pdf-toolbar-bg: var(--color-surface-900);
+	--pdf-toolbar-fg: var(--color-surface-100);
+	--pdf-toolbar-border: var(--color-surface-700);
+	--pdf-toolbar-btn-bg: var(--color-surface-800);
+	--pdf-toolbar-btn-border: var(--color-surface-700);
+	--pdf-toolbar-btn-fg: var(--color-surface-200);
+	--pdf-toolbar-btn-hover-bg: var(--color-surface-700);
+	--pdf-toolbar-btn-hover-border: var(--color-surface-600);
+	--pdf-toolbar-btn-active-bg: var(--color-surface-600);
+	--pdf-toolbar-input-bg: var(--color-surface-800);
+	--pdf-toolbar-input-border: var(--color-surface-700);
+	--pdf-toolbar-accent: var(--color-primary-500);
+	--pdf-toolbar-accent-ring: color-mix(in srgb, var(--color-primary-500) 25%, transparent);
+	--pdf-toolbar-muted: var(--color-surface-400);
+}
