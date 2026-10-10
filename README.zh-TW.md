@@ -48,10 +48,18 @@ npx --offline --yes --ignore-scripts --package .\modutex-desktop-0.1.0.tgz -- mo
 
 ```powershell
 npm ci
-npm run electron:dev
+npm run electron:dev:frontend
 ```
 
-建置正式應用程式或執行驗證套件：
+此指令會在 Electron 開啟新版工作台，前端開發伺服器使用 5174 埠。若要建置並從本機靜態檔案開啟新版工作台：
+
+```powershell
+npm run electron:frontend
+```
+
+新版工作台仍在開發中，與已發行的 0.1.0 套件不同。`npm run electron:dev` 會開啟 5173 埠的舊版編輯器；切換啟動模式前，先在目前的啟動終端按 `Ctrl+C`。驗收結果與限制請見[新版前端與 Electron 整合](docs/architecture/FRONTEND_ELECTRON_INTEGRATION.md)。
+
+建置舊版正式應用程式或執行其驗證套件：
 
 ```powershell
 npm run app:build
@@ -62,9 +70,9 @@ npm run verify:modutex
 
 ## 文件
 
-- [安裝與編譯器設定](docs/INSTALLATION.md)
+- [安裝與編譯器設定](docs/user/INSTALLATION.md)
 - [版本紀錄](CHANGELOG.md)
-- [已知限制](docs/KNOWN_LIMITATIONS.md)
+- [已知限制](docs/user/KNOWN_LIMITATIONS.md)
 - [授權與第三方元件](LICENSING.md)
 
 Draw.io、Mermaid、視覺章節折疊與簽章安裝程式不在 0.1.0 功能範圍內。表格目前的行為限制與平台條件請見已知限制。

@@ -48,10 +48,18 @@ Run these commands from the repository root:
 
 ```powershell
 npm ci
-npm run electron:dev
+npm run electron:dev:frontend
 ```
 
-Build the production app or run the verification suite:
+This opens the new workbench in Electron with the frontend development server on port 5174. To build and open the new workbench from local static files:
+
+```powershell
+npm run electron:frontend
+```
+
+The new workbench is under development and is not the published 0.1.0 package. `npm run electron:dev` opens the legacy editor on port 5173. Stop the current development process with `Ctrl+C` before switching launch modes. See [Frontend and Electron integration](docs/architecture/FRONTEND_ELECTRON_INTEGRATION.md) for validation details and limitations.
+
+Build the legacy production app or run its verification suite:
 
 ```powershell
 npm run app:build
@@ -62,9 +70,9 @@ The project uses Electron, Svelte, and TypeScript. Dependencies are pinned in `p
 
 ## Documentation
 
-- [Installation and compiler setup](docs/INSTALLATION.md)
+- [Installation and compiler setup](docs/user/INSTALLATION.md)
 - [Changelog](CHANGELOG.md)
-- [Known limitations](docs/KNOWN_LIMITATIONS.md)
+- [Known limitations](docs/user/KNOWN_LIMITATIONS.md)
 - [Licensing and third-party components](LICENSING.md)
 
 Draw.io, Mermaid, visual section folding, and signed installers are outside the 0.1.0 feature scope. See the known limitations for current table behavior and platform constraints.
