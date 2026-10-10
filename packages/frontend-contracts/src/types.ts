@@ -46,6 +46,12 @@ export interface SaveAsReceipt {
 export interface FileEvent extends FileRef {
 	readonly kind: 'changed' | 'removed';
 }
+export type FileWatchFailure =
+	| 'TREE_TOO_DEEP'
+	| 'TREE_TOO_LARGE'
+	| 'STALE_WORKSPACE'
+	| 'LINK_NOT_ALLOWED'
+	| 'FILE_OPERATION_FAILED';
 export interface CompileIdentity {
 	readonly runId: string;
 	readonly workspaceId: string;
@@ -94,7 +100,11 @@ export interface DesktopPort {
 	readFile(file: FileRef): Promise<ReadReceipt>;
 	writeFile(request: WriteRequest): Promise<WriteReceipt>;
 	saveAs(request: SaveAsRequest): Promise<SaveAsReceipt | null>;
-	watchFiles(workspaceId: string, listener: (event: FileEvent) => void): Promise<Unsubscribe>;
+	watchFiles(
+		workspaceId: string,
+		listener: (event: FileEvent) => void,
+		onError?: (failure: FileWatchFailure) => void
+	): Promise<Unsubscribe>;
 	compile(request: CompileRequest): Promise<CompileHandle>;
 	closeWorkspace(workspaceId: string): Promise<void>;
 }

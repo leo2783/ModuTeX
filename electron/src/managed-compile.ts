@@ -207,7 +207,12 @@ export function createManagedCompileService(host: ManagedCompileHost) {
 	const cancelOwner = (senderId: number) => {
 		operations.get(senderId)?.controller.abort();
 	};
-	const run = async (event: unknown, senderId: number, payload: unknown): Promise<ManagedCompileResult> => {
+	const run = async (
+		event: unknown,
+		senderId: number,
+		payload: unknown,
+		validateBeforePublish?: () => void | Promise<void>
+	): Promise<ManagedCompileResult> => {
 		let stage: string | undefined;
 		let output = '';
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -274,6 +279,11 @@ export function createManagedCompileService(host: ManagedCompileHost) {
 			current();
 			const files = [`${stem}.log`, `${stem}.synctex.gz`, `${stem}.pdf`];
 			await writeFile(path.join(stage, `${stem}.log`), log, 'utf8');
+			// Optional main-process gate runs while outputs are still only in this run's
+			// private stage. A failed or cancelled gate therefore cannot replace prior output.
+			current();
+			if (validateBeforePublish) await Promise.resolve(validateBeforePublish());
+			current();
 			const published: { destination: string; backup?: string }[] = [];
 			try {
 				for (const filename of files) {
@@ -317,6 +327,8 @@ export function createManagedCompileService(host: ManagedCompileHost) {
 					? error.code
 					: error instanceof Error && error.message === 'UNTRUSTED_SENDER'
 						? 'UNTRUSTED_SENDER'
+						: error instanceof Error && error.message === 'CANCELLED'
+							? 'CANCELLED'
 						: error instanceof Error && error.message === 'STALE_WORKSPACE'
 							? 'STALE_WORKSPACE'
 							: 'PUBLICATION_FAILED';
