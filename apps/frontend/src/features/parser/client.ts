@@ -20,7 +20,6 @@ export class ParserClient {
 	private sequence = 0;
 	private inFlight = 0;
 	private stopped = false;
-	private timer: ReturnType<typeof setTimeout> | undefined;
 	private deadline: ReturnType<typeof setTimeout> | undefined;
 	private readonly responseTimeoutMs: number;
 	constructor(worker: ParserTransport, initial: SourceDocument, publish: (projection: SourceProjection) => void, failed: () => void,
@@ -35,8 +34,10 @@ export class ParserClient {
 	update(previous: SourceDocument, next: SourceDocument, patches: readonly SourcePatch[] | null): void {
 		if (this.stopped) return;
 		this.latest = next;
-		clearTimeout(this.timer); this.parse = false;
-		this.timer = setTimeout(() => { this.parse = true; this.flush(); }, 120);
+		// Parse as soon as the worker has consumed the pending source changes.
+		// One in-flight request already provides backpressure; a second debounce
+		// needlessly leaves the visible editor waiting after each interaction.
+		this.parse = true;
 		const units = patches?.reduce((sum, patch) => sum + patch.insert.length, 0) ?? 0;
 		if (!patches || patches.length > 256 || this.queue.length >= 64 || this.queuedUnits + units > 5 * 1024 * 1024) {
 			this.reset = true; this.queue = []; this.queuedUnits = 0;
@@ -84,8 +85,8 @@ export class ParserClient {
 	}
 	dispose(): void {
 		if (this.stopped) return;
-		this.stopped = true; clearTimeout(this.timer); clearTimeout(this.deadline);
-		this.timer = undefined; this.deadline = undefined; this.inFlight = 0;
+		this.stopped = true; clearTimeout(this.deadline);
+		this.deadline = undefined; this.inFlight = 0;
 		this.queue = []; this.queuedUnits = 0;
 		this.worker.onmessage = null; this.worker.onerror = null; this.worker.terminate();
 	}

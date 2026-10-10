@@ -111,7 +111,15 @@ function cleanup(): void {
 }
 
 function installBrowserGlobals(win: DOMWindow): void {
+	// JSDOM has no font loader; rendering and font geometry are checked in Chrome.
+	Object.defineProperty(win.document, 'fonts', { configurable: true, value: { ready: Promise.resolve(), add() {} } });
+	// Layout observation is unavailable in JSDOM; geometry is accepted only in
+	// the real Chrome test. This shim enables the actual library lifecycle.
+	Object.defineProperty(win, 'ResizeObserver', { configurable: true, value: class {
+		observe() {} unobserve() {} disconnect() {}
+	} });
 	const explicitDomKeys = [
+		'ResizeObserver',
 		'window',
 		'document',
 		'navigator',
@@ -120,6 +128,7 @@ function installBrowserGlobals(win: DOMWindow): void {
 		'Element',
 		'HTMLElement',
 		'HTMLMediaElement',
+		'getComputedStyle',
 		'Document',
 		'DocumentFragment',
 		'Text',
@@ -127,6 +136,8 @@ function installBrowserGlobals(win: DOMWindow): void {
 		'CharacterData',
 		'Attr',
 		'HTMLInputElement',
+		'AbortController',
+		'AbortSignal',
 		'HTMLSelectElement',
 		'HTMLOptionElement',
 		'HTMLButtonElement',
@@ -244,7 +255,7 @@ function assertLocalizedLabels(panel: HTMLElement, locale: Locale): void {
 	assert.ok(bracketSelect);
 	assert.deepEqual(
 		Array.from(bracketSelect.options, (option) => option.textContent?.trim()),
-		english ? ['Parentheses', 'Square brackets', 'None'] : ['圓括號', '方括號', '無括號']
+		english ? ['Parentheses', 'Square brackets', 'Braces', 'Single bars', 'Double bars', 'None'] : ['圓括號', '方括號', '大括號', '單直線', '雙直線', '無括號']
 	);
 	assert.equal(panel.querySelector('.inline-option')?.textContent?.trim(), english ? 'Inline equation' : '行內公式');
 	assert.equal(
@@ -854,6 +865,17 @@ test(
 			setNumber(2, '3');
 			const matrixCells = [String.raw`\alpha`, 'x_1', '', ' spaced ', String.raw`\frac{1}{2}`, ''];
 			for (const [index, value] of matrixCells.entries()) setCell(index, value);
+			const immediateMatrix = api.equationSource(
+				api.matrixSource({ rows: 2, columns: 3, cells: matrixCells }, 'parentheses'),
+				false
+			);
+			primary()?.click();
+			api.flushSync();
+			assert.deepEqual(
+				insertions,
+				[api.equationSource(String.raw`\beta`, false), immediateMatrix],
+				'A matrix cell input must be insertable immediately without a key event'
+			);
 			const brackets = panel.querySelector<HTMLSelectElement>('.dimensions select');
 			assert.ok(brackets);
 			brackets.value = 'square';
@@ -886,15 +908,34 @@ test(
 			assert.equal(numbers()[2]?.value, '3');
 			assert.equal(brackets.value, 'square');
 			assert.equal(inline()?.checked, true);
+			const headerClose = panel.querySelector<HTMLButtonElement>('.panel-header button');
+			assert.ok(headerClose);
+			headerClose.click();
+			api.flushSync();
+			assert.equal(closeCalls, 2);
+			assert.equal(primary()?.disabled, true);
+			const beforeClosedInsert = insertions.length;
+			primary()?.click();
+			api.flushSync();
+			assert.equal(insertions.length, beforeClosedInsert);
+			controls.setActive(true);
+			await settle();
+			assert.equal(numbers()[1]?.value, '2');
+			assert.equal(numbers()[2]?.value, '3');
+			assert.deepEqual(cells().map((input) => input.value), matrixCells);
+			assert.equal(brackets.value, 'square');
+			assert.equal(inline()?.checked, true);
 			primary()?.click();
 			api.flushSync();
 			assert.deepEqual(insertions, [
 				api.equationSource(String.raw`\beta`, false),
+				immediateMatrix,
 				expectedMatrix
 			], 'The live insert handler must publish the actual matrix serializer output');
 
 			controls.setSessionKey('matrix:third');
 			await settle();
+			assert.equal(numbers()[0]?.value, '3');
 			assert.equal(numbers()[1]?.value, '3');
 			assert.equal(numbers()[2]?.value, '3');
 			assert.deepEqual(cells().map((input) => input.value), Array(9).fill(''));

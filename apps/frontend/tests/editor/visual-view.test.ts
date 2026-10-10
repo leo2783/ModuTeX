@@ -677,11 +677,10 @@ test('source-span block insertion preserves neighbors, renders inserted blocks, 
 		visual.sync(parseSource(original));
 		assert.equal(visualTarget.querySelector('h2.source-block')?.textContent, 'First heading');
 		assert.ok(visualTarget.querySelector('.visual-math:not(.visual-math-inline)'));
-		assert.equal(visualTarget.querySelector('.visual-math-content')?.textContent, '正在載入公式…');
+		assert.ok(visualTarget.querySelector('.visual-math-content'), 'inserted equation has its renderer host; actual MathLive rendering is covered in Chrome');
 		assert.equal(visualTarget.querySelectorAll('.visual-table table').length, 1);
 
-		// AGY's between-block control API is not available yet. Exercise the real
-		// CodeMirror/VisualEditor source-span path without assuming a future button API.
+		// Exercise source-span insertion independently of notebook controls.
 		const pointFor = (
 			source: SourceDocument,
 			type: string,

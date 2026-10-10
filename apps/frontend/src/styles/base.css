@@ -294,3 +294,167 @@ button.primary {
 		display: none;
 	}
 }
+
+/* Notebook cell controls share the workbench palette. */
+
+			.notebook-cell {
+				position: relative;
+				border: 1px solid transparent;
+				border-radius: 6px;
+				padding: 4px 8px;
+				margin: 4px 0;
+				transition: border-color 0.15s ease, box-shadow 0.15s ease;
+			}
+			.notebook-cell:hover {
+				border-color: var(--line, #cdd2d7);
+			}
+			.notebook-cell.is-selected {
+				border-color: var(--accent, #3d617b);
+				box-shadow: 0 0 0 1px var(--accent, #3d617b);
+				background: var(--surface, #fff);
+			}
+			.visual-cell-toolbar {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				padding: 4px 8px;
+				margin: 0;
+				background: var(--canvas, #f4f3ef);
+				border: 1px solid var(--line, #cdd2d7);
+				border-radius: 4px;
+				font-size: 12px;
+				user-select: none;
+			}
+			.cell-toolbar-group {
+				display: flex;
+				align-items: center;
+				gap: 4px;
+			}
+			.cell-badge {
+				font-weight: 600;
+				color: var(--muted, #5d6670);
+				padding: 2px 6px;
+				background: var(--surface, #fff);
+				border: 1px solid var(--line, #cdd2d7);
+				border-radius: 3px;
+				font-size: 11px;
+			}
+			.cell-tool-btn {
+				min-height: 24px;
+				padding: 2px 8px;
+				font-size: 12px;
+				border-radius: 3px;
+				border: 1px solid var(--line, #cdd2d7);
+				background: var(--surface, #fff);
+				color: var(--ink, #24292e);
+				cursor: pointer;
+			}
+			.cell-tool-btn:hover:not(:disabled) {
+				background: var(--selection, #e3ebf1);
+				border-color: var(--accent, #3d617b);
+				color: var(--accent, #3d617b);
+			}
+			.cell-tool-btn:disabled {
+				opacity: 0.45;
+				cursor: not-allowed;
+			}
+			.cell-delete-btn:hover:not(:disabled) {
+				color: var(--error, #a33232);
+				border-color: var(--error, #a33232);
+			}
+			.cell-insert-wrap {
+				position: relative;
+				display: inline-block;
+			}
+			.cell-insert-menu {
+				display: none;
+				position: absolute;
+				top: 100%;
+				left: 0;
+				z-index: 10;
+				background: var(--surface, #fff);
+				border: 1px solid var(--line, #cdd2d7);
+				border-radius: 4px;
+				box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+				padding: 4px;
+				gap: 4px;
+				flex-direction: column;
+				min-width: 80px;
+			}
+			.cell-insert-wrap.open .cell-insert-menu {
+				display: flex;
+			}
+			.cell-menu-btn {
+				min-height: 24px;
+				padding: 2px 8px;
+				font-size: 12px;
+				text-align: left;
+				border: none;
+				background: transparent;
+				color: var(--ink, #24292e);
+				cursor: pointer;
+				border-radius: 2px;
+			}
+			.cell-menu-btn:hover:not(:disabled) {
+				background: var(--selection, #e3ebf1);
+				color: var(--accent, #3d617b);
+			}
+			.visual-cell-boundary {
+				position: relative;
+				height: 20px;
+				margin: 0;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				z-index: 2;
+				user-select: none;
+			}
+			.visual-cell-boundary .boundary-trigger {
+				display: inline-flex;
+				opacity: 0;
+				width: 20px;
+				height: 20px;
+				border-radius: 50%;
+				padding: 0;
+				font-size: 13px;
+				line-height: 18px;
+				align-items: center;
+				justify-content: center;
+				background: var(--surface, #fff);
+				border: 1px solid var(--line, #cdd2d7);
+				color: var(--muted, #5d6670);
+				cursor: pointer;
+			}
+			.visual-cell-boundary:hover .boundary-trigger, .visual-cell-boundary.open .boundary-trigger, .visual-cell-boundary:focus-within .boundary-trigger {
+				opacity: 1;
+			}
+			.boundary-menu {
+				display: none;
+				position: absolute;
+				top: 100%;
+				background: var(--surface, #fff);
+				border: 1px solid var(--line, #cdd2d7);
+				border-radius: 4px;
+				padding: 2px 6px;
+				gap: 4px;
+				box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+				z-index: 10;
+			}
+			.visual-cell-boundary.open .boundary-menu {
+				display: flex;
+			}
+			.boundary-btn {
+				font-size: 12px;
+				padding: 2px 8px;
+				min-height: 24px;
+				background: var(--canvas, #f4f3ef);
+				border: 1px solid var(--line, #cdd2d7);
+				border-radius: 3px;
+				color: var(--ink, #24292e);
+				cursor: pointer;
+			}
+			.boundary-btn:hover:not(:disabled) {
+				background: var(--selection, #e3ebf1);
+				border-color: var(--accent, #3d617b);
+				color: var(--accent, #3d617b);
+			}

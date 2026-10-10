@@ -1,20 +1,27 @@
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
 	import { equationSource, matrixSource, resizeMatrix, type MatrixDraft, type EquationDraft } from './source.ts';
+	import { editableMatrix, type MatrixBrackets } from './matrix.ts';
 	import { text, type Language } from '../../i18n/text.ts';
 	let { kind, active, onInsert, onClose, onEquation, initialDraft = null, sessionKey = 'insert', editing = false, showSource = true, locale = 'zh-Hant' }: { kind: 'equation' | 'matrix'; active: boolean; onInsert: (source: string) => void; onClose: () => void; onEquation?: (draft: EquationDraft) => void; initialDraft?: EquationDraft | null; sessionKey?: string; editing?: boolean; showSource?: boolean; locale?: Language } = $props();
 	const t = (traditionalChinese: string, english: string) => text(locale, traditionalChinese, english);
 	const mathInput = () => import('./MathInput.svelte');
+	let mathFields = $state.raw<typeof import('./field.ts') | null>(null);
+	$effect(() => {
+		if (!active || mathFields) return;
+		let alive = true;
+		void import('./field.ts').then(module => { if (alive) mathFields = module; }).catch(() => { if (alive) mathUnavailable = true; });
+		return () => { alive = false; };
+	});
 	let panel: HTMLElement;
 	type PanelKind = 'equation' | 'matrix';
 	let formula = $state(''); let inline = $state(false);
 	let mathUnavailable = $state(false);
 	let formulaInput = $state<HTMLTextAreaElement | null>(null);
 	let matrix = $state<MatrixDraft>({ rows: 3, columns: 3, cells: Array(9).fill('') });
-	let brackets = $state<'parentheses' | 'square' | 'none'>('parentheses');
+	let brackets = $state<MatrixBrackets>('parentheses');
 	let matrixPreviewHost = $state<HTMLDivElement | null>(null);
 	let matrixPreviewField: import('mathlive').MathfieldElement | null = null;
-	let previewGeneration = 0;
 	/** Codes, not text: a locale switch re-renders the message in the new language. */
 	let error = $state<'dimensions' | 'cell' | 'formula' | null>(null);
 	/** A null sentinel makes the default "insert" key a valid first session. */
@@ -37,9 +44,15 @@
 			disposeMatrixPreview();
 			formula = kind === 'equation' ? initialDraft?.latex ?? '' : '';
 			mathUnavailable = false;
-			inline = kind === 'equation' ? initialDraft?.inline ?? false : false;
-			matrix = { rows: 3, columns: 3, cells: Array(9).fill('') };
-			brackets = 'parentheses';
+			const parsed = kind === 'matrix' && initialDraft?.latex ? editableMatrix(initialDraft.latex) : null;
+			inline = kind === 'equation' || parsed ? initialDraft?.inline ?? false : false;
+			if (parsed) {
+				matrix = parsed.matrix;
+				brackets = parsed.brackets;
+			} else {
+				matrix = { rows: 3, columns: 3, cells: Array(9).fill('') };
+				brackets = 'parentheses';
+			}
 			error = null;
 		}
 		return true;
@@ -68,8 +81,7 @@
 			return;
 		}
 		const host = matrixPreviewHost;
-		const ticket = ++previewGeneration;
-		const currentSession = sessionKey;
+		if (!mathFields) return;
 		let source = '';
 		try {
 			source = matrixSource(matrix, brackets);
@@ -79,21 +91,17 @@
 			if (matrixPreviewField) matrixPreviewField.setValue('', { silenceNotifications: true });
 			return;
 		}
+		const previewLatex = mathFields.toVisualLatex(source);
 		if (matrixPreviewField && matrixPreviewField.isConnected && matrixPreviewField.parentElement === host) {
-			matrixPreviewField.setValue(source, { silenceNotifications: true });
+			matrixPreviewField.setValue(previewLatex, { silenceNotifications: true });
 		} else {
-			void import('./field.ts').then(({ createMathField }) => {
-				if (destroyed || !active || kind !== 'matrix' || ticket !== previewGeneration || matrixPreviewHost !== host || sessionKey !== currentSession) return;
-				disposeMatrixPreview();
-				const field = createMathField(host);
-				field.readOnly = true;
-				field.setAttribute('aria-label', t('矩陣預覽', 'Matrix preview'));
-				field.setAttribute('tabindex', '-1');
-				field.setValue(source, { silenceNotifications: true });
-				matrixPreviewField = field;
-			}).catch(() => {
-				/* 保留宿主狀態，不掩蓋異常 */
-			});
+			disposeMatrixPreview();
+			const field = mathFields.createMathField(host);
+			field.readOnly = true;
+			field.setAttribute('aria-label', t('矩陣預覽', 'Matrix preview'));
+			field.setAttribute('tabindex', '-1');
+			field.setValue(previewLatex, { silenceNotifications: true });
+			matrixPreviewField = field;
 		}
 	});
 	function updateFormula(event: Event) {
@@ -116,7 +124,7 @@
 		const select = event.currentTarget as HTMLSelectElement;
 		if (!active || !ensureSession() || kind !== 'matrix') { select.value = brackets; return; }
 		const value = select.value;
-		if (value === 'parentheses' || value === 'square' || value === 'none') brackets = value;
+		if (value === 'parentheses' || value === 'square' || value === 'none' || value === 'curly' || value === 'bars' || value === 'double-bars') brackets = value;
 		else select.value = brackets;
 	}
 	function errorMessage(code: 'dimensions' | 'cell' | 'formula'): string {
@@ -174,23 +182,38 @@
 	function insert() {
 		if (!active || !ensureSession()) return;
 		const insertKind = kind, insertKey = sessionKey;
-		try { if (kind === 'equation' && onEquation) { equationSource(formula, inline); onEquation({ latex: formula, inline }); } else onInsert(equationSource(kind === 'equation' ? formula : matrixSource(matrix, brackets), inline)); }
+		try {
+			const finalLatex = kind === 'equation' ? formula : matrixSource(matrix, brackets);
+			if (onEquation) {
+				equationSource(finalLatex, inline);
+				onEquation({ latex: finalLatex, inline });
+			} else {
+				onInsert(equationSource(finalLatex, inline));
+			}
+		}
 		catch { if (isCurrentSession(insertKind, insertKey)) error = insertKind === 'matrix' ? 'cell' : 'formula'; }
+	}
+	function handleClose() {
+		disposeMatrixPreview();
+		if (typeof window !== 'undefined' && window.mathVirtualKeyboard) {
+			window.mathVirtualKeyboard.hide();
+		}
+		onClose();
 	}
 </script>
 
 <section class="math-panel" bind:this={panel} aria-label={kind === 'matrix' ? t('插入矩陣', 'Insert matrix') : t('插入公式', 'Insert equation')}>
-	<div class="panel-header"><h2>{kind === 'matrix' ? t('矩陣', 'Matrix') : t('公式', 'Equation')}</h2><button class="text-button" onclick={onClose}>{t('關閉', 'Close')}</button></div>
+	<div class="panel-header"><h2>{kind === 'matrix' ? t('矩陣', 'Matrix') : t('公式', 'Equation')}</h2><button class="text-button" onclick={handleClose}>{t('關閉', 'Close')}</button></div>
 	<label class="inline-option"><input type="checkbox" checked={inline} disabled={!active} onchange={updateInline} />{t('行內公式', 'Inline equation')}</label>
 	{#if kind === 'equation'}
-		{#if active}{#await mathInput() then module}<module.default value={formula} {locale} onChange={equationChangeHandler(kind, sessionKey)} onUnavailable={() => { mathUnavailable = true; }} />{:catch}<p class="panel-error" role="alert">{t('公式工具無法載入，請關閉後重試。', 'The equation tool could not load. Close it and try again.')}</p>{/await}{/if}
+		{#if active}{#await mathInput() then component}<component.default value={formula} {locale} onChange={equationChangeHandler(kind, sessionKey)} onUnavailable={() => { mathUnavailable = true; }} />{:catch}<p class="panel-error" role="alert">{t('公式工具無法載入，請關閉後重試。', 'The equation tool could not load. Close it and try again.')}</p>{/await}{/if}
 		{#if showSource || mathUnavailable}<label class="formula">{t('LaTeX 公式', 'LaTeX equation')}<textarea bind:this={formulaInput} rows="3" maxlength="65536" spellcheck="false" disabled={!active} oninput={updateFormula}></textarea></label>{/if}
 	{:else}
 		<div class="dimensions">
 			<label>n×n <input type="number" min="1" max="10" value={matrix.rows === matrix.columns ? matrix.rows : ''} onchange={(event) => { resize(event.currentTarget.valueAsNumber, event.currentTarget.valueAsNumber); event.currentTarget.value = matrix.rows === matrix.columns ? String(matrix.rows) : ''; }} disabled={!active} /></label>
 			<label>{t('行', 'Rows')} <input type="number" min="1" max="10" value={matrix.rows} onchange={(event) => { resize(event.currentTarget.valueAsNumber, matrix.columns); event.currentTarget.value = String(matrix.rows); }} disabled={!active} /></label>
 			<label>{t('列', 'Columns')} <input type="number" min="1" max="10" value={matrix.columns} onchange={(event) => { resize(matrix.rows, event.currentTarget.valueAsNumber); event.currentTarget.value = String(matrix.columns); }} disabled={!active} /></label>
-			<label>{t('括號', 'Brackets')} <select value={brackets} onchange={updateBrackets} disabled={!active}><option value="parentheses">{t('圓括號', 'Parentheses')}</option><option value="square">{t('方括號', 'Square brackets')}</option><option value="none">{t('無括號', 'None')}</option></select></label>
+			<label>{t('括號', 'Brackets')} <select value={brackets} onchange={updateBrackets} disabled={!active}><option value="parentheses">{t('圓括號', 'Parentheses')}</option><option value="square">{t('方括號', 'Square brackets')}</option><option value="curly">{t('大括號', 'Braces')}</option><option value="bars">{t('單直線', 'Single bars')}</option><option value="double-bars">{t('雙直線', 'Double bars')}</option><option value="none">{t('無括號', 'None')}</option></select></label>
 		</div>
 		<div class="matrix-scroll"><div class="matrix-grid" style:grid-template-columns={'repeat(' + matrix.columns + ', minmax(64px, 1fr))'}>
 			{#each matrix.cells as cell, index}<input aria-label={cellLabel(Math.floor(index / matrix.columns) + 1, index % matrix.columns + 1)} value={cell} maxlength="1024" spellcheck="false" disabled={!active}
@@ -202,7 +225,7 @@
 		</div>
 	{/if}
 	{#if error}<p class="panel-error" role="alert">{errorMessage(error)}</p>{/if}
-	<div class="panel-actions"><button onclick={onClose}>{t('取消', 'Cancel')}</button><button class="primary" onclick={insert} disabled={!active}>{editing && kind === 'equation' ? t('套用', 'Apply') : t('插入', 'Insert')}</button></div>
+	<div class="panel-actions"><button onclick={handleClose}>{t('取消', 'Cancel')}</button><button class="primary" onclick={insert} disabled={!active}>{editing ? t('套用', 'Apply') : t('插入', 'Insert')}</button></div>
 </section>
 
 <style>
@@ -223,6 +246,8 @@
 	.preview-title { font-size: 13px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px; }
 	.matrix-preview-host { min-height: 48px; display: flex; align-items: center; justify-content: center; overflow-x: auto; }
 	.matrix-preview-host :global(math-field) { border: none; background: transparent; color: var(--ink); font-size: 16px; }
+	.matrix-preview-host :global(math-field::part(virtual-keyboard-toggle)),
+	.matrix-preview-host :global(math-field::part(menu-toggle)) { display: none !important; }
 	.panel-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 	.panel-error { color: var(--error); line-height: 1.5; }
 </style>

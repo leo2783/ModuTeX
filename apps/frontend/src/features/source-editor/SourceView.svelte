@@ -2,7 +2,8 @@
 	import { onMount, tick } from 'svelte';
 	import { Compartment, EditorState } from '@codemirror/state';
 	import { EditorView, lineNumbers, highlightActiveLineGutter, keymap } from '@codemirror/view';
-	import type { SourceDocument, SourceProjection, SourceSpan } from '@modutex/document-core';
+	import type { SourceDocument, SourceProjection, SourceSpan, SourcePatch } from '@modutex/document-core';
+	import { editableMatrix } from '../math/matrix.ts';
 	import { ParserClient } from '../parser/client.ts';
 	import { VisualEditor } from '../visual-editor/view.ts';
 	import 'prosemirror-view/style/prosemirror.css';
@@ -69,7 +70,8 @@
 	let rawOriginal = '', rawDraft = $state('');
 	let rawInput = $state.raw<HTMLTextAreaElement | null>(null);
 	function openRaw(value: string, span: SourceSpan) {
-		if (!editor || !active || saving || tool !== null) return;
+		if (!editor || !active || saving) return;
+		if (tool !== null) closeTool();
 		try {
 			const source = editor.state.field(sourceState).projection.document;
 			rangeInsertionTarget(editor.state, span);
@@ -202,7 +204,8 @@
 		} catch { toolError = 'format'; }
 	}
 	function openTool(kind: 'equation' | 'matrix' | 'table') {
-		if (!editor || saving || !active || tool !== null) return;
+		if (!editor || saving || !active) return;
+		if (tool !== null) closeTool();
 		const useVisual = mode === 'visual';
 		const captured = useVisual ? visual?.insertionSelection() ?? null : null;
 		if (useVisual && !captured) { toolError = 'insert-selection'; return; }
@@ -214,7 +217,8 @@
 		tool = kind;
 	}
 	function editTable() {
-		if (!editor || saving || tool !== null) return;
+		if (!editor || saving) return;
+		if (tool !== null) closeTool();
 		const projection = editor.state.field(sourceState).projection;
 		if (!parsed || parsed.documentId !== projection.document.documentId || parsed.version !== projection.document.version) {
 			toolError = 'table-pending'; return;
@@ -224,7 +228,8 @@
 		openTable(located.draft, located.span, 'source');
 	}
 	function editEquation() {
-		if (!editor || saving || !active || tool !== null) return;
+		if (!editor || saving || !active) return;
+		if (tool !== null) closeTool();
 		const source = editor.state.field(sourceState).projection;
 		const located = parsed && equationAt(source.document, parsed, source.toSource(editor.state.selection.main.head));
 		if (!located) { toolError = 'equation-cursor'; return; }
@@ -246,25 +251,28 @@
 		catch { toolError = 'equation-apply'; }
 	}
 	function openEquation(_draft: EquationDraft, span: SourceSpan) {
-		if (!editor || !active || saving || tool !== null || !parsed) return;
+		if (!editor || !active || saving || !parsed) return;
+		if (tool !== null) closeTool();
 		const source = editor.state.field(sourceState).projection.document;
 		if (span.documentId !== source.documentId || span.version !== source.version) return;
 		const located = equationAt(source, parsed, span.from);
 		if (!located || located.span.to !== span.to) return;
-		try { insertion = rangeInsertionTarget(editor.state, located.span); equation = located; equationKey = `${span.documentId}:${span.version}:${span.from}:${span.to}`; toolError = null; toolOwner = 'visual'; tool = 'equation'; }
+		try { insertion = rangeInsertionTarget(editor.state, located.span); equation = located; equationKey = `${span.documentId}:${span.version}:${span.from}:${span.to}`; toolError = null; toolOwner = 'visual'; tool = editableMatrix(located.draft.latex) ? 'matrix' : 'equation'; }
 		catch { toolError = 'equation-stale'; }
 	}
 	function openTable(draft: TableDraft, span: SourceSpan, owner: 'source' | 'visual' = 'visual') {
-		if (!editor || saving || !active || tool !== null) return;
+		if (!editor || saving || !active) return;
+		if (tool !== null) closeTool();
 		try {
 			insertion = rangeInsertionTarget(editor.state, span);
 			tableDraft = draft; tableKey = `${span.documentId}:${span.version}:${span.from}:${span.to}`;
 			editingTable = true; toolError = null; toolOwner = owner; tool = 'table';
 		} catch { toolError = 'table-stale'; }
 	}
-	function closeTool() { tool = null; insertion = null; visualInsertion = null; pendingPackage = null; if (!active) return; if (mode === 'source') editor?.focus(); else visual?.focus(); }
+	function closeTool() { tool = null; insertion = null; visualInsertion = null; equation = null; pendingPackage = null; toolError = null; if (!active) return; if (mode === 'source') editor?.focus(); else visual?.focus(); }
 	function openToolAtBoundary(kind: 'equation' | 'matrix' | 'table', span: SourceSpan) {
-		if (!editor || saving || !active || tool !== null) return;
+		if (!editor || saving || !active) return;
+		if (tool !== null) closeTool();
 		try {
 			insertion = rangeInsertionTarget(editor.state, span);
 			visualInsertion = { span, inlineOnly: false };
@@ -278,7 +286,8 @@
 		} catch { toolError = 'insert-stale'; }
 	}
 	function insertTextAtBoundary(span: SourceSpan, beforeText: boolean) {
-		if (!editor || saving || !active || tool !== null) return;
+		if (!editor || saving || !active) return;
+		if (tool !== null) closeTool();
 		try {
 			const transaction = visualInsertionTransaction(editor.state, span, beforeText ? '\\par\n\\par\n' : '\\par\n', false);
 			if (!transaction.docChanged) throw new Error('INSERTION_REJECTED');
@@ -288,6 +297,68 @@
 			pendingParagraph = { documentId: next.documentId, version: next.version, from: next.read().indexOf('\\par', span.from) };
 			visual?.focus();
 		} catch { toolError = 'insert-stale'; }
+	}
+	function handleCellAction(action: 'delete' | 'move-up' | 'move-down', span: SourceSpan, adjacent?: SourceSpan) {
+		if (!editor || !active || saving) return;
+		if (tool !== null) closeTool();
+		const current = editor.state.field(sourceState).projection.document;
+		if (span.documentId !== current.documentId || span.version !== current.version) {
+			toolError = 'insert-stale';
+			return;
+		}
+		if (adjacent && (adjacent.documentId !== current.documentId || adjacent.version !== current.version)) {
+			toolError = 'insert-stale';
+			return;
+		}
+		if (action === 'delete') {
+			const content = current.read(span.from, span.to);
+			const isNonEmpty = content.trim().length > 0 && content.trim() !== '\\par';
+			if (isNonEmpty && !window.confirm(t('確定要刪除此區塊嗎？', 'Delete this cell?'))) {
+				return;
+			}
+			const deleteFrom = span.from, deleteTo = span.to;
+			const patch: SourcePatch = {
+				from: deleteFrom,
+				to: deleteTo,
+				insert: '',
+				expected: current.read(deleteFrom, deleteTo)
+			};
+			try {
+				const transaction = sourcePatchTransaction(editor.state, { documentId: current.documentId, version: current.version }, [patch]);
+				editor.dispatch(transaction);
+				toolError = null;
+				visual?.focus();
+			} catch {
+				toolError = 'insert-stale';
+			}
+			return;
+		}
+		if (action === 'move-up' || action === 'move-down') {
+			if (!adjacent) return;
+			const [first, second] = span.from < adjacent.from ? [span, adjacent] : [adjacent, span];
+			if (first.to > second.from) {
+				toolError = 'insert-stale';
+				return;
+			}
+			const contentFirst = current.read(first.from, first.to);
+			const separator = current.read(first.to, second.from);
+			const contentSecond = current.read(second.from, second.to);
+			const swapped = contentSecond + separator + contentFirst;
+			const patch: SourcePatch = {
+				from: first.from,
+				to: second.to,
+				insert: swapped,
+				expected: current.read(first.from, second.to)
+			};
+			try {
+				const transaction = sourcePatchTransaction(editor.state, { documentId: current.documentId, version: current.version }, [patch]);
+				editor.dispatch(transaction);
+				toolError = null;
+				visual?.focus();
+			} catch {
+				toolError = 'insert-stale';
+			}
+		}
 	}
 	function insert(source: string) {
 		if (!editor || !insertion || saving || !active) return;
@@ -431,6 +502,17 @@
 			insertBlock: (kind, span, beforeText) => {
 				if (kind === 'text') insertTextAtBoundary(span, beforeText);
 				else openToolAtBoundary(kind, span);
+			},
+			cellAction: (action, span, adjacent) => {
+				handleCellAction(action, span, adjacent);
+			},
+			cellDone: () => { if (tool !== null) closeTool(); },
+			cellCancel: (span, original) => {
+				if (!active || saving || tool !== null) return;
+				try {
+					const current = view.state.field(sourceState).projection.document;
+					view.dispatch(sourcePatchTransaction(view.state, span, [{ from: span.from, to: span.to, insert: original, expected: current.read(span.from, span.to) }]));
+				} catch { toolError = 'insert-stale'; }
 			}
 		});
 		retryParser = () => {
@@ -446,8 +528,8 @@
 	<div class="mode-bar">
 		<span class="mode-heading">{t('編輯模式', 'Editing mode')}</span>
 		<div class="modes" role="group" aria-label={t('編輯模式', 'Editing mode')}>
-			<button aria-pressed={mode === 'source'} onclick={() => { mode = 'source'; editor?.focus(); }} disabled={tool !== null}>{t('原始碼', 'Source')}</button>
-			<button aria-pressed={mode === 'visual'} onclick={() => { mode = 'visual'; visual?.focus(); }} disabled={tool !== null}>{t('視覺化', 'Visual')}</button>
+			<button aria-pressed={mode === 'source'} onclick={() => { if (tool !== null) closeTool(); mode = 'source'; editor?.focus(); }}>{t('原始碼', 'Source')}</button>
+			<button aria-pressed={mode === 'visual'} onclick={() => { if (tool !== null) closeTool(); mode = 'visual'; visual?.focus(); }}>{t('視覺化', 'Visual')}</button>
 		</div>
 	</div>
 	<div class="insert-bar">
@@ -480,7 +562,6 @@
 	<div class="editor-surfaces">
 		<div class="source" bind:this={target} hidden={mode === 'visual'}></div>
 		<div class="visual" hidden={mode === 'source'} aria-busy={!parserFailed && visualStatus === 'updating'}>
-			{#if !parserFailed && visualStatus === 'updating'}<p class="visual-status" role="status">{t('正在更新視覺內容…', 'Updating visual content…')}</p>{/if}
 			<div bind:this={visualTarget}></div>
 		</div>
 	</div>
@@ -505,10 +586,9 @@
 	.modes [aria-pressed='true'] { background: var(--selection); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 	.editor-surfaces { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); }
 	.visual { min-height: 0; overflow: auto; padding: 24px; }
-	.visual-status { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
-	.visual :global(.ProseMirror) { min-height: 100%; outline: none; line-height: 1.7; }
+	.visual :global(.ProseMirror) { position: relative; min-height: 100%; outline: none; line-height: 1.7; }
 	.visual :global(.ProseMirror:focus-visible) { outline: 2px solid var(--accent); outline-offset: 4px; }
-	.visual :global(.source-block) { display: block; white-space: pre-wrap; }
+	.visual :global(.source-block) { display: block; white-space: normal; }
 	.visual :global(.raw-latex) { font: 13px/1.6 Consolas, monospace; padding: 8px; border: 1px solid var(--line); background: var(--canvas); white-space: pre-wrap; overflow-wrap: anywhere; }
 	.tool-error { margin: 4px 12px; color: var(--ink); }
 	.raw-panel { padding: 12px; border-bottom: 1px solid var(--line); overflow: auto; max-height: 60%; }

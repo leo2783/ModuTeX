@@ -60,13 +60,16 @@ function cellSource(value: string): string {
 	if (depth !== 0 || value.endsWith('\\')) throw new Error('MATRIX_CELL');
 	return value.trim() || '{}';
 }
-export function matrixSource(matrix: MatrixDraft, brackets: 'parentheses' | 'square' | 'none'): string {
+export function matrixSource(matrix: MatrixDraft, brackets: 'parentheses' | 'square' | 'none' | 'curly' | 'bars' | 'double-bars'): string {
 	matrixSize(matrix.rows); matrixSize(matrix.columns);
 	if (matrix.cells.length !== matrix.rows * matrix.columns) throw new Error('MATRIX_CELLS');
-	if (!['parentheses', 'square', 'none'].includes(brackets)) throw new Error('MATRIX_BRACKETS');
+	if (!['parentheses', 'square', 'none', 'curly', 'bars', 'double-bars'].includes(brackets)) throw new Error('MATRIX_BRACKETS');
 	const rows = Array.from({ length: matrix.rows }, (_, row) => matrix.cells.slice(row * matrix.columns, (row + 1) * matrix.columns).map(cellSource).join(' & '));
 	const array = '\\begin{array}{' + 'c'.repeat(matrix.columns) + '}\n' + rows.join(' \\\\\n') + '\n\\end{array}';
-	return brackets === 'none' ? array : '\\left' + (brackets === 'square' ? '[' : '(') + array + '\\right' + (brackets === 'square' ? ']' : ')');
+	const delimiters = { parentheses: ['(', ')'], square: ['[', ']'], curly: ['\\{', '\\}'], bars: ['|', '|'], 'double-bars': ['\\Vert', '\\Vert'] } as const;
+	if (brackets === 'none') return array;
+	const [opening, closing] = delimiters[brackets];
+	return '\\left' + opening + array + '\\right' + closing;
 }
 export function equationSource(value: string, inline: boolean): string {
 	if (!value.trim() || value.length > 65536 || value.includes('\u0000')) throw new Error('EQUATION_SOURCE');

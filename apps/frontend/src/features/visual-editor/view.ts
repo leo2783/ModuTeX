@@ -27,7 +27,20 @@ interface VisualOptions {
 	format?(format: TextFormat): void;
 	raw?(source: string, span: SourceSpan): void;
 	insertBlock?(kind: 'text' | 'equation' | 'matrix' | 'table', span: SourceSpan, beforeText: boolean): void;
+	cellAction?(action: 'delete' | 'move-up' | 'move-down', span: SourceSpan, adjacent?: SourceSpan): void;
+	cellSelected?(span: SourceSpan): void;
+	cellDone?(): void;
+	cellCancel?(span: SourceSpan, original: string): void;
 }
+
+let mathRendererPromise: Promise<typeof import('../math/render.ts')> | null = null;
+function preloadMathRenderer(): Promise<typeof import('../math/render.ts')> {
+	if (!mathRendererPromise) {
+		mathRendererPromise = import('../math/render.ts');
+	}
+	return mathRendererPromise;
+}
+
 function changedSpansMatch(document: SourceDocument, source: SourceDocument, patches: readonly SourcePatch[]): boolean {
 	let delta = 0;
 	for (const patch of patches) {
@@ -47,15 +60,45 @@ export class VisualEditor {
 	private disposed = false;
 	private refreshedEditable: boolean | undefined;
 	private refreshedLabel: string | undefined;
+	private selectedCellIndex: number | null = null;
+	private cellOriginal: string | null = null;
 	private readonly tableButtons = new Set<HTMLButtonElement>();
 	private readonly equationButtons = new Set<HTMLButtonElement>();
 	private readonly rawButtons = new Set<HTMLButtonElement>();
 	private readonly inserterButtons = new Set<HTMLButtonElement>();
+	private readonly cellActionButtons = new Set<HTMLButtonElement>();
 	private cachedDecorations: DecorationSet | null = null;
 	private cachedDoc: VisualNode | null = null;
 	private cachedEditable: boolean | undefined = undefined;
 	private cachedLocale: string | undefined = undefined;
+	private cachedSelectedCell: number | null = null;
 	private readonly options: VisualOptions;
+
+	private selectCell(index: number | null): void {
+		if (this.disposed || this.selectedCellIndex === index) return;
+		this.selectedCellIndex = index;
+		const span = index === null ? null : this.cellSpan(index);
+		this.cellOriginal = span && this.view.state.doc.child(index!).type.name === 'source_block'
+			? this.options.source().read(span.from, span.to) : null;
+		if (span) this.options.cellSelected?.(span);
+		this.cachedDecorations = null;
+		if (this.view) {
+			this.view.dispatch(this.view.state.tr);
+		}
+	}
+
+	private cellSpan(index: number): SourceSpan | null {
+		if (!this.projection) return null;
+		const source = this.options.source();
+		if (this.projection.documentId !== source.documentId || this.projection.version !== source.version) return null;
+		if (index < 0 || index >= this.projection.document.childCount) return null;
+		const child = this.projection.document.child(index);
+		const from = child.attrs.from;
+		const to = child.attrs.to;
+		if (typeof from !== 'number' || typeof to !== 'number' || from < 0 || to > source.length || from > to) return null;
+		return { documentId: this.projection.documentId, version: this.projection.version, from, to };
+	}
+
 	private text(traditionalChinese: string, english: string): string {
 		return text(this.options.locale ? this.options.locale() : 'zh-Hant', traditionalChinese, english);
 	}
@@ -80,32 +123,26 @@ export class VisualEditor {
 		offset = Math.max(0, Math.min(source.length, offset));
 		return { documentId: this.projection.documentId, version: this.projection.version, from: offset, to: offset };
 	}
-	private createInserterElement(boundaryIndex: number): HTMLElement {
+	private createBoundaryElement(boundaryIndex: number): HTMLElement {
 		const doc = this.view?.dom.ownerDocument ?? document;
 		const container = doc.createElement('div');
-		container.className = 'visual-block-inserter';
+		container.className = 'visual-cell-boundary';
 		container.contentEditable = 'false';
-		container.setAttribute('role', 'toolbar');
-		container.setAttribute('aria-label', this.text('插入區塊', 'Insert block'));
-		const line = doc.createElement('div');
-		line.className = 'visual-block-inserter-line';
-		line.setAttribute('aria-hidden', 'true');
-		const actions = doc.createElement('div');
-		actions.className = 'visual-block-inserter-actions';
+		container.setAttribute('role', 'presentation');
 		const trigger = doc.createElement('button');
 		trigger.type = 'button';
-		trigger.className = 'inserter-trigger';
+		trigger.className = 'boundary-trigger';
 		trigger.textContent = '+';
-		trigger.title = this.text('在此處插入內容', 'Insert content here');
-		trigger.setAttribute('aria-label', this.text('在此處插入內容', 'Insert content here'));
+		trigger.title = this.text('在此處插入區塊', 'Insert block here');
+		trigger.setAttribute('aria-label', this.text('在此處插入區塊', 'Insert block here'));
 		trigger.disabled = !this.editable() || !this.options.insertBlock;
 		this.inserterButtons.add(trigger);
 		const menu = doc.createElement('div');
-		menu.className = 'inserter-menu';
+		menu.className = 'boundary-menu';
 		const makeItem = (kind: 'text' | 'equation' | 'matrix' | 'table', label: string, title: string) => {
 			const button = doc.createElement('button');
 			button.type = 'button';
-			button.className = 'inserter-btn';
+			button.className = 'boundary-btn';
 			button.textContent = label;
 			button.title = title;
 			button.setAttribute('aria-label', title);
@@ -134,21 +171,198 @@ export class VisualEditor {
 			makeItem('matrix', this.text('矩陣', 'Matrix'), this.text('插入矩陣', 'Insert matrix')),
 			makeItem('table', this.text('表格', 'Table'), this.text('插入表格', 'Insert table'))
 		);
-		actions.append(trigger, menu);
-		container.append(line, actions);
+		container.append(trigger, menu);
 		return container;
 	}
+
+	private createCellToolbarElement(cellIndex: number): HTMLElement {
+		const doc = this.view?.dom.ownerDocument ?? document;
+		const childCount = this.view.state.doc.childCount;
+		const node = this.view.state.doc.child(cellIndex);
+		const container = doc.createElement('div');
+		container.className = 'visual-cell-toolbar';
+		container.contentEditable = 'false';
+		container.setAttribute('role', 'toolbar');
+		container.setAttribute('aria-label', this.text('儲存格操作列', 'Cell actions'));
+
+		const typeBadge = doc.createElement('span');
+		typeBadge.className = 'cell-badge';
+		let typeName = this.text('文字', 'Text');
+		if (node.type.name === 'math_block') typeName = this.text('公式', 'Equation');
+		else if (node.type.name === 'table_block') typeName = this.text('表格', 'Table');
+		else if (node.type.name === 'raw_block') typeName = this.text('原始碼', 'Raw LaTeX');
+		typeBadge.textContent = typeName;
+
+		const leftGroup = doc.createElement('div');
+		leftGroup.className = 'cell-toolbar-group';
+		leftGroup.append(typeBadge);
+
+		const rightGroup = doc.createElement('div');
+		rightGroup.className = 'cell-toolbar-group';
+
+		const makeInsertMenu = (above: boolean) => {
+			const wrap = doc.createElement('div');
+			wrap.className = 'cell-insert-wrap';
+			const trigger = doc.createElement('button');
+			trigger.type = 'button';
+			trigger.className = 'cell-tool-btn';
+			trigger.textContent = above ? this.text('+ 上方', '+ Above') : this.text('+ 下方', '+ Below');
+			trigger.title = above ? this.text('在上方插入', 'Insert above') : this.text('在下方插入', 'Insert below');
+			trigger.disabled = !this.editable() || !this.options.insertBlock;
+			this.cellActionButtons.add(trigger);
+			const menu = doc.createElement('div');
+			menu.className = 'cell-insert-menu';
+			const makeItem = (kind: 'text' | 'equation' | 'matrix' | 'table', label: string) => {
+				const button = doc.createElement('button');
+				button.type = 'button';
+				button.className = 'cell-menu-btn';
+				button.textContent = label;
+				button.disabled = !this.editable() || !this.options.insertBlock;
+				this.cellActionButtons.add(button);
+				button.addEventListener('click', (event) => {
+					event.preventDefault();
+					event.stopPropagation();
+					wrap.classList.remove('open');
+					if (!this.editable() || !this.options.insertBlock) return;
+					const boundary = above ? cellIndex : cellIndex + 1;
+					const span = this.boundarySpan(boundary);
+					if (!span) { this.options.rejected(); return; }
+					const next = this.projection?.document.maybeChild(boundary);
+					this.options.insertBlock(kind, span, next?.type.name === 'source_block');
+				});
+				return button;
+			};
+			trigger.addEventListener('click', (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				wrap.classList.toggle('open');
+			});
+			menu.append(
+				makeItem('text', this.text('文字', 'Text')),
+				makeItem('equation', this.text('公式', 'Equation')),
+				makeItem('matrix', this.text('矩陣', 'Matrix')),
+				makeItem('table', this.text('表格', 'Table'))
+			);
+			wrap.append(trigger, menu);
+			return wrap;
+		};
+
+		const moveUpBtn = doc.createElement('button');
+		moveUpBtn.type = 'button';
+		moveUpBtn.className = 'cell-tool-btn';
+		moveUpBtn.textContent = '↑';
+		moveUpBtn.title = this.text('上移儲存格', 'Move cell up');
+		moveUpBtn.setAttribute('aria-label', this.text('上移儲存格', 'Move cell up'));
+		moveUpBtn.disabled = !this.editable() || cellIndex <= 0 || !this.options.cellAction;
+		moveUpBtn.dataset.atEdge = String(cellIndex <= 0);
+		this.cellActionButtons.add(moveUpBtn);
+		moveUpBtn.addEventListener('click', (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			if (!this.editable() || cellIndex <= 0 || !this.options.cellAction) return;
+			const span = this.cellSpan(cellIndex);
+			const adjacent = this.cellSpan(cellIndex - 1);
+			if (!span || !adjacent) { this.options.rejected(); return; }
+			this.selectCell(cellIndex - 1);
+			this.cellOriginal = null;
+			this.options.cellAction('move-up', span, adjacent);
+		});
+
+		const moveDownBtn = doc.createElement('button');
+		moveDownBtn.type = 'button';
+		moveDownBtn.className = 'cell-tool-btn';
+		moveDownBtn.textContent = '↓';
+		moveDownBtn.title = this.text('下移儲存格', 'Move cell down');
+		moveDownBtn.setAttribute('aria-label', this.text('下移儲存格', 'Move cell down'));
+		moveDownBtn.disabled = !this.editable() || cellIndex >= childCount - 1 || !this.options.cellAction;
+		moveDownBtn.dataset.atEdge = String(cellIndex >= childCount - 1);
+		this.cellActionButtons.add(moveDownBtn);
+		moveDownBtn.addEventListener('click', (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			if (!this.editable() || cellIndex >= childCount - 1 || !this.options.cellAction) return;
+			const span = this.cellSpan(cellIndex);
+			const adjacent = this.cellSpan(cellIndex + 1);
+			if (!span || !adjacent) { this.options.rejected(); return; }
+			this.selectCell(cellIndex + 1);
+			this.cellOriginal = null;
+			this.options.cellAction('move-down', span, adjacent);
+		});
+
+		const deleteBtn = doc.createElement('button');
+		deleteBtn.type = 'button';
+		deleteBtn.className = 'cell-tool-btn cell-delete-btn';
+		deleteBtn.textContent = this.text('刪除', 'Delete');
+		deleteBtn.title = this.text('刪除此儲存格', 'Delete this cell');
+		deleteBtn.setAttribute('aria-label', this.text('刪除此儲存格', 'Delete this cell'));
+		deleteBtn.disabled = !this.editable() || !this.options.cellAction;
+		this.cellActionButtons.add(deleteBtn);
+		deleteBtn.addEventListener('click', (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			if (!this.editable() || !this.options.cellAction) return;
+			const span = this.cellSpan(cellIndex);
+			if (!span) { this.options.rejected(); return; }
+			this.selectCell(null);
+			this.options.cellDone?.();
+			this.view.dom.blur();
+			this.options.cellAction('delete', span);
+		});
+
+		const finishBtn = doc.createElement('button');
+		finishBtn.type = 'button';
+		finishBtn.className = 'cell-tool-btn';
+		finishBtn.textContent = this.text('完成', 'Done');
+		finishBtn.title = this.text('完成選取', 'Finish selection');
+		finishBtn.addEventListener('click', (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			this.selectCell(null);
+			this.options.cellDone?.();
+			(this.view.dom.ownerDocument.activeElement as HTMLElement | null)?.blur();
+		});
+
+		rightGroup.append(
+			makeInsertMenu(true),
+			makeInsertMenu(false),
+			moveUpBtn,
+			moveDownBtn,
+			deleteBtn,
+			finishBtn
+		);
+
+		container.append(leftGroup, rightGroup);
+		if (node.type.name === 'source_block' && this.options.cellCancel) {
+			const cancelBtn = doc.createElement('button');
+			cancelBtn.type = 'button';
+			cancelBtn.className = 'cell-tool-btn';
+			cancelBtn.textContent = this.text('取消編輯', 'Cancel editing');
+			cancelBtn.addEventListener('click', event => {
+				event.preventDefault(); event.stopPropagation();
+				const span = this.cellSpan(cellIndex), original = this.cellOriginal;
+				if (!span || original === null || !this.editable()) return;
+				this.options.cellCancel!(span, original);
+				this.selectCell(null);
+				this.options.cellDone?.();
+			});
+			rightGroup.append(cancelBtn);
+		}
+		return container;
+	}
+
 	constructor(target: HTMLElement, label: string, options: VisualOptions) {
 		this.label = label;
 		this.options = options;
-		const inserterPlugin = new Plugin({
+		const notebookPlugin = new Plugin({
 			props: {
 				decorations: (state) => {
 					if (this.disposed || !this.projection) return DecorationSet.empty;
 					const doc = state.doc;
 					const editable = this.editable();
 					const loc = this.options.locale ? this.options.locale() : 'zh-Hant';
-					if (this.cachedDecorations && this.cachedDoc === doc && this.cachedEditable === editable && this.cachedLocale === loc) {
+					const selected = this.selectedCellIndex;
+					if (this.cachedDecorations && this.cachedDoc === doc && this.cachedEditable === editable &&
+						this.cachedLocale === loc && this.cachedSelectedCell === selected) {
 						return this.cachedDecorations;
 					}
 					const decorations: Decoration[] = [];
@@ -157,22 +371,51 @@ export class VisualEditor {
 					for (let i = 0; i <= count; i++) {
 						const boundaryIndex = i;
 						const pos = currentPos;
-						decorations.push(Decoration.widget(pos, () => this.createInserterElement(boundaryIndex), {
+						decorations.push(Decoration.widget(pos, () => this.createBoundaryElement(boundaryIndex), {
 							side: i === 0 ? -1 : 1,
 							stopEvent: () => true,
-							key: `inserter-${loc}-${boundaryIndex}`
+							key: `boundary-${loc}-${boundaryIndex}`
 						}));
-						if (i < count) currentPos += doc.child(i).nodeSize;
+						if (i < count) {
+							const child = doc.child(i);
+							const isSelected = i === selected;
+							decorations.push(Decoration.node(pos, pos + child.nodeSize, {
+								class: `notebook-cell${isSelected ? ' is-selected' : ''}`,
+								'data-cell-index': String(i),
+								'data-cell-type': child.type.name
+							}));
+							if (isSelected) {
+								decorations.push(Decoration.widget(pos, () => this.createCellToolbarElement(i), {
+									side: 1,
+									stopEvent: () => true,
+									key: `cell-toolbar-${loc}-${i}`
+								}));
+							}
+							currentPos += child.nodeSize;
+						}
 					}
 					this.cachedDoc = doc;
 					this.cachedEditable = editable;
 					this.cachedLocale = loc;
+					this.cachedSelectedCell = selected;
 					this.cachedDecorations = DecorationSet.create(doc, decorations);
 					return this.cachedDecorations;
+				},
+				handleClick: (view, pos, event) => {
+					const target = event.target as HTMLElement | null;
+					if (target?.closest('.visual-cell-toolbar') || target?.closest('.visual-cell-boundary')) return false;
+					const cell = target?.closest<HTMLElement>('[data-cell-index]');
+					// Blank space between cells must not select the nearest paragraph.
+					if (!cell || !view.dom.contains(cell)) return false;
+					const cellIndex = Number(cell.dataset.cellIndex);
+					if (cellIndex !== null && cellIndex !== this.selectedCellIndex) {
+						this.selectCell(cellIndex);
+					}
+					return false;
 				}
 			}
 		});
-		this.view = new EditorView(target, { state: EditorState.create({ schema: visualSchema, plugins: [inserterPlugin] }),
+		this.view = new EditorView(target, { state: EditorState.create({ schema: visualSchema, plugins: [notebookPlugin] }),
 			attributes: { role: 'textbox', 'aria-multiline': 'true', 'aria-label': label + this.text(' 視覺編輯', ' visual editor') },
 			editable: () => this.editable(),
 			nodeViews: { source_block: initial => {
@@ -194,6 +437,13 @@ export class VisualEditor {
 					this.options.raw(String(anchored.attrs.source), { documentId: source.documentId, version: source.version, from: anchored.attrs.from, to: anchored.attrs.to });
 				};
 				this.rawButtons.add(button); button.addEventListener('click', edit); dom.append(code, button);
+				dom.addEventListener('click', () => {
+					const pos = getPos();
+					if (typeof pos === 'number' && !this.disposed) {
+						const cellIndex = this.view.state.doc.resolve(pos).index(0);
+						if (this.selectedCellIndex !== cellIndex) this.selectCell(cellIndex);
+					}
+				});
 				return { dom, stopEvent: () => true, ignoreMutation: () => true,
 					update: next => { if (next.type !== node.type) return false; const changed = next.attrs.source !== node.attrs.source; node = next; if (changed) render(); return true; },
 					destroy: () => { destroyed = true; button.removeEventListener('click', edit); this.rawButtons.delete(button); }
@@ -236,14 +486,20 @@ export class VisualEditor {
 					if (draft) this.options.table(draft, { documentId: source.documentId, version: source.version, from: anchored.attrs.from, to: anchored.attrs.to });
 				};
 				button.addEventListener('click', edit); render();
+				dom.addEventListener('click', () => {
+					const pos = getPos();
+					if (typeof pos === 'number' && !this.disposed) {
+						const cellIndex = this.view.state.doc.resolve(pos).index(0);
+						if (this.selectedCellIndex !== cellIndex) this.selectCell(cellIndex);
+					}
+				});
 				return { dom, stopEvent: (event) => button.contains(event.target as Node), ignoreMutation: () => true,
 					update: (next) => { if (next.type !== node.type) return false; const changed = next.attrs.source !== node.attrs.source; node = next; if (changed) render(); return true; },
 					destroy: () => { destroyed = true; button.removeEventListener('click', edit); this.tableButtons.delete(button); }
 				};
 			}, math_block: (initial, _view, getPos) => {
 				let node = initial, destroyed = false, generation = 0;
-				let release: (() => void) | null = null;
-				let visible = false;
+				let release: ((() => void) & { update?(latex: string): void }) | null = null;
 				const document = target.ownerDocument;
 				const inline = initial.type.name === 'math_inline';
 				const dom = document.createElement(inline ? 'span' : 'figure'); dom.className = inline ? 'visual-math visual-math-inline' : 'visual-math'; dom.contentEditable = 'false';
@@ -251,11 +507,12 @@ export class VisualEditor {
 				const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.textContent = this.text('編輯公式', 'Edit equation'); button.disabled = true;
 				this.equationButtons.add(button); dom.append(content, button);
 				const render = () => {
-					const ticket = ++generation; release?.(); release = null;
-					content.textContent = this.text('正在載入公式…', 'Loading equation…');
-					if (!visible) return;
-					void import('../math/render.ts').then(({ renderEquation }) => {
+					const ticket = ++generation;
+					if (release?.update) { release.update(String(node.attrs.latex)); return; }
+					preloadMathRenderer().then(({ renderEquation }) => {
 						if (destroyed || this.disposed || ticket !== generation) return;
+						release?.(); release = null;
+						content.textContent = '';
 						release = renderEquation(content, String(node.attrs.latex));
 					}).catch(() => { if (!destroyed && !this.disposed && ticket === generation) content.textContent = this.text('公式無法顯示，請使用「編輯公式」。', 'Unable to display the equation. Use “Edit equation”.'); });
 				};
@@ -266,22 +523,27 @@ export class VisualEditor {
 					if (source.read(anchored.attrs.from, anchored.attrs.to) !== anchored.attrs.source) { this.options.rejected(); return; }
 					this.options.equation({ latex: String(anchored.attrs.latex), inline: Boolean(anchored.attrs.inline) }, { documentId: source.documentId, version: source.version, from: anchored.attrs.from, to: anchored.attrs.to });
 				};
-				const Observer = document.defaultView?.IntersectionObserver;
-				const observer = Observer ? new Observer(entries => {
-					if (destroyed || this.disposed) return;
-					const next = entries.some(entry => entry.isIntersecting);
-					if (next === visible) return;
-					visible = next; render();
-				}, { rootMargin: '160px' }) : null;
-				observer?.observe(dom);
 				button.addEventListener('click', edit); render();
+				if (!inline) {
+					dom.addEventListener('click', () => {
+						const pos = getPos();
+						if (typeof pos === 'number' && !this.disposed) {
+							const cellIndex = this.view.state.doc.resolve(pos).index(0);
+							if (this.selectedCellIndex !== cellIndex) this.selectCell(cellIndex);
+						}
+					});
+				}
 				return { dom, stopEvent: () => true, ignoreMutation: () => true,
 					update: next => { if (next.type !== node.type) return false; const changed = next.attrs.latex !== node.attrs.latex; node = next; if (changed) render(); return true; },
-					destroy: () => { destroyed = true; generation++; observer?.disconnect(); release?.(); release = null; button.removeEventListener('click', edit); this.equationButtons.delete(button); }
+					destroy: () => { destroyed = true; generation++; release?.(); release = null; button.removeEventListener('click', edit); this.equationButtons.delete(button); }
 				};
 			} },
 			dispatchTransaction: (transaction) => this.dispatch(transaction),
 			handleKeyDown: (_view, event) => {
+				if (event.key === 'Escape' && this.selectedCellIndex !== null) {
+					this.selectCell(null);
+					return true;
+				}
 				const format = formatShortcut(event);
 				if (format && this.options.format && this.editable()) { this.options.format(format); return true; }
 				if (!event.defaultPrevented && !event.isComposing && event.keyCode !== 229 && !event.repeat && !event.altKey &&
@@ -358,6 +620,12 @@ export class VisualEditor {
 			if (!button.isConnected) { this.inserterButtons.delete(button); continue; }
 			if (button.disabled !== inserterDisabled) button.disabled = inserterDisabled;
 		}
+		const actionDisabled = !editable || !this.options.cellAction;
+		for (const button of this.cellActionButtons) {
+			if (!button.isConnected) { this.cellActionButtons.delete(button); continue; }
+			const disabled = actionDisabled || button.dataset.atEdge === 'true';
+			if (button.disabled !== disabled) button.disabled = disabled;
+		}
 		this.options.status(this.projection?.version === this.options.source().version ? 'ready' : 'updating');
 	}
 	/** A collapsed visual caret changes real ProseMirror typing marks, never source bytes. */
@@ -389,6 +657,7 @@ export class VisualEditor {
 	invalidate(): void {
 		if (this.disposed) return;
 		this.projection = null;
+		this.selectedCellIndex = null;
 		this.cachedDecorations = null;
 		this.refresh();
 	}
@@ -398,6 +667,13 @@ export class VisualEditor {
 		if (!projectionIsCurrent(source, parsed)) return;
 		if (this.projection?.documentId === source.documentId && this.projection.version === source.version) { this.refresh(); return; }
 		this.projection = projectVisual(source, parsed);
+		if (this.selectedCellIndex !== null) {
+			if (this.selectedCellIndex >= this.projection.document.childCount) this.selectedCellIndex = null;
+			else if (this.cellOriginal === null && this.projection.document.child(this.selectedCellIndex).type.name === 'source_block') {
+				const span = this.cellSpan(this.selectedCellIndex);
+				if (span) this.cellOriginal = source.read(span.from, span.to);
+			}
+		}
 		this.cachedDecorations = null;
 		const document = this.projection.document;
 		const position = Math.min(this.view.state.selection.from, document.content.size);
@@ -406,9 +682,31 @@ export class VisualEditor {
 	}
 	private dispatch(transaction: Transaction): void {
 		if (this.disposed) return;
-		if (!transaction.docChanged) { this.view.updateState(this.view.state.apply(transaction)); return; }
+		if (!transaction.docChanged) {
+			this.view.updateState(this.view.state.apply(transaction));
+			if (transaction.selectionSet && !this.disposed) {
+				const resolved = transaction.selection.$from;
+				if (resolved.index(0) < this.view.state.doc.childCount) {
+					const cellIndex = resolved.index(0);
+					if (this.selectedCellIndex !== cellIndex) {
+						this.selectCell(cellIndex);
+					}
+				}
+			}
+			return;
+		}
 		if (!this.editable() || !this.projection) { this.options.rejected(); return; }
 		const source = this.options.source(), previous = this.projection, retainedMarks = this.view.state.storedMarks;
+		// Typing can resume at an unchanged native caret without a selection event.
+		// Start its cell session before committing the first change so Cancel keeps
+		// the original bytes instead of a partially edited draft.
+		if (this.selectedCellIndex === null) {
+			const index = transaction.selection.$from.index(0), span = this.cellSpan(index);
+			if (span && this.view.state.doc.child(index).type.name === 'source_block') {
+				this.selectedCellIndex = index;
+				this.cellOriginal = source.read(span.from, span.to);
+			}
+		}
 		try {
 			if (!transaction.before.eq(this.view.state.doc)) throw new Error('STALE_VISUAL');
 			const prepared = prepareVisualEdit(source, previous, transaction);
@@ -449,6 +747,7 @@ export class VisualEditor {
 				return;
 			}
 			this.projection = nextProjection;
+			this.cachedDecorations = null;
 			this.view.updateState(nextState);
 		} catch {
 			try { if (this.options.source() !== source) this.projection = null; }
@@ -506,5 +805,5 @@ export class VisualEditor {
 		if (dom instanceof HTMLElement && typeof dom.scrollIntoView === 'function') dom.scrollIntoView({ block: 'nearest' });
 		this.focus(); return true;
 	}
-	dispose(): void { if (this.disposed) return; this.disposed = true; this.projection = null; this.cachedDecorations = null; this.inserterButtons.clear(); this.view.destroy(); }
+	dispose(): void { if (this.disposed) return; this.disposed = true; this.projection = null; this.cellOriginal = null; this.cachedDecorations = null; this.inserterButtons.clear(); this.cellActionButtons.clear(); this.view.destroy(); }
 }

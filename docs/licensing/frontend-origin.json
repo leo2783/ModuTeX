@@ -6,6 +6,10 @@
 	"licenseDecision": "Pending independent provenance review; new packages remain private UNLICENSED until review",
 	"references": [
 		{
+			"id": "frontend-notebook-20261011",
+			"path": "docs/architecture/FRONTEND_NOTEBOOK_ACCEPTANCE_2026-10-11.md"
+		},
+		{
 			"id": "core-comparison-20261010",
 			"path": "docs/licensing/DOCUMENT_CORE_EXPRESSION_COMPARISON_2026-10-10.md"
 		},
@@ -35,6 +39,24 @@
 		}
 	],
 	"files": [
+		{
+			"path": "apps/frontend/src/features/math/matrix.ts",
+			"origin": "Owner-authorized reuse of the project owner's original 0.1.0 matrixResize.ts parser, with new grid and base-array adaptation; no legacy UI imports",
+			"reviewStatus": "User explicitly confirmed authorship and authorized direct reuse on 2026-10-11; runtime and source-preservation checks recorded separately from application-wide provenance review",
+			"referenceIds": ["frontend-notebook-20261011"]
+		},
+		{
+			"path": "apps/frontend/tests/editor/notebook-cells.test.ts",
+			"origin": "New API Luna test fixture using actual CodeMirror, ProseMirror and source patch transactions",
+			"reviewStatus": "Root corrected fixture control selection and source-byte expectations; genuine GUI operations validated separately",
+			"referenceIds": ["frontend-notebook-20261011"]
+		},
+		{
+			"path": "apps/frontend/tests/workspace/parser-client-immediate.test.ts",
+			"origin": "New real ParserEngine acknowledgement fixture checking scheduling without a debounce timer",
+			"reviewStatus": "Passes without simulated parsing; transport scheduling fixture is not GUI latency acceptance",
+			"referenceIds": ["frontend-notebook-20261011"]
+		},
 		{
 			"path": "apps/frontend/scripts/run-tests.mjs",
 			"origin": "new recursive Node test runner implementing approved test organization requirements; independent child invocation preserves genuine failure status",
