@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { MathfieldElement } from 'mathlive';
-	import 'mathlive/fonts.css';
 	import { text, type Language } from '../../i18n/text.ts';
-	let { value, onChange, locale = 'zh-Hant' }: { value: string; onChange: (latex: string) => void; locale?: Language } = $props();
+	let { value, onChange, onUnavailable, locale = 'zh-Hant' }: { value: string; onChange: (latex: string) => void; onUnavailable?: () => void; locale?: Language } = $props();
 	const t = (traditionalChinese: string, english: string) => text(locale, traditionalChinese, english);
 	type MathInputError = 'too-long' | 'paste-too-long' | 'load-failed';
 	let host: HTMLDivElement;
@@ -31,13 +30,11 @@
 	onMount(() => {
 		let alive = true;
 		let dispose: (() => void) | null = null;
-		void import('mathlive').then(({ MathfieldElement: Field }) => {
+		void import('./field.ts').then(({ createMathField }) => {
 			if (!alive) return;
-			Field.fontsDirectory = null; Field.soundsDirectory = null;
-			const input = new Field();
+			const input = createMathField(host);
 			input.setAttribute('aria-label', t('視覺公式輸入', 'Visual equation input'));
-			input.mathVirtualKeyboardPolicy = 'manual'; input.menuItems = []; input.smartMode = false;
-			input.macros = { ...input.macros, htmlData: { args: 2, def: '#2' }, href: { args: 2, def: '#2' }, htmlClass: { args: 2, def: '#2' }, htmlId: { args: 2, def: '#2' }, style: { args: 2, def: '#2' } };
+			input.smartMode = false;
 			accepted = value; input.setValue(value, { silenceNotifications: true });
 			const changed = () => {
 				const latex = input.value;
@@ -50,13 +47,13 @@
 				if ((event.clipboardData?.getData('text/plain').length ?? 0) + accepted.length > 65536) { event.preventDefault(); error = 'paste-too-long'; }
 			};
 			input.addEventListener('input', changed); input.addEventListener('paste', paste);
-			host.append(input); field = input; loading = false;
+			field = input; loading = false;
 			dispose = () => {
 				const keyboard = window.mathVirtualKeyboard;
 				if (ownsKeyboard && keyboard.container === keyboardHost) { keyboard.hide(); keyboard.container = priorKeyboardContainer?.isConnected ? priorKeyboardContainer : null; }
 				input.removeEventListener('input', changed); input.removeEventListener('paste', paste); input.remove(); field = null;
 			};
-		}).catch(() => { if (alive) { loading = false; error = 'load-failed'; } });
+		}).catch(() => { if (alive) { loading = false; error = 'load-failed'; onUnavailable?.(); } });
 		return () => { alive = false; dispose?.(); };
 	});
 	function toggleKeyboard() {

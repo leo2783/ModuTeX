@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { EditorView as CodeMirrorView } from '@codemirror/view';
+import type { Node as VisualNode } from 'prosemirror-model';
 import { TextSelection } from 'prosemirror-state';
 import { SourceDocument, parseSource, type SourceSpan } from '@modutex/document-core';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { projectVisual } from '../../src/features/visual-editor/schema.ts';
-import { createSourceState, sourcePatchTransaction, sourceState, historyTransaction, rangeInsertionTarget, insertionTransaction } from '../../src/features/source-editor/state.ts';
+import { createSourceState, sourcePatchTransaction, sourceState, historyTransaction, rangeInsertionTarget, insertionTransaction, visualInsertionTransaction } from '../../src/features/source-editor/state.ts';
+import { equationSource } from '../../src/features/math/source.ts';
 import { createTable, tableSource, type TableDraft } from '../../src/features/tables/source.ts';
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
 
@@ -620,6 +622,229 @@ test('multi-block length-changing edits preserve canonical tail anchors and shar
 		assert.equal(rejected, 0);
 	} finally {
 		view.dispose(); sourceView.destroy(); dom.window.close();
+		for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }
+	}
+});
+
+test('source-span block insertion preserves neighbors, renders inserted blocks, and shares cursor/undo with CodeMirror', { timeout: 5000 }, () => {
+	const dom = new JSDOM('<!doctype html><body><div id="source"></div><div id="visual"></div></body>', { pretendToBeVisual: true });
+	const previous = new Map<string, PropertyDescriptor | undefined>();
+	for (const key of ['window', 'document', 'navigator', 'MutationObserver', 'Node', 'HTMLElement', 'getComputedStyle']) {
+		previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+		Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: key === 'getComputedStyle' ? dom.window.getComputedStyle.bind(dom.window) : dom.window[key] });
+	}
+
+	const preamble = '\\documentclass{article}\r\n\\usepackage{booktabs}\r\n';
+	const originalText = preamble + '\\begin{document}\r\n\\section{First heading}\r\nBody before math.\r\n$$x+y$$\r\n' +
+		tableSource({
+			...createTable(2, 2),
+			cells: ['Name', 'Value', 'alpha', '1'],
+			caption: { position: 'below', text: 'Existing table' },
+			weights: [2, 1],
+			style: 'full'
+		}).replace(/\r\n|\r|\n/g, '\r\n') +
+		'\r\n\\opaque{tail}\r\\end{document}\n';
+	const withBom = (text: string) => new TextEncoder().encode('\uFEFF' + text);
+	const originalBytes = withBom(originalText);
+	const original = SourceDocument.open(originalBytes);
+	const sourceTarget = dom.window.document.getElementById('source');
+	const visualTarget = dom.window.document.getElementById('visual');
+	assert.ok(sourceTarget); assert.ok(visualTarget);
+	const sourceView = new CodeMirrorView({ parent: sourceTarget, state: createSourceState(original) });
+	let rejected = 0;
+	const visual = new VisualEditor(visualTarget, 'notebook.tex', {
+		source: () => sourceView.state.field(sourceState).projection.document,
+		apply: (identity, patches) => {
+			sourceView.dispatch(sourcePatchTransaction(sourceView.state, identity, patches));
+			return sourceView.state.field(sourceState).projection.document;
+		},
+		applyValidated: (identity, patches, validateNextSource) => {
+			const transaction = sourcePatchTransaction(sourceView.state, identity, patches);
+			validateNextSource(transaction.state.field(sourceState).projection.document);
+			sourceView.dispatch(transaction);
+			return sourceView.state.field(sourceState).projection.document;
+		},
+		history: (direction) => {
+			const transaction = historyTransaction(sourceView.state, direction);
+			if (!transaction) return false;
+			sourceView.dispatch(transaction);
+			return true;
+		},
+		readOnly: () => false, rejected: () => rejected++, status: () => {}
+	});
+
+	try {
+		visual.sync(parseSource(original));
+		assert.equal(visualTarget.querySelector('h2.source-block')?.textContent, 'First heading');
+		assert.ok(visualTarget.querySelector('.visual-math:not(.visual-math-inline)'));
+		assert.equal(visualTarget.querySelector('.visual-math-content')?.textContent, '正在載入公式…');
+		assert.equal(visualTarget.querySelectorAll('.visual-table table').length, 1);
+
+		// AGY's between-block control API is not available yet. Exercise the real
+		// CodeMirror/VisualEditor source-span path without assuming a future button API.
+		const pointFor = (
+			source: SourceDocument,
+			type: string,
+			matches: (node: VisualNode) => boolean,
+			edge: 'from' | 'to'
+		): SourceSpan => {
+			const projection = projectVisual(source, parseSource(source));
+			const found: VisualNode[] = [];
+			projection.document.forEach((node) => {
+				if (node.type.name === type && matches(node)) found.push(node);
+			});
+			assert.equal(found.length, 1, `expected one ${type} insertion anchor`);
+			const offset = Number(found[0]!.attrs[edge]);
+			assert.ok(Number.isSafeInteger(offset));
+			return { documentId: source.documentId, version: source.version, from: offset, to: offset };
+		};
+		const insertAt = (span: SourceSpan, value: string) => {
+			const beforeSource = sourceView.state.field(sourceState).projection.document;
+			assert.equal(span.documentId, beforeSource.documentId);
+			assert.equal(span.version, beforeSource.version);
+			assert.equal(span.from, span.to);
+			const target = rangeInsertionTarget(sourceView.state, span);
+			const before = target.from > 0 ? sourceView.state.doc.sliceString(target.from - 1, target.from) : '';
+			const after = target.to < sourceView.state.doc.length ? sourceView.state.doc.sliceString(target.to, target.to + 1) : '';
+			const editorInsert = (before && before !== '\n' && !value.startsWith('\n') ? '\n' : '') + value
+				+ (after && after !== '\n' && !value.endsWith('\n') ? '\n' : '');
+			const sourceInsert = editorInsert.replaceAll('\n', beforeSource.profile.preferredLineEnding);
+			const beforeText = beforeSource.read();
+			const expectedText = beforeText.slice(0, span.from) + sourceInsert + beforeText.slice(span.to);
+			const expectedCursor = target.from + editorInsert.length;
+
+			sourceView.dispatch(visualInsertionTransaction(sourceView.state, span, value));
+			const afterSource = sourceView.state.field(sourceState).projection.document;
+			assert.equal(afterSource.read(), expectedText);
+			assert.deepEqual(afterSource.toBytes(), withBom(expectedText));
+			assert.equal(afterSource.read(0, span.from), beforeText.slice(0, span.from));
+			assert.equal(afterSource.read(span.from + sourceInsert.length, afterSource.length), beforeText.slice(span.to));
+			assert.equal(afterSource.read(0, preamble.length), preamble);
+			assert.equal(sourceView.state.selection.main.anchor, expectedCursor);
+			assert.equal(sourceView.state.selection.main.head, expectedCursor);
+			visual.sync(parseSource(afterSource));
+			return { after: afterSource, expectedText, cursor: expectedCursor };
+		};
+		const textBlock = (needle: string) => {
+			const matches: { node: VisualNode; offset: number }[] = [];
+			visual.view.state.doc.forEach((node, offset) => {
+				if (node.type.name === 'source_block' && node.textContent.includes(needle)) matches.push({ node, offset });
+			});
+			assert.equal(matches.length, 1, `expected one editable visual text block containing ${needle}`);
+			return matches[0]!;
+		};
+		const childIndex = (matches: (node: VisualNode) => boolean) => {
+			const indexes: number[] = [];
+			visual.view.state.doc.forEach((node, _offset, index) => {
+				if (matches(node)) indexes.push(index);
+			});
+			assert.equal(indexes.length, 1);
+			return indexes[0]!;
+		};
+
+		const firstBlockPoint = pointFor(original, 'source_block',
+			(node) => node.attrs.role === 'heading' && node.textContent === 'First heading', 'from');
+		const opening = insertAt(firstBlockPoint, 'Notebook lead');
+		const openingTextBlock = textBlock('Notebook lead');
+		const headingIndex = childIndex((node) => node.type.name === 'source_block' &&
+			node.attrs.role === 'heading' && node.textContent === 'First heading');
+		const openingIndex = childIndex((node) => node.type.name === 'source_block' && node.textContent.includes('Notebook lead'));
+		assert.ok(openingIndex < headingIndex, 'the inserted text appears before the first visible block');
+
+		// A captured insertion point belongs to the old source version and cannot
+		// create another history entry or mutate the real source editor.
+		const staleState = sourceView.state;
+		const staleBytes = sourceView.state.field(sourceState).projection.document.toBytes();
+		const staleUndoDepth = sourceView.state.field(sourceState).undo.length;
+		assert.throws(() => visualInsertionTransaction(sourceView.state, firstBlockPoint, 'stale text'), /STALE_INSERTION/);
+		assert.equal(sourceView.state, staleState);
+		assert.deepEqual(sourceView.state.field(sourceState).projection.document.toBytes(), staleBytes);
+		assert.equal(sourceView.state.field(sourceState).undo.length, staleUndoDepth);
+
+		// The newly inserted text is an actual editable ProseMirror text block,
+		// not a rendered source preview or a separate draft surface.
+		const notebookWord = openingTextBlock.node.textContent.indexOf('Notebook');
+		assert.ok(notebookWord >= 0);
+		const editAt = openingTextBlock.offset + 1 + notebookWord + 'Notebook'.length;
+		visual.view.dispatch(visual.view.state.tr
+			.setSelection(TextSelection.create(visual.view.state.doc, editAt))
+			.insertText(' revised'));
+		const editedOpeningText = opening.expectedText.replace('Notebook lead', 'Notebook revised lead');
+		const afterOpeningEdit = sourceView.state.field(sourceState).projection.document;
+		assert.equal(afterOpeningEdit.read(), editedOpeningText);
+		assert.deepEqual(afterOpeningEdit.toBytes(), withBom(editedOpeningText));
+		assert.equal(afterOpeningEdit.read(0, preamble.length), preamble);
+		assert.ok(Array.from(visualTarget.querySelectorAll('.source-block') as NodeListOf<HTMLElement>)
+			.some((element) => element.textContent?.includes('Notebook revised lead')));
+
+		const mathSource = '$$x+y$$';
+		const mathPoint = pointFor(afterOpeningEdit, 'math_block',
+			(node) => node.attrs.source === mathSource, 'to');
+		const equation = equationSource('u=v', false).replace(/\r\n|\r/g, '\n');
+		const afterEquation = insertAt(mathPoint, equation);
+		const equationIndex = childIndex((node) => node.type.name === 'math_block' && node.attrs.latex === '\r\nu=v\r\n');
+		const originalMathIndex = childIndex((node) => node.type.name === 'math_block' && node.attrs.latex === 'x+y');
+		const originalTableIndex = childIndex((node) => node.type.name === 'table_block');
+		assert.ok(originalMathIndex < equationIndex && equationIndex < originalTableIndex,
+			'the new equation is rendered after the captured math block and before the following table');
+		assert.equal(visualTarget.querySelectorAll('.visual-math:not(.visual-math-inline)').length, 2);
+		assert.equal(visualTarget.querySelectorAll('.visual-table table').length, 1);
+
+		const addedTableDraft: TableDraft = {
+			...createTable(2, 2),
+			cells: ['Name', 'Value', 'beta', '2'],
+			caption: { position: 'none', text: '' },
+			weights: [2, 1],
+			style: 'full'
+		};
+		const addedTable = tableSource(addedTableDraft).replace(/\r\n|\r/g, '\n');
+		const tablePoint = pointFor(afterEquation.after, 'table_block',
+			(node) => String(node.attrs.source).includes('\\begin{tabular}'), 'to');
+		const afterTable = insertAt(tablePoint, addedTable);
+		const tableIndexes: number[] = [];
+		visual.view.state.doc.forEach((node, _offset, index) => {
+			if (node.type.name === 'table_block') tableIndexes.push(index);
+		});
+		assert.equal(tableIndexes.length, 2);
+		assert.ok(tableIndexes[0]! < tableIndexes[1]!, 'the inserted table follows the original table');
+		assert.equal(visualTarget.querySelectorAll('.visual-table table').length, 2);
+		assert.equal(visualTarget.querySelectorAll('.visual-math:not(.visual-math-inline)').length, 2);
+		assert.equal(rejected, 0);
+
+		const assertSourceText = (source: SourceDocument, expected: string) => {
+			assert.equal(source.read(), expected);
+			assert.deepEqual(source.toBytes(), withBom(expected));
+		};
+		const undoExpected = [
+			afterEquation.after.read(),
+			editedOpeningText,
+			opening.expectedText,
+			originalText
+		];
+		for (const expected of undoExpected) {
+			const transaction = historyTransaction(sourceView.state, 'undo');
+			assert.ok(transaction, 'every accepted insertion/edit shares CodeMirror undo');
+			sourceView.dispatch(transaction);
+			const restored = sourceView.state.field(sourceState).projection.document;
+			assertSourceText(restored, expected);
+			visual.sync(parseSource(restored));
+		}
+		assert.equal(sourceView.state.field(sourceState).dirty, false);
+		assert.deepEqual(original.toBytes(), originalBytes);
+
+		for (const expected of [opening.expectedText, editedOpeningText, afterEquation.after.read(), afterTable.after.read()]) {
+			const transaction = historyTransaction(sourceView.state, 'redo');
+			assert.ok(transaction, 'the shared redo stack restores the same accepted edits');
+			sourceView.dispatch(transaction);
+			const restored = sourceView.state.field(sourceState).projection.document;
+			assertSourceText(restored, expected);
+			visual.sync(parseSource(restored));
+		}
+		assert.equal(sourceView.state.selection.main.anchor, afterTable.cursor);
+		assert.equal(sourceView.state.selection.main.head, afterTable.cursor);
+		assert.equal(sourceView.state.field(sourceState).dirty, true);
+	} finally {
+		visual.dispose(); sourceView.destroy(); dom.window.close();
 		for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }
 	}
 });

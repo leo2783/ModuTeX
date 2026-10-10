@@ -91,16 +91,16 @@ button:disabled {
 	display: flex;
 	align-items: center;
 }
-nav {
+.global-bar nav {
 	display: flex;
 	gap: 8px;
 }
-nav button,
-nav a {
+.global-bar nav button,
+.global-bar nav a {
 	border: none;
 	background: transparent;
 }
-nav [aria-current='page'] {
+.global-bar nav [aria-current='page'] {
 	color: var(--accent);
 	background: var(--selection);
 }
@@ -265,11 +265,11 @@ button.primary {
 	.files {
 		display: none !important;
 	}
-	nav {
+	.global-bar nav {
 		gap: 0;
 	}
-	nav button,
-	nav a {
+	.global-bar nav button,
+	.global-bar nav a {
 		padding: 7px 8px;
 	}
 }
@@ -277,7 +277,7 @@ button.primary {
 	.global-bar {
 		flex-wrap: wrap;
 	}
-	nav {
+	.global-bar nav {
 		order: 3;
 		width: 100%;
 	}

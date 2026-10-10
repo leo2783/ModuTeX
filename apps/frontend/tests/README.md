@@ -31,3 +31,12 @@ It uses installed Chrome (`msedge` is also supported), one Vite server, temporar
 Coverage includes byte-preserving save/reopen, watcher conflicts, genuine compilation, failure preserving the PDF, cancellation while the start response is pending, retry and teardown without page/console errors. The browser transport calls production file/watch/compiler services; picker selection uses the temporary fixture. This test does not verify the OS picker, Electron preload or native IPC.
 
 For actual built Electron acceptance, run `node --max-old-space-size=512 --test scripts/tests/frontend-electron-smoke.mjs` after frontend/Electron builds and runtime preparation. It directly launches Electron with isolated userData, connects CDP, opens a real recent document, edits/saves bytes, compiles with Tectonic, cancels while preserving PDF bytes/pixels and retries. It also checks route IPC and absence of legacy bridges. OS picker automation is outside this test.
+
+Run the following separately and serially after stopping workers:
+
+```powershell
+node --test apps/frontend/tests/app/workbench-ui.test.mjs
+node --test scripts/tests/frontend-electron-close.test.mjs
+```
+
+The UI test uses real Chrome with GPU disabled to verify mode/icon controls, MathLive rendering, between-block insertion, re-editing, undo and help layout in both themes. The close test requires built frontend/Electron files and verifies save, discard, cancel and save failure using isolated files. It triggers the real Electron window's close path through `window.close()`; it does not click the physical OS title-bar button.

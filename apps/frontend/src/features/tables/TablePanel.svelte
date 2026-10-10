@@ -36,9 +36,56 @@
 			const proposal = changeTableAxis(table, axis, action, index);
 			if (proposal.discarded && !window.confirm(t('刪除會移除這行或這列的內容。要繼續嗎？', 'Deleting removes the content in this row or column. Continue?'))) return;
 			table = proposal.table; row = Math.min(row, table.rows - 1); column = Math.min(column, table.columns - 1); error = null;
+			focusCell(row, column);
 		} catch { error = 'axis'; }
 	}
-	function cell(index: number, value: string) { const cells = [...table.cells]; cells[index] = value; table = { ...table, cells }; }
+	function cell(index: number, value: string) {
+		const cells = [...table.cells];
+		cells[index] = value;
+		table = { ...table, cells };
+	}
+	function handleCellKey(event: KeyboardEvent, r: number, c: number) {
+		if (event.isComposing || event.keyCode === 229) return;
+		if (event.altKey || event.ctrlKey || event.metaKey) return;
+		const input = event.currentTarget as HTMLInputElement;
+		if (event.key === 'Tab') {
+			if (event.shiftKey && r === 0 && c === 0 || !event.shiftKey && r === table.rows - 1 && c === table.columns - 1) return;
+			event.preventDefault();
+			if (event.shiftKey) {
+				if (c > 0) focusCell(r, c - 1);
+				else if (r > 0) focusCell(r - 1, table.columns - 1);
+			} else {
+				if (c < table.columns - 1) focusCell(r, c + 1);
+				else if (r < table.rows - 1) focusCell(r + 1, 0);
+				else if (table.rows < 100) { change('row', 'insert', table.rows); focusCell(r + 1, 0); }
+			}
+		} else if (event.key === 'Enter') {
+			event.preventDefault();
+			if (event.shiftKey) {
+				if (r > 0) focusCell(r - 1, c);
+			} else {
+				if (r < table.rows - 1) focusCell(r + 1, c);
+				else if (table.rows < 100) { change('row', 'insert', table.rows); focusCell(r + 1, c); }
+			}
+		} else if (event.key === 'ArrowUp') {
+			if (r > 0) { event.preventDefault(); focusCell(r - 1, c); }
+		} else if (event.key === 'ArrowDown') {
+			if (r < table.rows - 1) { event.preventDefault(); focusCell(r + 1, c); }
+		} else if (event.key === 'ArrowLeft' && input.selectionStart === 0 && input.selectionEnd === 0) {
+			if (c > 0) { event.preventDefault(); focusCell(r, c - 1); }
+		} else if (event.key === 'ArrowRight' && input.selectionStart === input.value.length && input.selectionEnd === input.value.length) {
+			if (c < table.columns - 1) { event.preventDefault(); focusCell(r, c + 1); }
+		}
+	}
+	function focusCell(r: number, c: number) {
+		row = Math.max(0, Math.min(table.rows - 1, r));
+		column = Math.max(0, Math.min(table.columns - 1, c));
+		const expectedSession = sessionKey, targetRow = row, targetColumn = column;
+		void tick().then(() => {
+			if (!active || locked || sessionKey !== expectedSession || !panel?.isConnected) return;
+			panel.querySelector<HTMLInputElement>(`input[data-row="${targetRow}"][data-col="${targetColumn}"]`)?.focus();
+		});
+	}
 	function weight(index: number, value: number) {
 		cancelDrag();
 		if (!Number.isFinite(value) || value <= 0 || value > 1000) { error = 'weight'; return; }
@@ -99,7 +146,7 @@
 		</div>
 		<table class:full={table.style === 'full'} class:horizontal={table.style === 'horizontal'} class:three={table.style === 'three-line'} class:booktabs={table.rules === 'booktabs'} aria-label={t('表格儲存格文字', 'Table cell text')}>
 		<colgroup>{#each percentages as percent}<col style:width={percent + '%'} />{/each}</colgroup>
-		<tbody>{#each Array.from({ length: table.rows }) as _, r}<tr class:heading={table.header && r === 0}>{#each Array.from({ length: table.columns }) as _, c}<td class:selected={row === r && column === c}><input value={table.cells[r * table.columns + c]} maxlength="2048" aria-label={cellLabel(r + 1, c + 1)} onfocus={() => { row = r; column = c; }} oninput={(event) => cell(r * table.columns + c, event.currentTarget.value)} /></td>{/each}</tr>{/each}</tbody>
+		<tbody>{#each Array.from({ length: table.rows }) as _, r}<tr class:heading={table.header && r === 0}>{#each Array.from({ length: table.columns }) as _, c}<td class:selected={row === r && column === c}><input data-row={r} data-col={c} value={table.cells[r * table.columns + c]} maxlength="2048" aria-label={cellLabel(r + 1, c + 1)} onfocus={() => { row = r; column = c; }} oninput={(event) => cell(r * table.columns + c, event.currentTarget.value)} onkeydown={(event) => handleCellKey(event, r, c)} /></td>{/each}</tr>{/each}</tbody>
 	</table></div>
 	{#if table.caption.position !== 'none'}<label class="caption">{t('表格說明', 'Table caption')}<input value={table.caption.text} maxlength="2048" oninput={(event) => { table = { ...table, caption: { ...table.caption, text: event.currentTarget.value } }; }} /></label>{/if}
 	{#if error}<p class="error" role="alert">{errorMessage(error)}</p>{/if}

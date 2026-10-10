@@ -45,7 +45,10 @@
 			</li>{/each}</ul>
 		</section>
 		{#if !desktop}<p class="browser-note">{t('瀏覽器可編輯與預覽；儲存文件與編譯請使用桌面版。', 'You can edit and preview in the browser. Use the desktop app to save and compile documents.')}</p>{/if}
-		<nav class="help-links" aria-label={t('文件說明', 'Document help')}><a href="#/help/getting-started">{t('開始使用', 'Getting started')}</a><a href="#/help/licenses">{t('授權', 'Licenses')}</a></nav>
+		<nav class="help-links" aria-label={t('文件說明', 'Document help')}>
+			<a href="#/help/getting-started">{t('開始使用', 'Getting started')}</a>
+			<a href="#/help/licenses">{t('授權', 'Licenses')}</a>
+		</nav>
 	</div>
 </main>
 

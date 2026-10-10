@@ -1,5 +1,5 @@
-import { EditorState, TextSelection, NodeSelection, type Transaction } from 'prosemirror-state';
-import { EditorView } from 'prosemirror-view';
+import { EditorState, TextSelection, NodeSelection, Plugin, type Transaction } from 'prosemirror-state';
+import { EditorView, Decoration, DecorationSet } from 'prosemirror-view';
 import { DOMSerializer, type Node as VisualNode } from 'prosemirror-model';
 import { projectionIsCurrent, type SourceDocument, type SourcePatch, type SourceProjection, type SourceSpan } from '@modutex/document-core';
 import { parseTable, columnPercentages, type TableDraft } from '../tables/source.ts';
@@ -26,6 +26,7 @@ interface VisualOptions {
 	equation?(draft: EquationDraft, span: SourceSpan): void;
 	format?(format: TextFormat): void;
 	raw?(source: string, span: SourceSpan): void;
+	insertBlock?(kind: 'text' | 'equation' | 'matrix' | 'table', span: SourceSpan, beforeText: boolean): void;
 }
 function changedSpansMatch(document: SourceDocument, source: SourceDocument, patches: readonly SourcePatch[]): boolean {
 	let delta = 0;
@@ -49,14 +50,129 @@ export class VisualEditor {
 	private readonly tableButtons = new Set<HTMLButtonElement>();
 	private readonly equationButtons = new Set<HTMLButtonElement>();
 	private readonly rawButtons = new Set<HTMLButtonElement>();
+	private readonly inserterButtons = new Set<HTMLButtonElement>();
+	private cachedDecorations: DecorationSet | null = null;
+	private cachedDoc: VisualNode | null = null;
+	private cachedEditable: boolean | undefined = undefined;
+	private cachedLocale: string | undefined = undefined;
 	private readonly options: VisualOptions;
 	private text(traditionalChinese: string, english: string): string {
 		return text(this.options.locale ? this.options.locale() : 'zh-Hant', traditionalChinese, english);
 	}
+	private boundarySpan(index: number): SourceSpan | null {
+		if (!this.editable() || !this.projection) return null;
+		const source = this.options.source();
+		if (this.projection.documentId !== source.documentId || this.projection.version !== source.version) return null;
+		const childCount = this.projection.document.childCount;
+		let offset: number;
+		if (childCount === 0) {
+			offset = 0;
+		} else if (index <= 0) {
+			const first = this.projection.document.child(0);
+			offset = typeof first.attrs.from === 'number' ? first.attrs.from : 0;
+		} else if (index >= childCount) {
+			const last = this.projection.document.child(childCount - 1);
+			offset = typeof last.attrs.to === 'number' ? last.attrs.to : source.length;
+		} else {
+			const prev = this.projection.document.child(index - 1);
+			offset = typeof prev.attrs.to === 'number' ? prev.attrs.to : 0;
+		}
+		offset = Math.max(0, Math.min(source.length, offset));
+		return { documentId: this.projection.documentId, version: this.projection.version, from: offset, to: offset };
+	}
+	private createInserterElement(boundaryIndex: number): HTMLElement {
+		const doc = this.view?.dom.ownerDocument ?? document;
+		const container = doc.createElement('div');
+		container.className = 'visual-block-inserter';
+		container.contentEditable = 'false';
+		container.setAttribute('role', 'toolbar');
+		container.setAttribute('aria-label', this.text('插入區塊', 'Insert block'));
+		const line = doc.createElement('div');
+		line.className = 'visual-block-inserter-line';
+		line.setAttribute('aria-hidden', 'true');
+		const actions = doc.createElement('div');
+		actions.className = 'visual-block-inserter-actions';
+		const trigger = doc.createElement('button');
+		trigger.type = 'button';
+		trigger.className = 'inserter-trigger';
+		trigger.textContent = '+';
+		trigger.title = this.text('在此處插入內容', 'Insert content here');
+		trigger.setAttribute('aria-label', this.text('在此處插入內容', 'Insert content here'));
+		trigger.disabled = !this.editable() || !this.options.insertBlock;
+		this.inserterButtons.add(trigger);
+		const menu = doc.createElement('div');
+		menu.className = 'inserter-menu';
+		const makeItem = (kind: 'text' | 'equation' | 'matrix' | 'table', label: string, title: string) => {
+			const button = doc.createElement('button');
+			button.type = 'button';
+			button.className = 'inserter-btn';
+			button.textContent = label;
+			button.title = title;
+			button.setAttribute('aria-label', title);
+			button.disabled = !this.editable() || !this.options.insertBlock;
+			this.inserterButtons.add(button);
+			button.addEventListener('click', (event) => {
+				event.preventDefault();
+				event.stopPropagation();
+				container.classList.remove('open');
+				if (!this.editable() || !this.options.insertBlock) return;
+				const span = this.boundarySpan(boundaryIndex);
+				if (!span) { this.options.rejected(); return; }
+				const next = this.projection?.document.maybeChild(boundaryIndex);
+				this.options.insertBlock(kind, span, next?.type.name === 'source_block');
+			});
+			return button;
+		};
+		trigger.addEventListener('click', (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			container.classList.toggle('open');
+		});
+		menu.append(
+			makeItem('text', this.text('文字', 'Text'), this.text('插入文字段落', 'Insert text paragraph')),
+			makeItem('equation', this.text('公式', 'Equation'), this.text('插入公式', 'Insert equation')),
+			makeItem('matrix', this.text('矩陣', 'Matrix'), this.text('插入矩陣', 'Insert matrix')),
+			makeItem('table', this.text('表格', 'Table'), this.text('插入表格', 'Insert table'))
+		);
+		actions.append(trigger, menu);
+		container.append(line, actions);
+		return container;
+	}
 	constructor(target: HTMLElement, label: string, options: VisualOptions) {
 		this.label = label;
 		this.options = options;
-		this.view = new EditorView(target, { state: EditorState.create({ schema: visualSchema }),
+		const inserterPlugin = new Plugin({
+			props: {
+				decorations: (state) => {
+					if (this.disposed || !this.projection) return DecorationSet.empty;
+					const doc = state.doc;
+					const editable = this.editable();
+					const loc = this.options.locale ? this.options.locale() : 'zh-Hant';
+					if (this.cachedDecorations && this.cachedDoc === doc && this.cachedEditable === editable && this.cachedLocale === loc) {
+						return this.cachedDecorations;
+					}
+					const decorations: Decoration[] = [];
+					let currentPos = 0;
+					const count = doc.childCount;
+					for (let i = 0; i <= count; i++) {
+						const boundaryIndex = i;
+						const pos = currentPos;
+						decorations.push(Decoration.widget(pos, () => this.createInserterElement(boundaryIndex), {
+							side: i === 0 ? -1 : 1,
+							stopEvent: () => true,
+							key: `inserter-${loc}-${boundaryIndex}`
+						}));
+						if (i < count) currentPos += doc.child(i).nodeSize;
+					}
+					this.cachedDoc = doc;
+					this.cachedEditable = editable;
+					this.cachedLocale = loc;
+					this.cachedDecorations = DecorationSet.create(doc, decorations);
+					return this.cachedDecorations;
+				}
+			}
+		});
+		this.view = new EditorView(target, { state: EditorState.create({ schema: visualSchema, plugins: [inserterPlugin] }),
 			attributes: { role: 'textbox', 'aria-multiline': 'true', 'aria-label': label + this.text(' 視覺編輯', ' visual editor') },
 			editable: () => this.editable(),
 			nodeViews: { source_block: initial => {
@@ -136,12 +252,12 @@ export class VisualEditor {
 				this.equationButtons.add(button); dom.append(content, button);
 				const render = () => {
 					const ticket = ++generation; release?.(); release = null;
-					content.textContent = String(node.attrs.latex);
+					content.textContent = this.text('正在載入公式…', 'Loading equation…');
 					if (!visible) return;
 					void import('../math/render.ts').then(({ renderEquation }) => {
 						if (destroyed || this.disposed || ticket !== generation) return;
 						release = renderEquation(content, String(node.attrs.latex));
-					}).catch(() => { /* Keep the actual source as the readable fallback. */ });
+					}).catch(() => { if (!destroyed && !this.disposed && ticket === generation) content.textContent = this.text('公式無法顯示，請使用「編輯公式」。', 'Unable to display the equation. Use “Edit equation”.'); });
 				};
 				const edit = () => {
 					if (destroyed || !this.editable() || !this.options.equation) return;
@@ -237,6 +353,11 @@ export class VisualEditor {
 			if (button.disabled !== disabled) button.disabled = disabled;
 			if (button.textContent !== equationText) button.textContent = equationText;
 		}
+		const inserterDisabled = !editable || !this.options.insertBlock;
+		for (const button of this.inserterButtons) {
+			if (!button.isConnected) { this.inserterButtons.delete(button); continue; }
+			if (button.disabled !== inserterDisabled) button.disabled = inserterDisabled;
+		}
 		this.options.status(this.projection?.version === this.options.source().version ? 'ready' : 'updating');
 	}
 	/** A collapsed visual caret changes real ProseMirror typing marks, never source bytes. */
@@ -268,6 +389,7 @@ export class VisualEditor {
 	invalidate(): void {
 		if (this.disposed) return;
 		this.projection = null;
+		this.cachedDecorations = null;
 		this.refresh();
 	}
 	sync(parsed: SourceProjection): void {
@@ -276,9 +398,10 @@ export class VisualEditor {
 		if (!projectionIsCurrent(source, parsed)) return;
 		if (this.projection?.documentId === source.documentId && this.projection.version === source.version) { this.refresh(); return; }
 		this.projection = projectVisual(source, parsed);
+		this.cachedDecorations = null;
 		const document = this.projection.document;
 		const position = Math.min(this.view.state.selection.from, document.content.size);
-		this.view.updateState(EditorState.create({ doc: document, selection: TextSelection.near(document.resolve(position)) }));
+		this.view.updateState(EditorState.create({ doc: document, plugins: this.view.state.plugins, selection: TextSelection.near(document.resolve(position)) }));
 		this.refresh();
 	}
 	private dispatch(transaction: Transaction): void {
@@ -370,18 +493,18 @@ export class VisualEditor {
 		const from = boundary(selection.$from.parentOffset), to = boundary(selection.$to.parentOffset);
 		return from === null || to === null ? null : { documentId: this.projection.documentId, version: this.projection.version, from, to };
 	}
-	navigate(span: SourceSpan): boolean {
+	navigate(span: SourceSpan, atEnd = false): boolean {
 		if (!this.editable() || !this.projection || span.documentId !== this.projection.documentId || span.version !== this.projection.version) return false;
-		let position = -1, atom = false;
+		let position = -1, atom = false, length = 0;
 		this.projection.document.descendants((node, offset) => {
-			if (node.attrs.from === span.from && node.attrs.to === span.to) { position = offset; atom = node.isAtom; }
+			if (node.attrs.from === span.from && node.attrs.to === span.to) { position = offset; atom = node.isAtom; length = node.content.size; }
 		});
 		if (position < 0) return false;
-		const selection = atom ? NodeSelection.create(this.view.state.doc, position) : TextSelection.near(this.view.state.doc.resolve(position + 1));
+		const selection = atom ? NodeSelection.create(this.view.state.doc, position) : TextSelection.near(this.view.state.doc.resolve(position + 1 + (atEnd ? length : 0)));
 		this.view.dispatch(this.view.state.tr.setSelection(selection));
 		const dom = this.view.nodeDOM(position);
 		if (dom instanceof HTMLElement && typeof dom.scrollIntoView === 'function') dom.scrollIntoView({ block: 'nearest' });
 		this.focus(); return true;
 	}
-	dispose(): void { if (this.disposed) return; this.disposed = true; this.projection = null; this.view.destroy(); }
+	dispose(): void { if (this.disposed) return; this.disposed = true; this.projection = null; this.cachedDecorations = null; this.inserterButtons.clear(); this.view.destroy(); }
 }

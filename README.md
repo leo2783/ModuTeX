@@ -20,6 +20,9 @@
 
 ModuTeX brings document editing and PDF compilation into one desktop workspace. Switch between visual editing and LaTeX source, work with equations and tables, and preview the compiled document alongside your text.
 
+
+The new workbench provides Source/Visual modes, direct document editing and text, equation, matrix or table insertion between blocks. Closing unsaved documents offers Save, Discard or Cancel. See the [frontend acceptance scope and limits](docs/architecture/FRONTEND_UX_ACCEPTANCE_2026-10-11.md).
+
 ## Features
 
 - **Visual and source editing** — edit supported document structures visually, with direct access to LaTeX source for custom commands and layouts.

@@ -1,0 +1,793 @@
+{
+	"schemaVersion": 1,
+	"scope": "Original frontend rewrite — document core, desktop contracts and initial Svelte workbench inventory",
+	"implementationBasis": "Approved functional specification and official platform documentation; not a strict clean-room claim",
+	"rightsOwner": "ModuTeX project owner (original-code rights confirmed by user)",
+	"licenseDecision": "Pending independent provenance review; new packages remain private UNLICENSED until review",
+	"references": [
+		{
+			"id": "core-comparison-20261010",
+			"path": "docs/licensing/DOCUMENT_CORE_EXPRESSION_COMPARISON_2026-10-10.md"
+		},
+		{
+			"id": "approved-plan",
+			"path": "docs/architecture/FRONTEND_REWRITE_PLAN.md"
+		},
+		{
+			"id": "encoding",
+			"url": "https://encoding.spec.whatwg.org/#interface-textdecoder"
+		},
+		{
+			"id": "typescript-runtime",
+			"url": "https://nodejs.org/api/typescript.html"
+		},
+		{
+			"id": "electron-security",
+			"url": "https://www.electronjs.org/docs/latest/tutorial/security"
+		},
+		{
+			"id": "electron-context-bridge",
+			"url": "https://www.electronjs.org/docs/latest/api/context-bridge"
+		},
+		{
+			"id": "frontend-ux-20261011",
+			"path": "docs/architecture/FRONTEND_UX_ACCEPTANCE_2026-10-11.md"
+		}
+	],
+	"files": [
+		{
+			"path": "apps/frontend/scripts/run-tests.mjs",
+			"origin": "new recursive Node test runner implementing approved test organization requirements; independent child invocation preserves genuine failure status",
+			"reviewStatus": "seven real filesystem and subprocess behavior cases passed with zero skips; independent provenance review and feature directory migration pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/infrastructure/test-discovery.test.ts",
+			"origin": "new temporary filesystem and real Node subprocess fixtures exercising the production discovery entrypoint, including failing and successful nested suites",
+			"reviewStatus": "seven cases passed; Windows link creation required approved execution outside sandbox; no assertion removed and no native desktop acceptance claim",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/workspace/workbench-layout-lifetime.test.ts",
+			"origin": "new mounted Svelte WorkbenchLayout fixture with parent-controlled mode/pane, actual DOM focus and retained textarea draft; no legacy fixture imported",
+			"reviewStatus": "five client focus/lifetime/keyboard behavior cases passed, zero skips; initial missing JSDOM HTMLMediaElement corrected with actual constructor; native CSS/Electron and independent provenance review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/tables/table-session-race.test.ts",
+			"origin": "new public Svelte mounted table behavior fixture using approved session, pointer ownership, keyboard and serialization requirements; production TablePanel and ColumnDrag APIs exercised rather than duplicated",
+			"reviewStatus": "artifact6775 reviewed and integrated with root reactivation/drain/unmount corrections; tests not executed, platform geometry shims not GUI acceptance, independent provenance review pending",
+			"referenceIds": [
+				"approved-plan"
+			]
+		},
+		{
+			"path": "apps/frontend/src/features/source-editor/diagnostics.ts",
+			"origin": "new implementation of normalized editor-coordinate to source-byte mapping from the approved diagnostic navigation requirements and public CodeMirror state API",
+			"reviewStatus": "BOM/CRLF/non-BMP selection case verified; remaining navigation lifecycle cases and independent provenance review pending",
+			"referenceIds": [
+				"approved-plan",
+				"encoding"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/navigation/diagnostic-navigation-client.test.ts",
+			"origin": "new actual Vite Svelte client and public CodeMirror selection/focus fixtures; JSDOM layout shims are harness-only",
+			"reviewStatus": "one of three cases passed; two focus cases failed, public mode-button focus correction not yet rerun; independent review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/settings/settings-font-validation-client.test.ts",
+			"origin": "new mounted Svelte runes fixture exercising actual Settings input, locale, external preference update and restore callbacks",
+			"reviewStatus": "combined validation/external-update/same-default-restore behavior passed; native desktop and independent provenance review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/tables/table-edit-roundtrip-client.test.ts",
+			"origin": "new public Svelte client and real table serializer/parser/source-patch/history fixtures; no legacy fixture import",
+			"reviewStatus": "one parser case passed; five client cases failed due to missing DOM constructor and one draft geometry assertion failed; scoped repair pending, no acceptance claim",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/workspace/workbench-file-watch-client.test.ts",
+			"origin": "new mounted App fixture using actual AGPL host FrontendFiles/FrontendWatch and filesystem changes; host implementation remains within its existing license boundary",
+			"reviewStatus": "first file-row interaction timed out before watch assertions; behavior and independent provenance review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/workspace/desktop-watch-lifetime.test.ts",
+			"origin": "new public DesktopPort transport fixtures backed by actual AGPL host filesystem/watch services, not a native Electron GUI acceptance claim",
+			"reviewStatus": "six earlier lifecycle/error cases passed; independent provenance and native desktop review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/pdf/pdf-client-race.test.ts",
+			"origin": "new original vector PDF fixtures, actual Svelte PdfView client and installed PDF.js public loading/render task observation with native pixel assertions",
+			"reviewStatus": "five actual lifecycle/race cases verified in Node client harness; Chromium worker/desktop and independent provenance review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/tables/table-pointer-client.test.ts",
+			"origin": "new actual Svelte TablePanel pointer/keyboard events with deterministic JSDOM capture and geometry shims; not a physical browser capture claim",
+			"reviewStatus": "repaired float assertions and actual active-capture teardown; root typed callback and strengthened no-mutation/no-publication assertions; actual client pass, full frontend 263/263 zero skips and strict zero errors; independent provenance review and physical browser acceptance pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/tables/table-panel-client.test.ts",
+			"origin": "new real Svelte client TablePanel DOM operations with actual serializer/parser, caption/style/width changes, row/column confirmation and disabled states",
+			"reviewStatus": "behavior verified; native pointer and provenance review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/tables/table-initial-draft.test.ts",
+			"origin": "new real Svelte client first-draft/default-session initialization, dirty draft preservation and new-session reset fixture",
+			"reviewStatus": "behavior verified after actual DOM constructor and callback type fixes; independent review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "scripts/licensing/frontend-font-metadata.test.mjs",
+			"origin": "real installed font SHA256/metadata binding, twelve actual declarations and exact OFL notices consistency; dummy-only assertions removed",
+			"reviewStatus": "three actual filesystem evidence cases verified; independent clearance pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/math/matrix-panel-client.test.ts",
+			"origin": "new real Svelte client MathPanel DOM events with actual matrix serializer; dimensions, discard confirmation and localized errors",
+			"reviewStatus": "three actual Vite-built Svelte client cases passed with zero skips: dimensions and discard confirmation, same-session inactive draft preservation with kind/key reset, and pending focus cancellation; independent provenance and native GUI acceptance pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/pdf/pdf-component-lifetime.test.ts",
+			"origin": "new real Svelte client PdfView fixture with actual PDF.js and native canvas; early unmount, page loading, pause/resume and loading task disposal",
+			"reviewStatus": "real PDF.js/native-canvas client four passed and keyed replacement vector-pixel case failed; root observed viewport width set only on old keyed child, scoped fixture repair dispatched without pixel or lifetime assertion weakening; Chromium worker, native acceptance and independent provenance review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "scripts/licensing/font-metadata.py",
+			"origin": "new audit-only extractor invoking actual fontTools TTFont on installed WOFF2 name IDs 0/13/14",
+			"reviewStatus": "extraction inspected; embedded declarations are not independent license clearance",
+			"referenceIds": [
+				"approved-plan"
+			]
+		},
+		{
+			"path": "docs/licensing/frontend-font-metadata.json",
+			"origin": "actual installed MathLive WOFF2 SHA256 and embedded name-table declarations from fontTools audit; third-party text retains its original terms",
+			"reviewStatus": "byte binding verified; independent provenance review pending",
+			"referenceIds": [
+				"approved-plan"
+			]
+		},
+		{
+			"path": "LICENSES/OFL-1.1.txt",
+			"origin": "official SIL Open Font License 1.1 terms from https://openfontlicense.org/documents/OFL.txt; example template copyright header excluded",
+			"reviewStatus": "full license body preserved in frontend notices; font provenance review pending",
+			"referenceIds": [
+				"approved-plan"
+			]
+		},
+		{
+			"path": "scripts/licensing/frontend-package-containment.test.mjs",
+			"origin": "new genuine filesystem manifest/license path containment fixtures with Windows directory junction fallback",
+			"reviewStatus": "four behavior cases verified without skips; actual Windows file symlink branch not exercised",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "scripts/licensing/frontend-font-notices.test.mjs",
+			"origin": "actual installed font bytes, extracted metadata, full notices and production collector tamper/unresolved fixtures",
+			"reviewStatus": "four behavior cases verified; independent font clearance pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/workspace/desktop-compile-lifetime.test.ts",
+			"origin": "new original renderer behavior fixture using actual FrontendFiles, FrontendCompiler and managed Tectonic; delays real host delivery and verifies stale cancellation, PDF bytes and rejection handling",
+			"reviewStatus": "behavior verified; independent provenance review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/pdf/pdf-real-lifetime.test.ts",
+			"origin": "new original vector PDF fixture and real installed PDF.js/native canvas lifetime regression; serial queue, pause, resume, disposal and cleanup",
+			"reviewStatus": "behavior verified; component and native lifecycle acceptance pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "scripts/licensing/frontend-resource-maps.test.mjs",
+			"origin": "new original actual-filesystem Vite url wrapper and emitted-resource hash trace fixtures; mismatch, missing references, outside path and unknown wrapper remain unresolved",
+			"reviewStatus": "seven real resource trace cases verified after fixture repair; equivalent-path dedup accepted and distinct emitted-file ambiguity rejected; independent trace completeness review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "scripts/licensing/frontend-boundaries.test.mjs",
+			"origin": "new original real filesystem and actual TS/Svelte parser boundary fixtures; symlink or junction rejection, template import and legacy re-export negative behavior",
+			"reviewStatus": "thirteen actual-filesystem/parser behavior tests passed, zero skips, including Vite import.meta.glob positive and comment/string/property negative controls; generated expansion remains unresolved and independent provenance/full closure review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/editor/visual-performance.test.ts",
+			"origin": "new original fixture using real ProseMirror/CodeMirror and MutationObserver; validates retained Raw DOM, current source spans, selection, locale, read-only and disposal",
+			"reviewStatus": "behavior verified; independent provenance review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/production/notices.test.mjs",
+			"origin": "new original production artifact test comparing emitted notices and unchanged installed license texts",
+			"reviewStatus": "behavior verified; final independent bundle closure review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/editor/format-adjacent.test.ts",
+			"origin": "GPT-6 Luna max patch 71cc67d1 reviewed and integrated; eleven adjacent-format tests pass, related regressions pending corrections",
+			"reviewStatus": "pending-regression-corrections-and-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/THIRD_PARTY_NOTICES.md",
+			"origin": "unchanged installed license texts for sixteen packages identified by current on-disk build source maps; root copied exact text, separate font provenance and final closure pending",
+			"reviewStatus": "pending-final-bundle-closure-and-font-review",
+			"referenceIds": [
+				"approved-plan"
+			]
+		},
+		{
+			"path": "apps/frontend/src/components/WorkbenchLayout.svelte",
+			"origin": "new workbench layout implementation from approved responsive specification; pointer ownership, keyboard bounds and snippet integration corrections verified by actual Svelte client tests",
+			"reviewStatus": "prior layout behavior and five new focus/lifetime/keyboard client cases passed; pre-removal capture and newer-focus preservation integrated; native GUI and independent provenance review pending",
+			"referenceIds": [
+				"approved-plan"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/workspace/workbench-layout.test.ts",
+			"origin": "new original Svelte client behavior fixture; four responsive, keyboard and pointer-ownership cases verified",
+			"reviewStatus": "behavior verified; independent provenance review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/editor/visual-stored-marks.test.ts",
+			"origin": "new-original-fixture; GPT-6 Luna max patch reviewed and integrated; five real ProseMirror typing, shared CodeMirror history, atomic rejection and serialization instrumentation tests pass",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/editor/format-complex.test.ts",
+			"origin": "new-original-fixture; GPT-6 Luna max patch reviewed and integrated; eight actual CodeMirror and SourceDocument behavior tests pass",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/settings/settings-navigation.test.ts",
+			"origin": "new-original-fixture; AGY Gemini Flash actual Svelte runes harness; five behavior tests pass, declaration typing fixes pending",
+			"reviewStatus": "pending-independent-review-and-type-verification",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/settings/restore-preferences.test.ts",
+			"origin": "new-original-fixture; AGY Gemini Flash delivery, reviewed with six real Storage contract and interleaving tests by project agent",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/app/app-lifecycle.test.ts",
+			"origin": "new Vite-built Svelte client fixture; added actual AGPL FrontendFiles/FrontendWatch host and temporary filesystem event regressions without changing host license boundary",
+			"reviewStatus": "all six behavior assertions passed after actual JSDOM animation-frame correction, but CodeMirror logged missing Range.getClientRects; not clean client acceptance despite exit0. Added forwarding console-error observer and zero-runtime-error acceptance guard, not rerun; native geometry and independent provenance review pending",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/navigation/page-navigation.test.ts",
+			"origin": "new-original-fixture; AGY Gemini Flash delivery; SSR assertions do not establish client focus behavior; client revision pending",
+			"reviewStatus": "pending-independent-review-and-behavior-verification",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/editor/editor-language.test.ts",
+			"origin": "new-original-fixture; GPT-6 Luna max patch reviewed and integrated by project agent; real ProseMirror and shared CodeMirror history",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/src/i18n/text.ts",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan"
+			]
+		},
+		{
+			"path": "apps/frontend/src/i18n/help-en.ts",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/content/language.test.ts",
+			"origin": "new-original-fixture; GPT-6 Luna max patch reviewed and integrated by project agent",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/content/language-behavior.test.ts",
+			"origin": "new-original-fixture; GPT-6 Luna max patch reviewed and integrated by project agent; real storage and Svelte SSR APIs",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "packages/document-core/package.json",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"encoding",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "packages/document-core/tsconfig.json",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"encoding",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "packages/document-core/tsconfig.tests.json",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"encoding",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "packages/document-core/src/index.ts",
+			"origin": "new-original-implementation",
+			"reviewStatus": "limited current-source comparison recorded with eleven file digests; corrected six export modules versus seven reviewed files; no independent provenance clearance",
+			"referenceIds": [
+				"approved-plan",
+				"encoding",
+				"typescript-runtime",
+				"core-comparison-20261010"
+			]
+		},
+		{
+			"path": "packages/document-core/src/utf8.ts",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"encoding",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "packages/document-core/src/changes.ts",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"encoding",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "packages/document-core/src/source.ts",
+			"origin": "new-original-implementation",
+			"reviewStatus": "current implementation read in full; legacy comparison limited to selected parser/converter scope, editor-state comparison and independent provenance review still pending",
+			"referenceIds": [
+				"approved-plan",
+				"encoding",
+				"typescript-runtime",
+				"core-comparison-20261010"
+			]
+		},
+		{
+			"path": "packages/document-core/tests/source.test.ts",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"encoding",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "packages/document-core/tests/source.bench.ts",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"encoding",
+				"typescript-runtime"
+			]
+		},
+		{
+			"path": "packages/frontend-contracts/package.json",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"electron-security",
+				"electron-context-bridge"
+			]
+		},
+		{
+			"path": "packages/frontend-contracts/tsconfig.json",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"electron-security",
+				"electron-context-bridge"
+			]
+		},
+		{
+			"path": "packages/frontend-contracts/tsconfig.tests.json",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"electron-security",
+				"electron-context-bridge"
+			]
+		},
+		{
+			"path": "packages/frontend-contracts/src/types.ts",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"electron-security",
+				"electron-context-bridge"
+			]
+		},
+		{
+			"path": "packages/frontend-contracts/src/validate.ts",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"electron-security",
+				"electron-context-bridge"
+			]
+		},
+		{
+			"path": "packages/frontend-contracts/src/index.ts",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"electron-security",
+				"electron-context-bridge"
+			]
+		},
+		{
+			"path": "packages/frontend-contracts/tests/validate.test.ts",
+			"origin": "new-original-implementation",
+			"reviewStatus": "pending-independent-review",
+			"referenceIds": [
+				"approved-plan",
+				"electron-security",
+				"electron-context-bridge"
+			]
+		},
+		{
+			"path": "apps/frontend/src/components/CloseDialog.svelte",
+			"origin": "Original frontend implementation from the approved interaction requirements and existing public component/library interfaces; root reviewed actual AGY and API Luna patches, without legacy UI imports",
+			"reviewStatus": "Functional regression and real browser/Electron acceptance recorded in the referenced report; independent provenance review remains pending",
+			"referenceIds": [
+				"approved-plan",
+				"frontend-ux-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/src/components/CompileFeedback.svelte",
+			"origin": "Original frontend implementation from the approved interaction requirements and existing public component/library interfaces; root reviewed actual AGY and API Luna patches, without legacy UI imports",
+			"reviewStatus": "Functional regression and real browser/Electron acceptance recorded in the referenced report; independent provenance review remains pending",
+			"referenceIds": [
+				"approved-plan",
+				"frontend-ux-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/src/components/ToolbarIcon.svelte",
+			"origin": "Original frontend implementation from the approved interaction requirements and existing public component/library interfaces; root reviewed actual AGY and API Luna patches, without legacy UI imports",
+			"reviewStatus": "Functional regression and real browser/Electron acceptance recorded in the referenced report; independent provenance review remains pending",
+			"referenceIds": [
+				"approved-plan",
+				"frontend-ux-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/src/components/WorkbenchActions.svelte",
+			"origin": "Original frontend implementation from the approved interaction requirements and existing public component/library interfaces; root reviewed actual AGY and API Luna patches, without legacy UI imports",
+			"reviewStatus": "Functional regression and real browser/Electron acceptance recorded in the referenced report; independent provenance review remains pending",
+			"referenceIds": [
+				"approved-plan",
+				"frontend-ux-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/src/features/math/field.ts",
+			"origin": "Original frontend implementation from the approved interaction requirements and existing public component/library interfaces; root reviewed actual AGY and API Luna patches, without legacy UI imports",
+			"reviewStatus": "Functional regression and real browser/Electron acceptance recorded in the referenced report; independent provenance review remains pending",
+			"referenceIds": [
+				"approved-plan",
+				"frontend-ux-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/src/features/help/content.ts",
+			"origin": "Original frontend implementation from the approved interaction requirements and existing public component/library interfaces; root reviewed actual AGY and API Luna patches, without legacy UI imports",
+			"reviewStatus": "Functional regression and real browser/Electron acceptance recorded in the referenced report; independent provenance review remains pending",
+			"referenceIds": [
+				"approved-plan",
+				"frontend-ux-20261011"
+			]
+		}
+	],
+	"additionalInventory": {
+		"reviewStatus": "pending-independent-review",
+		"files": [
+			"scripts/licensing/frontend-boundaries.mjs",
+			"scripts/licensing/frontend-artifacts.mjs",
+			"scripts/licensing/frontend-artifacts.test.mjs",
+			"packages/document-core/src/parser.ts",
+			"packages/document-core/tests/parser.test.ts",
+			"packages/document-core/src/editor-projection.ts",
+			"packages/document-core/tests/editor-projection.test.ts",
+			"apps/frontend/package.json",
+			"apps/frontend/index.html",
+			"apps/frontend/tsconfig.json",
+			"apps/frontend/vite.config.ts",
+			"apps/frontend/src/main.ts",
+			"apps/frontend/src/App.svelte",
+			"apps/frontend/src/pages/Settings.svelte",
+			"apps/frontend/src/pages/ReleaseNotes.svelte",
+			"apps/frontend/src/features/release-notes/content.ts",
+			"apps/frontend/tests/content/release-notes.test.ts",
+			"apps/frontend/src/state/preferences.ts",
+			"apps/frontend/src/features/shortcuts/keyboard.ts",
+			"apps/frontend/tests/editor/shortcuts.test.ts",
+			"apps/frontend/src/styles/base.css",
+			"apps/frontend/src/features/files/read.ts",
+			"apps/frontend/src/features/files/desktop.ts",
+			"apps/frontend/src/features/source-editor/SourceView.svelte",
+			"apps/frontend/src/features/source-editor/state.ts",
+			"apps/frontend/src/features/source-editor/outline.ts",
+			"apps/frontend/src/features/source-editor/folding.ts",
+			"apps/frontend/tests/editor/folding.test.ts",
+			"apps/frontend/tests/editor/outline.test.ts",
+			"apps/frontend/src/features/math/source.ts",
+			"apps/frontend/src/features/math/MathPanel.svelte",
+			"apps/frontend/src/features/math/MathInput.svelte",
+			"apps/frontend/src/features/math/editor.ts",
+			"apps/frontend/src/features/math/render.ts",
+			"apps/frontend/tests/math/equation-reedit.test.ts",
+			"apps/frontend/tests/math/visual-math.test.ts",
+			"apps/frontend/tests/math/visual-inline-math.test.ts",
+			"apps/frontend/src/features/source-editor/raw.ts",
+			"apps/frontend/tests/editor/raw-edit.test.ts",
+			"apps/frontend/tests/editor/visual-insertion.test.ts",
+			"apps/frontend/src/features/tables/preamble.ts",
+			"packages/document-core/src/projection.ts",
+			"apps/frontend/tests/tables/booktabs.test.ts",
+			"apps/frontend/src/features/source-editor/format.ts",
+			"apps/frontend/tests/editor/format-commands.test.ts",
+			"apps/frontend/tests/editor/format-partial.test.ts",
+			"apps/frontend/src/features/files/recent.ts",
+			"apps/frontend/tests/workspace/recent.test.ts",
+			"packages/frontend-contracts/tests/recent.test.ts",
+			"apps/frontend/tests/math/math-source.test.ts",
+			"apps/frontend/src/features/tables/source.ts",
+			"apps/frontend/src/features/tables/TablePanel.svelte",
+			"apps/frontend/src/features/tables/column-resize.ts",
+			"apps/frontend/tests/tables/column-resize.test.ts",
+			"apps/frontend/tests/tables/table-source.test.ts",
+			"apps/frontend/src/features/visual-editor/schema.ts",
+			"apps/frontend/src/features/visual-editor/view.ts",
+			"apps/frontend/tests/editor/visual-source.test.ts",
+			"apps/frontend/tests/editor/inline-format.test.ts",
+			"apps/frontend/tests/editor/visual-view.test.ts",
+			"apps/frontend/tests/production/bundle-loading.test.mjs",
+			"apps/frontend/src/features/parser/engine.ts",
+			"apps/frontend/src/features/parser/client.ts",
+			"apps/frontend/src/features/parser/parser.worker.ts",
+			"apps/frontend/tests/workspace/parser-worker.test.ts",
+			"apps/frontend/tests/helpers/parser-worker.ts",
+			"apps/frontend/tests/editor/source-editor.test.ts",
+			"apps/frontend/src/features/pdf/PdfView.svelte",
+			"apps/frontend/src/features/pdf/render-queue.ts",
+			"apps/frontend/tests/pdf/pdf-queue.test.ts",
+			"apps/frontend/tests/settings/preferences.test.ts",
+			"apps/frontend/tests/pdf/pdf-render.test.ts",
+			"apps/frontend/tests/workspace/files.test.ts",
+			"apps/frontend/tests/workspace/desktop-lifetime.test.ts",
+			"apps/frontend/src/features/compile/navigation.ts",
+			"apps/frontend/tests/navigation/compile-navigation.test.ts",
+			"apps/frontend/src/pages/Help.svelte",
+			"apps/frontend/src/features/help/topics.ts",
+			"apps/frontend/tests/content/help.test.ts",
+			"apps/frontend/src/pages/Home.svelte",
+			"apps/frontend/src/features/files/templates.ts",
+			"apps/frontend/tests/content/new-documents.test.ts"
+		],
+		"origin": "new-original-implementation; dependency closure review pending",
+		"hostIntegration": "electron/src/main.ts, preload.ts, frontend-development.ts, frontend-files.ts, frontend-recent.ts, frontend-watch.ts, frontend-compile.ts, frontend-compile-inputs.ts, frontend-diagnostics.ts, managed-compile.ts and their tests/config remain inside the AGPL host boundary"
+	},
+	"thirdPartyAdoptions": [
+		{
+			"package": "@codemirror/language",
+			"version": "6.12.3",
+			"license": "MIT",
+			"basis": "installed public API declarations and LICENSE; no legacy application glue",
+			"evidence": "docs/licensing/FRONTEND_FOLDING_DEPENDENCIES.md",
+			"reviewStatus": "pending-independent-closure-review"
+		},
+		{
+			"package": "mathlive",
+			"version": "0.110.0",
+			"license": "MIT",
+			"basis": "installed public API declarations, LICENSE.txt and official integration guide; original lazy Svelte adapter, no legacy application glue",
+			"evidence": "docs/architecture/FRONTEND_EQUATIONS.md",
+			"reviewStatus": "20 font binaries matched to official 0.110.0 source commit; separate font notice obligations, transformed CSS and independent closure review pending",
+			"assetEvidence": "docs/licensing/FRONTEND_FONT_SOURCE_EVIDENCE_2026-10-08.md"
+		}
+	],
+	"bundledDocuments": {
+		"files": [
+			"CHANGELOG.md",
+			"docs/user/KNOWN_LIMITATIONS.md",
+			"docs/user/INSTALLATION.md",
+			"LICENSE",
+			"LICENSES/Apache-2.0.txt",
+			"vendor/notices/TECTONIC-NOTICE.md",
+			"vendor/notices/TECTONIC-LICENSE.txt",
+			"vendor/notices/DRAWIO-NOTICE.md",
+			"vendor/notices/DRAWIO-LICENSE.txt",
+			"apps/frontend/THIRD_PARTY_NOTICES.md"
+		],
+		"origin": "existing project version/installation documents, unchanged root/file-specific licenses and installed/vendor third-party license texts; imported as data, not legacy frontend implementation",
+		"reviewStatus": "pending-independent-review"
+	},
+	"generated": [
+		{
+			"path": ".verification-artifacts/frontend-origin/artifacts.json",
+			"derivedFrom": "current production artifacts, source maps, installed manifests and unchanged license documents via scripts/licensing/frontend-artifacts.mjs",
+			"reviewStatus": "inventory only; independent provenance and full closure review pending"
+		},
+		{
+			"path": "apps/frontend/dist",
+			"derivedFrom": "apps/frontend/src and pinned third-party dependencies",
+			"reviewStatus": "build verified; bundle closure and provenance review pending"
+		},
+		{
+			"path": "packages/document-core/dist",
+			"derivedFrom": "packages/document-core/src",
+			"reviewStatus": "build verified; source review pending"
+		},
+		{
+			"path": "packages/frontend-contracts/dist",
+			"derivedFrom": "packages/frontend-contracts/src",
+			"reviewStatus": "build verified; source review pending"
+		}
+	],
+	"notCovered": [
+		"frontend pages and editable modes final independent provenance review and complete behavioral acceptance (pending)",
+		"desktop write/watch/compile adapter and end-to-end acceptance (pending)",
+		"new frontend bundle and third-party closure",
+		"design image rights and asset review"
+	],
+	"unchangedLicenseBoundaries": [
+		"root AGPL license",
+		"Electron host",
+		"legacy editor",
+		"legacy site",
+		"published 0.1.0"
+	]
+}

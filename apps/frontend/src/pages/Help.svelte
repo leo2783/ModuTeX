@@ -7,7 +7,8 @@
 	import drawioNotice from '../../../../vendor/notices/DRAWIO-NOTICE.md?raw';
 	import drawioLicense from '../../../../vendor/notices/DRAWIO-LICENSE.txt?raw';
 	import frontendNotices from '../../THIRD_PARTY_NOTICES.md?raw';
-	import { helpTopics, helpText, type HelpTopic } from '../features/help/topics.ts';
+	import { helpTopics, type HelpTopic } from '../features/help/topics.ts';
+	import { helpText } from '../features/help/content.ts';
 	import { contentBlocks, inlineParts } from '../features/release-notes/content.ts';
 	import { text, type Language } from '../i18n/text.ts';
 	import { helpEnglish, helpTitles } from '../i18n/help-en.ts';
@@ -90,10 +91,11 @@
 		min-height: 0;
 		min-width: 0;
 		display: grid;
-		grid-template-columns: minmax(180px, 20fr) minmax(0, 80fr);
+		grid-template-columns: clamp(180px, 20vw, 260px) minmax(0, 1fr);
 		background: var(--surface);
 	}
 	nav {
+		display: block;
 		padding: 24px 12px;
 		overflow-y: auto;
 		overflow-x: hidden;
@@ -212,6 +214,7 @@
 			box-sizing: border-box;
 		}
 		nav a {
+			flex: 0 0 auto;
 			padding: 8px 10px;
 			font-size: 14px;
 		}

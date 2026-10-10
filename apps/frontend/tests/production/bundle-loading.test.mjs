@@ -73,11 +73,16 @@ test('real MathLive and its font assets are deferred and shipped locally', async
 	const visit = chunk => { if (initial.has(chunk.file)) return; initial.add(chunk.file); for (const name of chunk.imports ?? []) visit(manifest[name]); };
 	visit(entry[0]);
 	assert.equal(initial.has(input.file), false);
-	const library = Object.values(manifest).find(chunk => chunk.src?.includes('mathlive') && chunk.isDynamicEntry);
+	const library = manifest['src/features/math/field.ts'];
 	assert.ok(library, 'Actual MathLive dynamic module missing');
+	assert.ok(input.dynamicImports?.includes('src/features/math/field.ts'));
+	const map = JSON.parse(await readFile(new URL(library.file + '.map', dist), 'utf8'));
+	const librarySource = map.sources.findIndex(source => source.endsWith('/mathlive/mathlive.min.mjs'));
+	assert.ok(librarySource >= 0, 'Deferred helper must contain the actual MathLive implementation');
+	assert.equal(map.sourcesContent[librarySource], await readFile(new URL('../../../../node_modules/mathlive/mathlive.min.mjs', import.meta.url), 'utf8'));
 	assert.equal(initial.has(library.file), false);
 	assert.ok((await stat(new URL(library.file, dist))).size > 0);
-	const cssFiles = input.css ?? [];
+	const cssFiles = library.css ?? [];
 	assert.ok(cssFiles.length > 0, 'Bundled font stylesheet missing');
 	const css = (await Promise.all(cssFiles.map(file => readFile(new URL(file, dist), 'utf8')))).join('\n');
 	assert.match(css, /@font-face/);

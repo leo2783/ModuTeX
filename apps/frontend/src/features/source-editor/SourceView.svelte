@@ -8,6 +8,7 @@
 	import 'prosemirror-view/style/prosemirror.css';
 	import { createSourceState, sourceState, sourcePatches, sourcePatchTransaction, historyTransaction, savedCheckpoint, insertionTarget, insertionTransaction, type InsertionTarget } from './state.ts';
 	import MathPanel from '../math/MathPanel.svelte';
+	import ToolbarIcon from '../../components/ToolbarIcon.svelte';
 	import { equationAt, equationSource, type EquationDraft, type LocatedEquation } from '../math/source.ts';
 	import { equationEditTransaction } from '../math/editor.ts';
 	import TablePanel from '../tables/TablePanel.svelte';
@@ -56,8 +57,7 @@
 	let target: HTMLDivElement;
 	let visualTarget: HTMLDivElement;
 	let visual = $state.raw<VisualEditor | null>(null);
-	let mode = $state<'source' | 'visual' | 'split'>('source');
-	let selectionOwner = $state<'source' | 'visual'>('source');
+	let mode = $state<'source' | 'visual'>('source');
 	let visualStatus = $state<'ready' | 'updating'>('updating');
 	let parserFailed = $state(false);
 	let retryParser: (() => void) | null = null;
@@ -106,10 +106,17 @@
 		try {
 			const transaction = tableInsertionTransaction(editor.state, insertion, source, plan, visualInsertion);
 			if (!transaction.docChanged && (plan || editor.state.doc.sliceString(insertion.from, insertion.to) !== source)) throw new Error('INSERTION_REJECTED');
-			editor.dispatch(transaction); closeTool();
+			editor.dispatch(transaction); focusInsertedBlock('table_block'); closeTool();
 		} catch { toolError = 'table-apply'; }
 	}
 	let parsed = $state.raw<SourceProjection | null>(null);
+	let pendingParagraph: { documentId: string; version: number; from: number } | null = null;
+	let pendingBlock: { documentId: string; version: number; to: number; kind: 'table_block' | 'math_block' } | null = null;
+	function focusInsertedBlock(kind: 'table_block' | 'math_block') {
+		if (!editor || mode !== 'visual') return;
+		const projection = editor.state.field(sourceState).projection;
+		pendingBlock = { documentId: projection.document.documentId, version: projection.document.version, to: projection.toSource(editor.state.selection.main.head), kind };
+	}
 	let tableDraft = $state.raw<TableDraft | null>(null);
 	let tableKey = $state('insert'), editingTable = $state(false), toolError = $state<ToolError | null>(null);
 	let equation = $state.raw<LocatedEquation | null>(null);
@@ -180,7 +187,7 @@
 	function applyFormat(format: TextFormat) {
 		if (!editor || !parsed || !active || saving || tool !== null) return;
 		try {
-			const useVisual = mode === 'visual' || mode === 'split' && selectionOwner === 'visual';
+			const useVisual = mode === 'visual';
 			const visualSelection = useVisual ? visual?.view.state.selection : null;
 			if (visualSelection?.empty) {
 				if (!visual?.toggleFormat(format)) throw new Error('FORMAT_RANGE');
@@ -196,7 +203,7 @@
 	}
 	function openTool(kind: 'equation' | 'matrix' | 'table') {
 		if (!editor || saving || !active || tool !== null) return;
-		const useVisual = mode === 'visual' || mode === 'split' && selectionOwner === 'visual';
+		const useVisual = mode === 'visual';
 		const captured = useVisual ? visual?.insertionSelection() ?? null : null;
 		if (useVisual && !captured) { toolError = 'insert-selection'; return; }
 		try { insertion = captured ? rangeInsertionTarget(editor.state, captured.span) : insertionTarget(editor.state); }
@@ -255,13 +262,39 @@
 			editingTable = true; toolError = null; toolOwner = owner; tool = 'table';
 		} catch { toolError = 'table-stale'; }
 	}
-	function closeTool() { tool = null; insertion = null; visualInsertion = null; pendingPackage = null; if (!active) return; if (mode === 'source' || mode === 'split' && toolOwner === 'source') editor?.focus(); else visual?.focus(); }
+	function closeTool() { tool = null; insertion = null; visualInsertion = null; pendingPackage = null; if (!active) return; if (mode === 'source') editor?.focus(); else visual?.focus(); }
+	function openToolAtBoundary(kind: 'equation' | 'matrix' | 'table', span: SourceSpan) {
+		if (!editor || saving || !active || tool !== null) return;
+		try {
+			insertion = rangeInsertionTarget(editor.state, span);
+			visualInsertion = { span, inlineOnly: false };
+			toolOwner = 'visual';
+			toolError = null;
+			editingTable = false;
+			tableKey = 'insert';
+			equation = null;
+			equationKey = 'insert';
+			tool = kind;
+		} catch { toolError = 'insert-stale'; }
+	}
+	function insertTextAtBoundary(span: SourceSpan, beforeText: boolean) {
+		if (!editor || saving || !active || tool !== null) return;
+		try {
+			const transaction = visualInsertionTransaction(editor.state, span, beforeText ? '\\par\n\\par\n' : '\\par\n', false);
+			if (!transaction.docChanged) throw new Error('INSERTION_REJECTED');
+			editor.dispatch(transaction);
+			toolError = null;
+			const next = editor.state.field(sourceState).projection.document;
+			pendingParagraph = { documentId: next.documentId, version: next.version, from: next.read().indexOf('\\par', span.from) };
+			visual?.focus();
+		} catch { toolError = 'insert-stale'; }
+	}
 	function insert(source: string) {
 		if (!editor || !insertion || saving || !active) return;
 		try {
 			const transaction = visualInsertion ? visualInsertionTransaction(editor.state, visualInsertion.span, source, visualInsertion.inlineOnly) : insertionTransaction(editor.state, insertion, source);
 			if (!transaction.docChanged && editor.state.doc.sliceString(insertion.from, insertion.to) !== source) throw new Error('INSERTION_REJECTED');
-			editor.dispatch(transaction); closeTool();
+			editor.dispatch(transaction); focusInsertedBlock('math_block'); closeTool();
 		} catch (error) { toolError = error instanceof Error && error.message === 'INSERTION_INLINE_ONLY' ? 'inline-only' : 'insert'; }
 	}
 	$effect(() => { editor?.dispatch({ effects: permission.reconfigure(EditorState.readOnly.of(saving || tool !== null || !active)) }); });
@@ -323,7 +356,21 @@
 			parserFailed = false;
 			try {
 				return new ParserClient(new Worker(new URL('../parser/parser.worker.ts', import.meta.url), { type: 'module' }),
-					source, (projection) => { parsed = projection; editor?.dispatch({ effects: foldProjection.of(projection) }); visual?.sync(projection); onProjection(projection); }, failParser);
+					source, (projection) => {
+						parsed = projection; editor?.dispatch({ effects: foldProjection.of(projection) }); visual?.sync(projection); onProjection(projection);
+						if (pendingParagraph && projection.documentId === pendingParagraph.documentId && projection.version === pendingParagraph.version) {
+							const from = pendingParagraph.from;
+							visual?.view.state.doc.forEach((node) => { if (node.attrs.from === from && node.attrs.name === 'par') visual?.navigate({ documentId: projection.documentId, version: projection.version, from, to: node.attrs.to }, true); });
+							pendingParagraph = null;
+						}
+						if (pendingBlock && projection.documentId === pendingBlock.documentId && projection.version === pendingBlock.version) {
+							let selected: SourceSpan | null = null;
+							const request = pendingBlock;
+							visual?.view.state.doc.forEach((node) => { if (node.type.name === request.kind && node.attrs.to <= request.to) selected = { documentId: projection.documentId, version: projection.version, from: node.attrs.from, to: node.attrs.to }; });
+							if (selected) visual?.navigate(selected);
+							pendingBlock = null;
+						}
+					}, failParser);
 			} catch { failParser(); return null; }
 		};
 		let parser = startParser(initial);
@@ -341,7 +388,7 @@
 					permission.of(EditorState.readOnly.of(saving || !active)),
 					gutter.of(showLineNumbers ? [lineNumbers(), highlightActiveLineGutter()] : []),
 					wrapping.of(wrapLines ? EditorView.lineWrapping : []),
-					EditorView.domEventHandlers({ keydown: (event) => { const format = formatShortcut(event); if (!format || view.state.readOnly) return false; selectionOwner = 'source'; applyFormat(format); return true; } }),
+					EditorView.domEventHandlers({ keydown: (event) => { const format = formatShortcut(event); if (!format || view.state.readOnly) return false; applyFormat(format); return true; } }),
 					keymap.of([{ key: 'Mod-z', run: history('undo') }, { key: 'Mod-Shift-z', run: history('redo') },
 						{ key: 'Mod-y', run: history('redo') }]),
 					EditorView.updateListener.of((update) => {
@@ -379,8 +426,12 @@
 			},
 			history: (direction) => history(direction)(view), readOnly: () => saving || tool !== null || !active,
 			rejected: onVisualRejected, status: (status) => { visualStatus = status; }, table: openTable, equation: openEquation, raw: openRaw,
-			format: (format) => { selectionOwner = 'visual'; applyFormat(format); },
-			locale: () => locale
+			format: (format) => { applyFormat(format); },
+			locale: () => locale,
+			insertBlock: (kind, span, beforeText) => {
+				if (kind === 'text') insertTextAtBoundary(span, beforeText);
+				else openToolAtBoundary(kind, span);
+			}
 		});
 		retryParser = () => {
 			parser?.dispose();
@@ -392,19 +443,29 @@
 
 <svelte:window onkeydown={(event) => { if (active && tool && event.key === 'Escape') { event.preventDefault(); closeTool(); } }} />
 <div class="source-view">
-	<div class="insert-bar">
-		<div role="group" aria-label={t('文字格式', 'Text format')}><button class="text-button" onclick={() => applyFormat('strong')} disabled={!active || saving || tool !== null || !parsed}>{t('粗體', 'Bold')}</button><button class="text-button" onclick={() => applyFormat('em')} disabled={!active || saving || tool !== null || !parsed}>{t('斜體', 'Italic')}</button><button class="text-button" onclick={() => applyFormat('underline')} disabled={!active || saving || tool !== null || !parsed}>{t('底線', 'Underline')}</button></div>
+	<div class="mode-bar">
+		<span class="mode-heading">{t('編輯模式', 'Editing mode')}</span>
 		<div class="modes" role="group" aria-label={t('編輯模式', 'Editing mode')}>
-			<button class="text-button" aria-pressed={mode === 'source'} onclick={() => { mode = 'source'; selectionOwner = 'source'; editor?.focus(); }} disabled={tool !== null}>{t('原始碼', 'Source')}</button>
-			<button class="text-button" aria-pressed={mode === 'visual'} onclick={() => { mode = 'visual'; selectionOwner = 'visual'; visual?.focus(); }} disabled={tool !== null}>{t('視覺', 'Visual')}</button>
-			<button class="text-button" aria-pressed={mode === 'split'} onclick={() => { mode = 'split'; selectionOwner = 'visual'; visual?.focus(); }} disabled={tool !== null}>{t('對照', 'Side by side')}</button>
+			<button aria-pressed={mode === 'source'} onclick={() => { mode = 'source'; editor?.focus(); }} disabled={tool !== null}>{t('原始碼', 'Source')}</button>
+			<button aria-pressed={mode === 'visual'} onclick={() => { mode = 'visual'; visual?.focus(); }} disabled={tool !== null}>{t('視覺化', 'Visual')}</button>
 		</div>
-		<div role="group" aria-label={t('插入內容', 'Insert')}><button class="text-button" onclick={() => openTool('equation')} disabled={!active || saving || tool !== null}>{t('公式', 'Equation')}</button><button class="text-button" onclick={() => openTool('matrix')} disabled={!active || saving || tool !== null}>{t('矩陣', 'Matrix')}</button><button class="text-button" onclick={() => openTool('table')} disabled={!active || saving || tool !== null}>{t('表格', 'Table')}</button></div>
+	</div>
+	<div class="insert-bar">
+		<div class="tool-group" role="group" aria-label={t('文字格式', 'Text format')}>
+			<button class="icon-tool" title={t('粗體', 'Bold')} aria-label={t('粗體', 'Bold')} onclick={() => applyFormat('strong')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="bold" /></button>
+			<button class="icon-tool" title={t('斜體', 'Italic')} aria-label={t('斜體', 'Italic')} onclick={() => applyFormat('em')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="italic" /></button>
+			<button class="icon-tool" title={t('底線', 'Underline')} aria-label={t('底線', 'Underline')} onclick={() => applyFormat('underline')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="underline" /></button>
+		</div>
+		<div class="tool-group" role="group" aria-label={t('插入內容', 'Insert')}>
+			<button class="icon-tool" title={t('公式', 'Equation')} aria-label={t('公式', 'Equation')} onclick={() => openTool('equation')} disabled={!active || saving || tool !== null}><ToolbarIcon kind="equation" /></button>
+			<button class="icon-tool" title={t('矩陣', 'Matrix')} aria-label={t('矩陣', 'Matrix')} onclick={() => openTool('matrix')} disabled={!active || saving || tool !== null}><ToolbarIcon kind="matrix" /></button>
+			<button class="icon-tool" title={t('表格', 'Table')} aria-label={t('表格', 'Table')} onclick={() => openTool('table')} disabled={!active || saving || tool !== null}><ToolbarIcon kind="table" /></button>
+		</div>
 	</div>
 	{#if mode !== 'visual'}<div class="table-edit"><button class="text-button" onclick={editEquation} disabled={!active || saving || tool !== null || !parsed}>{t('編輯游標所在公式', 'Edit equation at cursor')}</button><button class="text-button" onclick={editTable} disabled={saving || tool !== null}>{t('編輯游標所在表格', 'Edit table at cursor')}</button><button class="text-button" onclick={() => editor && foldCode(editor)} disabled={!active || saving || tool !== null || !parsed}>{t('折疊目前區段', 'Fold current section')}</button><button class="text-button" onclick={() => editor && unfoldAll(editor)} disabled={!active || tool !== null}>{t('展開全部', 'Unfold all')}</button></div>{/if}
 	{#if toolError}<p class="tool-error" role="alert">{toolMessage(toolError)}</p>{/if}
 	{#if parserFailed}<div class="parser-error" role="alert"><span>{t('解析中斷，原始碼仍可編輯。', 'Parsing stopped. The source is still editable.')}</span><button class="text-button" onclick={() => retryParser?.()} disabled={saving || tool !== null}>{t('重新解析', 'Parse again')}</button></div>{/if}
-	<div hidden={tool !== 'equation' && tool !== 'matrix'}><MathPanel kind={tool === 'matrix' ? 'matrix' : 'equation'} {locale} active={active && (tool === 'equation' || tool === 'matrix')} initialDraft={equation?.draft ?? null} sessionKey={equationKey} editing={equation !== null} onEquation={applyEquation} onInsert={insert} onClose={closeTool} /></div>
+	<div hidden={tool !== 'equation' && tool !== 'matrix'}><MathPanel kind={tool === 'matrix' ? 'matrix' : 'equation'} showSource={mode === 'source'} {locale} active={active && (tool === 'equation' || tool === 'matrix')} initialDraft={equation?.draft ?? null} sessionKey={equationKey} editing={equation !== null} onEquation={applyEquation} onInsert={insert} onClose={closeTool} /></div>
 	<div hidden={tool !== 'table'}><TablePanel {locale} active={active && tool === 'table'} locked={pendingPackage !== null} initialDraft={tableDraft} sessionKey={tableKey} editing={editingTable} onInsert={insertTable} onClose={closeTool} /></div>
 	{#if pendingPackage}<section class="package-preview" aria-labelledby="package-heading">
 		<h2 id="package-heading">{t('新增 Booktabs 套件', 'Add the Booktabs package')}</h2><p>{t('表格需要以下前言設定。確認後會與表格一起套用，可一次復原。', 'This table needs the preamble setting below. Confirming applies it together with the table, and one undo reverts both.')}</p>
@@ -416,11 +477,11 @@
 		<label for="raw-source">{t('區段原始碼', 'Section source')}</label><textarea id="raw-source" bind:this={rawInput} bind:value={rawDraft} rows="8" spellcheck="false" disabled={!active || saving}></textarea>
 		<div class="raw-actions"><button onclick={closeTool}>{t('取消', 'Cancel')}</button><button onclick={applyRaw} disabled={!active || saving}>{t('套用', 'Apply')}</button></div>
 	</section>{/if}
-	<div class="editor-surfaces" class:split={mode === 'split'}>
-		<div class="source" bind:this={target} hidden={mode === 'visual'} onfocusin={() => { selectionOwner = 'source'; }}></div>
+	<div class="editor-surfaces">
+		<div class="source" bind:this={target} hidden={mode === 'visual'}></div>
 		<div class="visual" hidden={mode === 'source'} aria-busy={!parserFailed && visualStatus === 'updating'}>
 			{#if !parserFailed && visualStatus === 'updating'}<p class="visual-status" role="status">{t('正在更新視覺內容…', 'Updating visual content…')}</p>{/if}
-			<div bind:this={visualTarget} onfocusin={() => { selectionOwner = 'visual'; }}></div>
+			<div bind:this={visualTarget}></div>
 		</div>
 	</div>
 </div>
@@ -432,14 +493,18 @@
 	}
 	.source-view { height: 100%; display: flex; flex-direction: column; min-height: 0; }
 	.insert-bar { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px; }
+	.tool-group { display: flex; gap: 4px; }
+	.tool-group + .tool-group { padding-inline-start: 8px; border-inline-start: 1px solid var(--line); }
+	.icon-tool { width: 36px; height: 36px; padding: 7px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border-color: transparent; }
 	.table-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--line); }
 	.parser-error { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--ink); }
-	.modes { display: flex; gap: 4px; margin-right: auto; }
-	.modes [aria-pressed='true'] { background: var(--selection); color: var(--accent); }
+	.mode-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--canvas); }
+	.mode-heading { font-size: 13px; font-weight: 600; color: var(--ink); }
+	.modes { display: flex; flex-wrap: wrap; gap: 4px; }
+	.modes button { min-height: 36px; padding: 6px 12px; white-space: nowrap; }
+	.modes [aria-pressed='true'] { background: var(--selection); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 	.editor-surfaces { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); }
-	.editor-surfaces.split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 	.visual { min-height: 0; overflow: auto; padding: 24px; }
-	.split .visual { border-left: 1px solid var(--line); }
 	.visual-status { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
 	.visual :global(.ProseMirror) { min-height: 100%; outline: none; line-height: 1.7; }
 	.visual :global(.ProseMirror:focus-visible) { outline: 2px solid var(--accent); outline-offset: 4px; }
@@ -468,4 +533,90 @@
 	.visual :global(.visual-table .horizontal tr) { border-bottom: 1px solid var(--line); }
 	.visual :global(.visual-table .full th), .visual :global(.visual-table .full td) { border: 1px solid var(--line); }
 	.visual :global(.visual-table caption) { padding: 8px 0; text-align: left; }
+	.visual :global(.visual-block-inserter) {
+		margin: 6px 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		position: relative;
+		user-select: none;
+	}
+	.visual :global(.visual-block-inserter-line) {
+		width: 100%;
+		height: 1px;
+		background: var(--line);
+		position: absolute;
+		top: 50%;
+		left: 0;
+		z-index: 0;
+	}
+	.visual :global(.visual-block-inserter-actions) {
+		position: relative;
+		z-index: 1;
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+	.visual :global(.inserter-trigger) {
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		padding: 0;
+		font-size: 15px;
+		line-height: 22px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.visual :global(.inserter-trigger:hover),
+	.visual :global(.visual-block-inserter.open .inserter-trigger),
+	.visual :global(.visual-block-inserter:focus-within .inserter-trigger) {
+		color: var(--accent);
+		border-color: var(--accent);
+		background: var(--selection);
+	}
+	.visual :global(.inserter-menu) {
+		display: none;
+		gap: 4px;
+		background: var(--surface);
+		padding: 2px 6px;
+		border-radius: 4px;
+		border: 1px solid var(--line);
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+	}
+	.visual :global(.visual-block-inserter.open .inserter-menu),
+	.visual :global(.visual-block-inserter:hover .inserter-menu),
+	.visual :global(.visual-block-inserter:focus-within .inserter-menu) {
+		display: flex;
+	}
+	.visual :global(.inserter-btn) {
+		font-size: 12px;
+		padding: 2px 8px;
+		min-height: 26px;
+		background: var(--canvas);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		color: var(--ink);
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.visual :global(.inserter-btn:hover:not(:disabled)) {
+		background: var(--selection);
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	.visual :global(.inserter-btn:focus-visible),
+	.visual :global(.inserter-trigger:focus-visible) {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+	.visual :global(.inserter-btn:disabled),
+	.visual :global(.inserter-trigger:disabled) {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
 </style>

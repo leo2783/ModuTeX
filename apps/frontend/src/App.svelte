@@ -60,6 +60,8 @@
 	let showLimitations = $state(false);
 	let preferences = $state.raw<Preferences>(DEFAULT_PREFERENCES);
 	const t = (zh: string, en: string) => text(preferences.language, zh, en);
+	let showCloseDialog = $state(false);
+	let closeConfirmed = false;
 	type NoticeDescriptor = [string, string] | { readonly raw: string } | null;
 	type WorkspaceWatchIssue = 'offline' | 'reconcile';
 	interface QueuedWorkspaceEvent {
@@ -618,8 +620,12 @@
 			route = hash === '#/help' || hash.startsWith('#/help/') ? 'help' : hash === '#/settings' ? 'settings' : hash === '#/release-notes' || showLimitations ? 'release-notes' : hash === '#/workbench' || hash === '#/workspace' ? 'workbench' : 'home';
 		}; routes(); window.addEventListener('hashchange', routes);
 		const warn = (event: BeforeUnloadEvent) => {
-			if (!dirty) return;
-			event.preventDefault(); event.returnValue = '';
+			if (closeConfirmed) return;
+			if (!dirty || !source) return;
+			event.preventDefault();
+			event.returnValue = '';
+			if (!hasDesktopBridge || showCloseDialog) return;
+			showCloseDialog = true;
 		};
 		window.addEventListener('beforeunload', warn);
 		rootStateReady = true;
@@ -634,6 +640,32 @@
 	function allowReplacement(): boolean {
 		if (saving) return false;
 		return !dirty || window.confirm(t('編輯內容尚未儲存至磁碟。要捨棄變更並切換文件嗎？', 'Edits are not saved to disk. Discard changes and switch documents?'));
+	}
+	function cancelClose() {
+		showCloseDialog = false;
+	}
+	function discardAndClose() {
+		if (saving || opening) return;
+		if (compiling) {
+			abandonCompile();
+		}
+		showCloseDialog = false;
+		closeConfirmed = true;
+		window.close();
+	}
+	async function saveAndClose() {
+		if (!source || saving || opening) return;
+		const snapshot = source;
+		if (compiling) {
+			abandonCompile();
+		}
+		await saveSource();
+		if (dirty || source !== snapshot || lifetime.signal.aborted) {
+			return;
+		}
+		showCloseDialog = false;
+		closeConfirmed = true;
+		window.close();
 	}
 	function abandonCompile() {
 		++compileTicket;
@@ -662,6 +694,7 @@
 				pdfIdentity = null;
 				pdfName = path;
 				pageCount = 0;
+				workbenchPane = 'pdf';
 			} else {
 				source = readSourceBytes(receipt.bytes); outlineFailed = false;
 				sourceName = path;
@@ -669,6 +702,7 @@
 				hasDiskCheckpoint = true;
 				dirty = false;
 				externalFileNotice = null;
+				workbenchPane = 'document';
 			}
 		} catch (value) {
 			if (workspace === owner && ticket === (pdf ? pdfTicket : sourceTicket)) errorState = fileErrorDescriptor(value);
@@ -833,24 +867,23 @@
 		}
 	}
 	async function openFromHome(kind: 'file' | 'folder') {
-		const previous = workspace;
 		await chooseSource(kind);
-		if (!lifetime.signal.aborted && desktop && workspace && workspace !== previous) window.location.hash = '#/workbench';
+		if (!lifetime.signal.aborted && (workspace || source)) window.location.hash = '#/workbench';
 	}
 	async function openRecent(id: string) {
-		const previous = workspace;
 		await chooseSource('file', id);
-		if (!lifetime.signal.aborted && workspace && workspace !== previous) window.location.hash = '#/workbench';
+		if (!lifetime.signal.aborted && (workspace || source)) window.location.hash = '#/workbench';
 	}
 	async function compileSource() {
-		if (!desktop || !workspace || !source || !revision || compiling || saving || opening || sourceMissingOnDisk()) return;
+		if (!desktop || !source || compiling || saving || opening || sourceMissingOnDisk()) return;
+		const requestedSource = source;
+		if (!workspace || !revision || dirty) {
+			await saveSource();
+		}
+		if (!desktop || !workspace || source !== requestedSource || !revision || dirty || saving || opening || compiling || lifetime.signal.aborted || sourceMissingOnDisk()) return;
 		const snapshot = source;
 		const owner = workspace;
 		const path = sourceName;
-		if (dirty) await saveSource();
-		// Saving yields to native I/O: do not compile another document selected
-		// between save completion and this continuation.
-		if (dirty || source !== snapshot || workspace !== owner || sourceName !== path || saving || opening || compiling || lifetime.signal.aborted || !revision || sourceMissingOnDisk()) return;
 		const compileRevision = revision;
 		if (!compileRevision) return;
 		const own = ++compileTicket;
@@ -894,6 +927,7 @@
 				const diag = result.diagnostics[0]?.message;
 				errorState = diag ? { raw: diag } : compileErrorDescriptor(new Error('COMPILE_FAILED'));
 				compileNoticeState = ['編譯失敗。請檢查編譯問題或 TeX 記錄，修正後重新編譯。', 'Compilation failed. Review the problems or TeX log, then compile again.'];
+				workbenchPane = 'document';
 				return;
 			}
 			if (result.status !== 'success') return;
@@ -901,6 +935,7 @@
 			pdfBytes = result.pdf; pdfName = path.replace(/\.tex$/i, '.pdf'); pageCount = 0;
 			pdfIdentity = result.identity;
 			compileNoticeState = ['編譯完成', 'Compilation completed'];
+			workbenchPane = 'pdf';
 		} catch (value) {
 			if (own === compileTicket && workspace === owner) {
 				if (handleReturned && compileCancellationRequestedFor === own) {
@@ -1064,9 +1099,8 @@
 		event.preventDefault();
 		if (opening || saving) return;
 		if (command === 'open') {
-			const previous = source;
 			void chooseSource().then(() => {
-				if (!lifetime.signal.aborted && source && source !== previous) window.location.hash = '#/workbench';
+				if (!lifetime.signal.aborted && (source || workspace)) window.location.hash = '#/workbench';
 			});
 		} else if (command === 'save') void saveSource();
 		else void compileSource();
@@ -1102,20 +1136,20 @@
 	<header class="global-bar">
 		<a class="brand" href="#/">ModuTeX</a>
 		<nav aria-label={t('主要導覽', 'Main navigation')}>
+			<a href="#/" aria-current={route === 'home' ? 'page' : undefined}>{t('首頁', 'Home')}</a>
 			<a href="#/workbench" aria-current={route === 'workbench' ? 'page' : undefined}>{t('工作台', 'Workbench')}</a>
 			<a href="#/settings" aria-current={route === 'settings' ? 'page' : undefined}>{t('設定', 'Settings')}</a>
 			<a href="#/release-notes" aria-current={route === 'release-notes' ? 'page' : undefined}>{t('版本紀錄', 'Release notes')}</a>
 			<a href="#/help" aria-current={route === 'help' ? 'page' : undefined}>{t('說明', 'Help')}</a>
 		</nav>
 		<div class="global-actions" hidden={route !== 'workbench'} inert={desktopLoading}>
-			{#if desktop}<button onclick={() => chooseSource('folder')} disabled={opening || saving}>{t('開啟資料夾', 'Open folder')}</button>{/if}
-			<button onclick={() => chooseSource()} disabled={opening || saving}>{t('開啟文件', 'Open document')}</button>
-			<button onclick={() => newDocument('blank')} disabled={opening || saving || compiling}>{t('新文件', 'New document')}</button>
-			{#if desktop && source}<button onclick={saveSource} disabled={opening || saving || !dirty || sourceMissingOnDisk()}>{saving ? t('儲存中…', 'Saving…') : t('儲存', 'Save')}</button>{/if}
-			{#if desktop && source}<button onclick={saveSourceAs} disabled={opening || saving || compiling}>{t('另存新檔', 'Save as')}</button>{/if}
-			{#if desktop && source && revision && !sourceMissingOnDisk()}
-				{#if compiling}<button onclick={cancelCompile} disabled={compileCancellationRequestedFor === compileTicket}>{compileCancellationRequestedFor === compileTicket ? t('正在取消…', 'Cancelling…') : t('取消編譯', 'Cancel compilation')}</button>
-				{:else}<button onclick={compileSource} disabled={opening || saving}>{t('編譯 PDF', 'Compile PDF')}</button>{/if}
+			{#if route === 'workbench'}
+				{#await import('./components/WorkbenchActions.svelte') then { default: WorkbenchActions }}
+					<WorkbenchActions locale={preferences.language} desktop={!!desktop} hasSource={!!source} {opening} {saving} {compiling} {dirty}
+						missing={sourceMissingOnDisk()} cancellationPending={compileCancellationRequestedFor === compileTicket}
+						onFolder={() => chooseSource('folder')} onOpen={() => chooseSource()} onNew={() => newDocument('blank')}
+						onSave={saveSource} onSaveAs={saveSourceAs} onCompile={compileSource} onCancel={cancelCompile} />
+				{/await}
 			{/if}
 		</div>
 	</header>
@@ -1223,7 +1257,7 @@
 						{:else}
 							<div class="empty-state">
 								<h1>{t('開啟 TeX 文件', 'Open a TeX document')}</h1>
-								<p>{t('在工作台檢視原始碼，並開啟 PDF 對照。', 'Edit the source alongside its PDF.')}</p>
+								<p>{t('開啟或新增文件。', 'Open or create a document.')}</p>
 								<button onclick={() => chooseSource()} disabled={opening}>{t('選擇文件', 'Choose document')}</button>
 							</div>
 						{/if}
@@ -1255,7 +1289,7 @@
 							{/await}{/key}
 						{:else}<div class="empty-state">
 								<h2>{t('PDF 預覽', 'PDF preview')}</h2>
-								<p>{t('開啟 PDF，與原始碼對照。', 'Open a PDF alongside the source.')}</p>
+								<p>{t('開啟 PDF，檢視文件排版。', 'Open a PDF to view the document layout.')}</p>
 							</div>{/if}
 					</div>
 				</section>
@@ -1271,8 +1305,11 @@
 		{/if}
 	</main>
 	{#if error}<div class="error-strip" role="alert">{error}<button class="text-button" onclick={() => (errorState = null)}>{t('關閉', 'Close')}</button></div>{/if}
-	{#if diagnostics.length}<section class="compile-problems" aria-label={t('編譯問題', 'Compilation problems')}><h2>{t('編譯問題', 'Compilation problems')}</h2><ul>{#each diagnostics as diagnostic}<li><span>{diagnostic.message}</span>{#if diagnostic.line !== null}<button class="text-button" disabled={!canNavigateDiagnostic(diagnostic)} onclick={() => navigateToDiagnostic(diagnostic)}>{diagnostic.path}:{diagnostic.line} · {t('前往原始碼', 'Go to source')}</button>{/if}</li>{/each}</ul></section>{/if}
-	{#if compileLog}<details class="compile-log"><summary>{t('TeX 編譯記錄', 'TeX compilation log')}</summary><pre>{compileLog}</pre></details>{/if}
+	{#if diagnostics.length || compileLog}
+		{#await import('./components/CompileFeedback.svelte') then { default: CompileFeedback }}
+			<CompileFeedback locale={preferences.language} {diagnostics} {compileLog} {canNavigateDiagnostic} {navigateToDiagnostic} />
+		{/await}
+	{/if}
 	<footer class="status-bar" aria-live="polite">
 		<span>{opening ? t('讀取中…', 'Reading…') : source ? sourceName + (dirty ? t(' · 未儲存', ' · Unsaved') : '') : t('尚未開啟文件', 'No document open')}</span>
 		<span>{compiling
@@ -1284,4 +1321,9 @@
 			<span>{projection.issues.some((issue) => issue.code === 'BUDGET') ? t('文件超出解析上限，可繼續編輯原始碼。', 'Parsing limit reached. You can continue editing the source.') : t('有 ' + projection.issues.length + ' 項語法需檢查。', projection.issues.length + ' syntax issues to review.')}</span>
 		{/if}
 	</footer>
+	{#if showCloseDialog && source}
+		{#await import('./components/CloseDialog.svelte') then { default: CloseDialog }}
+			<CloseDialog locale={preferences.language} name={sourceName || 'untitled.tex'} {saving} {error} onSave={saveAndClose} onDiscard={discardAndClose} onCancel={cancelClose} />
+		{/await}
+	{/if}
 </div>

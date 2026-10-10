@@ -164,6 +164,12 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 			const inline = decodeInline(source, node.children);
 			if (inline) { boundaries.push(null); segments.push(inline.segments); blocks.push(visualSchema.nodes.source_block!.create(attrs, inline.content)); return; }
 		}
+		if (node.kind === 'raw' && node.content === null && ['null', 'par'].includes(node.name) && source.read(node.span.from, node.span.to) === '\\' + node.name) {
+			boundaries.push(Object.freeze([0]));
+			segments.push(null);
+			blocks.push(visualSchema.nodes.source_block!.create({ ...attrs, editFrom: node.name === 'par' ? node.span.to : node.span.from, editTo: node.span.to }));
+			return;
+		}
 		const plain = content && ['text', 'heading'].includes(node.kind) ? decodePlain(source, node.kind === 'text' ? [node] : node.children, content.from, content.to) : null;
 		if (plain) {
 			segments.push(null);
@@ -173,25 +179,38 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 	};
 	const body = parsed.nodes.find((node) => node.kind === 'environment' && node.name === 'document');
 	let plainNodes: SyntaxNode[] = [];
+	let paragraphMarker: SyntaxNode | null = null;
 	const flush = () => {
-		if (!plainNodes.length) return;
+		if (!plainNodes.length) { if (paragraphMarker) add(paragraphMarker); paragraphMarker = null; return; }
 		const from = plainNodes[0]!.span.from, to = plainNodes.at(-1)!.span.to;
+		if (!paragraphMarker && plainNodes.every(node => node.kind === 'text') && !source.read(from, to).trim()) { plainNodes = []; return; }
+		const attrs = { from: paragraphMarker?.span.from ?? from, to, editFrom: from, editTo: to, name: paragraphMarker ? 'par' : '' };
+		paragraphMarker = null;
 		if (plainNodes.some((node) => node.kind === 'format' || node.kind === 'math')) {
 			const inline = decodeInline(source, plainNodes)!;
-			blocks.push(visualSchema.nodes.source_block!.create({ from, to, editFrom: from, editTo: to }, inline.content));
+			blocks.push(visualSchema.nodes.source_block!.create(attrs, inline.content));
 			boundaries.push(null); segments.push(inline.segments); plainNodes = []; return;
 		}
 		const plain = decodePlain(source, plainNodes, from, to)!;
-		blocks.push(visualSchema.nodes.source_block!.create({ from, to, editFrom: from, editTo: to }, plain.text ? visualSchema.text(plain.text) : undefined));
+		blocks.push(visualSchema.nodes.source_block!.create(attrs, plain.text ? visualSchema.text(plain.text) : undefined));
 		boundaries.push(plain.boundaries); segments.push(null); plainNodes = [];
 	};
 	for (const node of body ? body.children : parsed.nodes) {
+		if (node.kind === 'raw' && node.name === 'par' && node.content === null && source.read(node.span.from, node.span.to) === '\\par') { flush(); paragraphMarker = node; continue; }
 		if (node.kind === 'text' || (node.kind === 'raw' && Object.hasOwn(decodedEscapes, source.read(node.span.from, node.span.to))) || (node.kind === 'format' || node.kind === 'math' && ['$', '('].includes(node.name)) && decodeInline(source, [node])) plainNodes.push(node);
 		else { flush(); add(node); }
 	}
 	flush();
-	if (body && !blocks.length && body.content) { boundaries.push(Object.freeze([0])); segments.push(null); blocks.push(visualSchema.nodes.source_block!.create({ from: body.content.from, to: body.content.to,
-		editFrom: body.content.from, editTo: body.content.to })); }
+	if (!blocks.length) {
+		const from = body?.content ? body.content.from : 0;
+		const to = body?.content ? body.content.to : source.length;
+		boundaries.push(Object.freeze([0]));
+		segments.push(null);
+		blocks.push(visualSchema.nodes.source_block!.create({
+			from, to, editFrom: from, editTo: to,
+			role: 'paragraph', name: '', level: 2
+		}));
+	}
 	return { documentId: source.documentId, version: source.version, document: visualSchema.nodes.doc!.create(null, blocks), boundaries: Object.freeze(boundaries), segments: Object.freeze(segments) };
 }
 const escaped: Record<string, string> = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '$': '\\$', '%': '\\%', '&': '\\&', '#': '\\#', '_': '\\_', '^': '\\textasciicircum{}', '~': '\\textasciitilde{}' };
@@ -452,8 +471,10 @@ function blockEdits(source: SourceDocument, projection: VisualProjection, transa
 			return;
 		}
 		const boundaries = projection.boundaries[index];
-		if (!boundaries || boundaries.length !== oldText.length + 1 || boundaries.at(-1) !== anchoredBefore.attrs.editTo - anchoredBefore.attrs.editFrom) throw new Error('VISUAL_MAPPING');
-		const start = anchoredBefore.attrs.editFrom + boundaries[from]!, end = anchoredBefore.attrs.editFrom + boundaries[oldTo]!;
+		const isInitialEmpty = oldText.length === 0 && boundaries?.length === 1 && boundaries[0] === 0;
+		if (!boundaries || (!isInitialEmpty && (boundaries.length !== oldText.length + 1 || boundaries.at(-1) !== anchoredBefore.attrs.editTo - anchoredBefore.attrs.editFrom))) throw new Error('VISUAL_MAPPING');
+		const start = anchoredBefore.attrs.editFrom + (isInitialEmpty ? 0 : boundaries[from]!);
+		const end = anchoredBefore.attrs.editFrom + (isInitialEmpty ? (anchoredBefore.attrs.editTo - anchoredBefore.attrs.editFrom) : boundaries[oldTo]!);
 		edits.push({ index, from, to: oldTo, insert: inserted,
 			patch: { from: start, to: end, expected: source.read(start, end), insert: escapeVisualText(inserted).replaceAll('\n', source.profile.preferredLineEnding) } });
 	};

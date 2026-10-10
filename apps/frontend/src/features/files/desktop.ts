@@ -102,7 +102,6 @@ export function desktopFiles(signal?: AbortSignal): FileDesktopPort | null {
 		async openRecent(id) {
 			assertActive(); const workspace = parseWorkspaceInfo(await native.openRecent(recentDocumentId(id)));
 			if (!workspace) throw new Error('RECENT_NOT_FOUND');
-			if (signal?.aborted) { await stopAllWatches(); await native.closeWorkspace(workspace.id); assertActive(); }
 			await stopAllWatches();
 			if (signal?.aborted) { await native.closeWorkspace(workspace.id); assertActive(); }
 			return workspace;
