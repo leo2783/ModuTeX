@@ -210,10 +210,11 @@ button.primary {
 @keyframes compile-progress { from { transform: translateX(-100%); } to { transform: translateX(334%); } }
 @media (prefers-reduced-motion: reduce) { .compile-progress span { animation: none; margin-inline: auto; } }
 .inline-equation-draft { display: block; position: relative; padding-block: 8px; min-height: 48px; }
-.inline-equation-draft.is-inline { display: inline-flex; align-items: baseline; }
+.inline-equation-draft.is-inline { display: inline-block; vertical-align: baseline; max-width: 100%; }
 .inline-equation-tools { display: flex; gap: 2px; margin-bottom: 4px; }
 .inline-equation-tools button { display: inline-flex; align-items: center; justify-content: center; width: 30px; min-height: 30px; padding: 4px; border-color: transparent; background: transparent; }
-.inline-equation-input math-field { min-width: 3em; width: auto; padding: 0; border: none; background: transparent; color: var(--ink); --caret-color: var(--accent); --selection-background-color: var(--selection); }
+.inline-equation-input { display: block; }
+.inline-equation-input math-field { min-width: 6em; max-width: 100%; width: auto; padding: 4px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); --caret-color: var(--accent); --selection-background-color: var(--selection); }
 .inline-equation-error { display: block; color: var(--error); font-size: 13px; }
 .equation-draft-original { display: none !important; }
 .cell-panel-draft { display: block; margin-block: 8px; }

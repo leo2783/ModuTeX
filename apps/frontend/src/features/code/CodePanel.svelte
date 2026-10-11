@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { codeSource, type CodeDraft } from './source.ts';
+	import { codeSource, CODE_LANGUAGES, type CodeDraft } from './source.ts';
 	import { text, type Language } from '../../i18n/text.ts';
 
 	let {
@@ -26,6 +26,7 @@
 	const t = (traditionalChinese: string, english: string) => text(locale, traditionalChinese, english);
 
 	let draftCode = $state('');
+	let language = $state('text');
 	let loadedKey: string | null = null;
 	let error = $state<'delimiter' | 'general' | null>(null);
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
@@ -34,6 +35,7 @@
 	$effect(() => {
 		if (sessionKey !== loadedKey) {
 			draftCode = initialDraft?.code ?? '';
+			language = initialDraft?.language ?? 'text';
 			loadedKey = sessionKey;
 			error = null;
 			if (active) {
@@ -77,9 +79,9 @@
 		}
 		try {
 			if (editing && onApply) {
-				onApply({ code: draftCode });
+				onApply({ code: draftCode, language });
 			} else {
-				onInsert(codeSource(draftCode));
+				onInsert(codeSource(draftCode, false, language));
 			}
 			error = null;
 		} catch {
@@ -99,6 +101,10 @@
 	</div>
 
 	<div class="code-editor-wrapper">
+		<label for="code-language">{t('程式碼語言', 'Code language')}</label>
+		<select id="code-language" bind:value={language} disabled={!active}>
+			{#each CODE_LANGUAGES as entry}<option value={entry[0]}>{t(entry[1], entry[2])}</option>{/each}
+		</select>
 		<label for="code-source-input" class="code-label">
 			{t('程式碼', 'Code')}
 		</label>

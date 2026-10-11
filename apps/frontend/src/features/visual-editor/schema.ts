@@ -524,8 +524,15 @@ export function visualPatches(source: SourceDocument, projection: VisualProjecti
 /** One immutable, identity-bound edit analysis shared by patching and canonical advancement. */
 export function prepareVisualEdit(source: SourceDocument, projection: VisualProjection, transaction: Transaction): PreparedVisualEdit {
 	const edits = Object.freeze([...blockEdits(source, projection, transaction)]);
+	const patches = edits.map(edit => edit.patch);
+	const end = projection.document.lastChild?.attrs.to;
+	if (edits.length && typeof end === 'number' && end > 0 && source.read(end, Math.min(source.length, end + 14)).startsWith('\\end{document}') && !/[\r\n]/.test(source.read(end - 1, end))) {
+		const last = patches.at(-1);
+		if (last && last.to === end) patches[patches.length - 1] = { ...last, insert: last.insert + source.profile.preferredLineEnding };
+		else patches.push({ from: end, to: end, expected: '', insert: source.profile.preferredLineEnding });
+	}
 	return Object.freeze({ source, projection, transaction, before: transaction.before, document: transaction.doc,
-		edits, patches: Object.freeze(edits.map((edit) => edit.patch)) });
+		edits, patches: Object.freeze(patches) });
 }
 /** Reanchor the existing visual transaction after its authoritative source receipt, without parsing. */
 function editBoundaries(offsets: readonly number[], from: number, to: number, insert: string, lineEnding: string): readonly number[] {
@@ -548,6 +555,7 @@ function editBoundaries(offsets: readonly number[], from: number, to: number, in
 export function advanceVisual(
 	source: SourceDocument, projection: VisualProjection, transaction: Transaction, next: SourceDocument, prepared?: PreparedVisualEdit
 ): VisualProjection {
+	prepared ??= prepareVisualEdit(source, projection, transaction);
 	if (prepared && (prepared.source !== source || prepared.projection !== projection || prepared.transaction !== transaction ||
 		prepared.before !== transaction.before || prepared.document !== transaction.doc)) throw new Error('STALE_VISUAL');
 	const edits = prepared?.edits ?? blockEdits(source, projection, transaction);
@@ -562,6 +570,7 @@ export function advanceVisual(
 		delta += patch.insert.length - (patch.to - patch.from);
 	}
 	if (next.length !== source.length + delta) throw new Error('VISUAL_RECEIPT');
+	const separatedEnd = patches.length !== edits.length || patches.some((patch, index) => patch.insert !== edits[index]?.patch.insert);
 	const blocks: VisualNode[] = [], boundaries: (readonly number[] | null)[] = [], segments: (readonly InlineSegment[] | null)[] = [];
 	const byIndex = new Map<number, BlockEdit[]>();
 	let firstEditedIndex = transaction.doc.childCount;
@@ -585,6 +594,11 @@ export function advanceVisual(
 			to: mapPosition(change, anchoredBefore.attrs.to, edit ? 'after' : 'before'),
 			editFrom: mapPosition(change, anchoredBefore.attrs.editFrom, edit ? 'before' : 'after'),
 			editTo: mapPosition(change, anchoredBefore.attrs.editTo, edit ? 'after' : 'before') };
+		// The generated separator belongs to the document boundary, not editable cell text.
+		if (separatedEnd && edit && index === projection.document.childCount - 1) {
+			attrs.to -= source.profile.preferredLineEnding.length;
+			if (anchoredBefore.attrs.editTo === anchoredBefore.attrs.to) attrs.editTo -= source.profile.preferredLineEnding.length;
+		}
 		const atomAnchors = new Map<VisualNode, VisualNode>();
 		displayedBefore.content.forEach((child, _offset, ordinal) => {
 			if (child.type.name === 'math_inline') atomAnchors.set(child, anchoredBefore.child(ordinal));

@@ -23,6 +23,8 @@
 
 ## 驗收狀態
 
+最新 [儲存格／公式互動修正](./FRONTEND_NOTEBOOK_INTERACTION_2026-10-11.md)：修正重編輯事件、移動後選取，新增兩階段公式選單、程式碼語言及欄寬箭頭。真 Chrome 12／12；191 個公式與九種程式碼語言真 Electron 編譯／PDF 像素通過。
+
 最新文件內編輯與 PDF 顯示證據見 [本輪驗收](./FRONTEND_INLINE_ACCEPTANCE_2026-10-11.md)：最新全套前端 338／338、真 Chrome 11／11、production 3／3，真 Electron 編譯成功／失敗與 PDF 像素驗證通過。前輪證據保留於 [Notebook 修正](./FRONTEND_NOTEBOOK_ACCEPTANCE_2026-10-11.md)。完整應用授權與後端／IPC 重寫維持原範圍。
 
 ## 停止條件

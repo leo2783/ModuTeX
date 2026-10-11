@@ -67,6 +67,8 @@ The new workbench is under development and is not the published 0.1.0 package. `
 
 Frontend development, builds and tests first rebuild the shared document core and contracts. The unified math menu includes inline equations, matrix cells, Greek letters, limits, calculus and multiline templates; code cells and text colors share document undo. See [Math and content acceptance](docs/architecture/FRONTEND_MATH_PARITY_2026-10-11.md).
 
+Press Escape to select cells, use Up/Down to navigate, or Alt+Up/Down to move them. The math picker selects a category before a formula, and code cells retain their selected language. See [Notebook interaction acceptance](docs/architecture/FRONTEND_NOTEBOOK_INTERACTION_2026-10-11.md).
+
 Build the legacy production app or run its verification suite:
 
 ```powershell

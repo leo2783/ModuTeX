@@ -85,7 +85,7 @@
 	}
 	function applyCode(draft: CodeDraft) {
 		if (!editor || !active || saving || !codeDraft) return;
-		try { const transaction = codeEditTransaction(editor.state, codeDraft, draft); if (transaction) editor.dispatch(transaction); closeTool(); }
+		try { const transaction = codeEditTransaction(editor.state, codeDraft, draft); if (transaction) editor.dispatch(draft.language && draft.language !== 'text' ? withPackage(editor.state, transaction, 'listings') : transaction); closeTool(); }
 		catch { toolError = 'raw-apply'; }
 	}
 	let rawSpan: SourceSpan | null = null;
@@ -331,7 +331,7 @@
 			editingTable = true; toolError = null; toolOwner = owner; tool = 'table';
 		} catch { toolError = 'table-stale'; }
 	}
-	function closeTool() { visual?.closeEquation(); tool = null; insertion = null; visualInsertion = null; equation = null; pendingPackage = null; toolError = null; if (!active) return; if (mode === 'source') editor?.focus(); else visual?.focus(); }
+	function closeTool() { visual?.closeEquation(); tool = null; insertion = null; visualInsertion = null; equation = null; pendingPackage = null; toolError = null; visual?.refresh(); if (!active) return; if (mode === 'source') editor?.focus(); else visual?.focus(); }
 	$effect(() => {
 		if (!active || mode !== 'visual' || tool !== 'equation' || !visual) return;
 		const span = equation?.span ?? visualInsertion?.span;
@@ -446,6 +446,7 @@
 		try {
 			let transaction = visualInsertion ? visualInsertionTransaction(editor.state, visualInsertion.span, source, visualInsertion.inlineOnly) : insertionTransaction(editor.state, insertion, source);
 			if (tool === 'equation' || tool === 'matrix') transaction = withPackage(editor.state, transaction, ['amsmath', 'amssymb']);
+			if (tool === 'code' && source.startsWith('\\begin{lstlisting}')) transaction = withPackage(editor.state, transaction, 'listings');
 			if (!transaction.docChanged && editor.state.doc.sliceString(insertion.from, insertion.to) !== source) throw new Error('INSERTION_REJECTED');
 			editor.dispatch(transaction); if (tool !== 'code' && !insertInline) focusInsertedBlock('math_block'); closeTool();
 		} catch (error) { toolError = error instanceof Error && error.message === 'INSERTION_INLINE_ONLY' ? 'inline-only' : 'insert'; }
@@ -675,7 +676,7 @@
 
 <style>
 	.visual :global(.code-content) { font: 14px/1.6 Consolas, monospace; white-space: pre; overflow-x: auto; background: var(--canvas); padding: 12px; border: 1px solid var(--line); }
-	.visual :global(.inline-equation-catalog) { flex-direction: column; gap: 6px; position: absolute; z-index: 40; top: 34px; left: 0; width: min(560px, 65vw); max-height: 36vh; overflow: auto; padding: 8px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 4px 12px #0002; }
+	.visual :global(.inline-equation-catalog) { flex-direction: column; gap: 6px; width: min(560px, 100%); max-height: 36vh; overflow: auto; padding: 8px; box-sizing: border-box; background: var(--surface); border: 1px solid var(--line); margin-top: 8px; }
 	.visual :global(.inline-equation-catalog-nav), .visual :global(.inline-equation-catalog-grid) { display: flex; flex-wrap: wrap; gap: 4px; }
 	.visual :global(.catalog-tab.active) { background: var(--selection); }
 	.visual :global(.catalog-item-btn) { min-width: 40px; padding: 5px 8px; }

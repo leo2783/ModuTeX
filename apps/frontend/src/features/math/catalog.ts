@@ -14,7 +14,7 @@ export interface CatalogCategory {
 }
 
 const symbols = (entries: readonly (readonly [string, string, string])[]): readonly CatalogItem[] => entries.map(([id, display, latex]) => ({ id, display, latex, labelZh: display, labelEn: display }));
-export const MATH_CATALOG: readonly CatalogCategory[] = [
+const categories: readonly CatalogCategory[] = [
 	{ id: 'common', nameZh: '常用結構', nameEn: 'Common structures', items: symbols([
 		['nthroot', 'n 次根', '\\sqrt[#?]{#@}'], ['reciprocal', '倒數', '\\frac{1}{#@}'], ['abs', '絕對值', '\\left|#@\\right|'], ['parentheses', '括號', '\\left(#@\\right)'], ['inverse', '反矩陣', '#@^{-1}'], ['transpose', '轉置', '#@^{\\mathsf{T}}'], ['trace', '跡', '\\operatorname{tr}(#?)'], ['determinant', '行列式', '\\det(#?)'], ['unit-vector', '單位向量', '\\hat{#@}'], ['dots', '水平省略', '\\cdots'], ['vdots', '垂直省略', '\\vdots'], ['ddots', '對角省略', '\\ddots'], ['binom', '二項係數', '\\binom{#?}{#?}'], ['differential', '微分 d', '\\mathrm{d}'], ['division', '÷', '\\div'], ['minus-plus', '∓', '\\mp'], ['much-less', '≪', '\\ll'], ['much-greater', '≫', '\\gg'], ['less', '<', '<'], ['greater', '>', '>'], ['equals', '=', '='], ['degrees', '度數', '#@^{\\circ}']
 	]) },
@@ -161,3 +161,10 @@ export const MATH_CATALOG: readonly CatalogCategory[] = [
 		]
 	}
 ];
+
+export const MATH_CATALOG: readonly CatalogCategory[] = categories
+	.filter(category => category.id !== 'greek-upper')
+	.map(category => category.id === 'greek-lower' ? {
+		...category, id: 'greek', nameZh: '希臘字母', nameEn: 'Greek letters',
+		items: [...category.items, ...categories.find(value => value.id === 'greek-upper')!.items]
+	} : category);

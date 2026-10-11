@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorState as VisualState } from 'prosemirror-state';
 import { SourceDocument, parseSource } from '@modutex/document-core';
-import { createSourceState, sourceState, historyTransaction } from '../../src/features/source-editor/state.ts';
+import { createSourceState, sourceState, historyTransaction, sourcePatchTransaction } from '../../src/features/source-editor/state.ts';
 import { colorTransaction, formatTransaction } from '../../src/features/source-editor/format.ts';
 import { projectVisual, prepareVisualEdit } from '../../src/features/visual-editor/schema.ts';
 import { codeSource, codeAt, codeEditTransaction } from '../../src/features/code/source.ts';
@@ -55,4 +55,28 @@ test('multiline math and amsmath share one source history entry', () => {
  assert.match(state.doc.toString(), /usepackage\{amsmath\}/);
 	assert.match(state.doc.toString(), /usepackage\{amssymb\}/);
  assert.deepEqual(historyTransaction(state, 'undo')!.state.field(sourceState).projection.document.toBytes(), original.toBytes());
+});
+
+test('language code cells preserve literal content, language-only edits and atomic package undo', () => {
+	assert.throws(() => codeSource('x', false, 'python]\\input{bad}'), /CODE_LANGUAGE/);
+	assert.throws(() => codeSource('\\end{lstlisting}', false, 'python'), /CODE_END_DELIMITER/);
+	const original = SourceDocument.open(new TextEncoder().encode('\\documentclass{article}\n\\begin{document}\n'+codeSource('print("literal")', false, 'python')+'\n\\end{document}'));
+	const state = createSourceState(original), located = codeAt(original, parseSource(original), original.read().indexOf('\\begin{lstlisting}'))!;
+	assert.equal(located.draft.language, 'python'); assert.equal(located.draft.code, 'print("literal")');
+	assert.equal(codeEditTransaction(state, located, located.draft), null);
+	const changed = withPackage(state, codeEditTransaction(state, located, { code: located.draft.code, language: 'javascript' })!, 'listings').state;
+	assert.match(changed.doc.toString(), /\\usepackage\{listings\}/);
+	assert.match(changed.doc.toString(), /name=javascript/);
+	assert.deepEqual(historyTransaction(changed, 'undo')!.state.field(sourceState).projection.document.toBytes(), original.toBytes());
+});
+
+test('editing a visual document separates an adjacent document terminator in the same undo', () => {
+	const original = SourceDocument.open(new TextEncoder().encode('\\documentclass{article}\n\\begin{document}\n2555\n\\par   58866\\end{document}'));
+	const projection = projectVisual(original, parseSource(original));
+	const visual = VisualState.create({ doc: projection.document });
+	const edit = prepareVisualEdit(original, projection, visual.tr.insertText('X', 2));
+	const state = createSourceState(original);
+	const changed = sourcePatchTransaction(state, original, edit.patches).state;
+	assert.match(changed.doc.toString(), /58866\n\\end\{document\}/);
+	assert.deepEqual(historyTransaction(changed, 'undo')!.state.field(sourceState).projection.document.toBytes(), original.toBytes());
 });

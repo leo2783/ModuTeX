@@ -10,6 +10,20 @@ import { insertionTransaction, rangeInsertionTarget, sourceState } from '../sour
 
 export interface CodeDraft {
 	readonly code: string;
+	readonly language?: string;
+}
+
+export const CODE_LANGUAGES = [
+	['text', '純文字', 'Plain text', ''], ['python', 'Python', 'Python', 'Python'],
+	['javascript', 'JavaScript', 'JavaScript', ''], ['typescript', 'TypeScript', 'TypeScript', ''],
+	['c', 'C', 'C', 'C'], ['cpp', 'C++', 'C++', 'C++'], ['json', 'JSON', 'JSON', ''],
+	['bash', 'Shell', 'Shell', 'bash'], ['sql', 'SQL', 'SQL', 'SQL']
+] as const;
+
+export function codeLanguage(language = 'text') {
+	const entry = CODE_LANGUAGES.find(entry => entry[0] === language);
+	if (!entry) throw new Error('CODE_LANGUAGE');
+	return entry;
 }
 
 export interface LocatedCode {
@@ -23,21 +37,32 @@ export interface LocatedCode {
  * 安全序列化為 LaTeX 內建 verbatim 環境。
  * 嚴格禁止內嵌 \end{verbatim} 結束標記以防止 TeX 語法逃逸。
  */
-export function codeSource(code: string, starred = false): string {
+export function codeSource(code: string, starred = false, language = 'text'): string {
+	const selected = codeLanguage(language);
 	if (typeof code !== 'string' || code.length > 1048576 || code.includes('\0')) {
 		throw new Error('CODE_SOURCE');
 	}
 	// 內建 verbatim 在語法上無法跳脫 \end{verbatim}，禁止內嵌結束標記
-	if (code.includes('\\end{verbatim}') || code.includes('\\end{verbatim*}')) {
+	if (/\\end\{(?:verbatim\*?|lstlisting)\}/.test(code)) {
 		throw new Error('CODE_END_DELIMITER');
 	}
 	const normalized = code.replace(/\r\n|\r/g, '\n');
-	const env = starred ? 'verbatim*' : 'verbatim';
+	const env = language === 'text' ? (starred ? 'verbatim*' : 'verbatim') : 'lstlisting';
+	const options = env === 'lstlisting' ? `[language=${selected[3]},name=${selected[0]}]` : '';
 	// LaTeX verbatim 會自動吸收 \begin{verbatim} 緊接的首個換行符；確保結尾換行使 \end{verbatim} 位於新行
 	const body = normalized.endsWith('\n')
 		? normalized
 		: (normalized.length > 0 ? normalized + '\n' : '');
-	return `\\begin{${env}}\n${body}\\end{${env}}`;
+	return `\\begin{${env}}${options}\n${body}\\end{${env}}`;
+}
+
+/** Read only our bounded language metadata; unsupported listing options stay Raw. */
+export function parseCodeContent(raw: string, environment: string): CodeDraft | null {
+	if (environment !== 'lstlisting') return { code: parseVerbatimContent(raw), language: 'text' };
+	const match = /^\[language=([A-Za-z+]*),name=([a-z]+)\](?=\r?\n)/.exec(raw);
+	if (!match) return null;
+	const entry = CODE_LANGUAGES.find(entry => entry[0] === match[2] && entry[3] === match[1]);
+	return entry ? { code: parseVerbatimContent(raw.slice(match[0].length)), language: entry[0] } : null;
 }
 
 /**
@@ -72,11 +97,13 @@ export function codeAt(
 			if (
 				(node.kind === 'raw' || node.kind === 'environment') &&
 				node.content &&
-				(node.name === 'verbatim' || node.name === 'verbatim*')
+				['verbatim', 'verbatim*', 'lstlisting'].includes(node.name)
 			) {
 				const raw = source.read(node.content.from, node.content.to);
+				const draft = parseCodeContent(raw, node.name);
+				if (!draft) return null;
 				return {
-					draft: { code: parseVerbatimContent(raw) },
+					draft,
 					span: node.span,
 					content: node.content,
 					starred: node.name === 'verbatim*'
@@ -104,7 +131,7 @@ export function codeReplacement(source: SourceDocument, located: LocatedCode, dr
 	) {
 		throw new Error('STALE_CODE');
 	}
-	return codeSource(draft.code, located.starred);
+	return codeSource(draft.code, located.starred, draft.language ?? located.draft.language);
 }
 
 /**
@@ -113,7 +140,7 @@ export function codeReplacement(source: SourceDocument, located: LocatedCode, dr
 export function codeEditTransaction(state: EditorState, located: LocatedCode, draft: CodeDraft) {
 	const source = state.field(sourceState).projection.document;
 	const replacement = codeReplacement(source, located, draft);
-	if (draft.code.replace(/\r\n|\r/g, '\n') === located.draft.code) return null;
+	if (draft.code.replace(/\r\n|\r/g, '\n') === located.draft.code && (draft.language ?? located.draft.language) === located.draft.language) return null;
 	if (replacement === source.read(located.span.from, located.span.to)) {
 		return null;
 	}

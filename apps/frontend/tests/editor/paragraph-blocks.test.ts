@@ -25,10 +25,10 @@ for (const marker of ['null', 'par']) test(`${marker} paragraph accepts consecut
 		position += value.length;
 	}
 	const edited = editor.field(sourceState).projection.document;
-	assert.equal(edited.read(), original.read().replace(`\\${marker}${suffix}`, (marker === 'par' ? '\\par' + suffix : '') + 'a\\%'));
+	assert.equal(edited.read(), original.read().replace(`\\${marker}${suffix}`, (marker === 'par' ? '\\par' + suffix : '') + 'a\\%').replace('a\\%\\end{document}', 'a\\%' + original.profile.preferredLineEnding + '\\end{document}'));
 	const reparsed = projectVisual(edited, parseSource(edited));
 	assert.equal(reparsed.document.childCount, 1);
-	assert.equal(reparsed.document.firstChild?.textContent, (marker === 'par' ? '\n' : '') + 'a%');
+	assert.equal(reparsed.document.firstChild?.textContent, (marker === 'par' ? '\n' : '') + 'a%\n');
 	for (let count = 0; count < 2; count++) { const undo = historyTransaction(editor, 'undo'); assert.ok(undo); editor = undo.state; }
 	assert.deepEqual(editor.field(sourceState).projection.document.toBytes(), original.toBytes());
 });

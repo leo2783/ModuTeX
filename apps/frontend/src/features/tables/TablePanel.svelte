@@ -167,8 +167,10 @@
 	.table-scroll { overflow-x: auto; }
 	.width-track { min-width: 360px; position: relative; height: 36px; border-bottom: 1px solid var(--line); }
 	.column-boundary { position: absolute; top: 0; width: 32px; height: 36px; transform: translateX(-50%); cursor: col-resize; touch-action: none; padding: 6px 14px; border: none; background: transparent; }
-	.column-boundary span { display: block; width: 4px; height: 24px; border-radius: 2px; background: var(--muted); }
-	.column-boundary:hover span, .column-boundary:focus-visible span { background: var(--accent); }
+	.column-boundary { padding: 6px 4px; }
+	.column-boundary span { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid var(--accent); border-radius: 4px; background: var(--surface); color: var(--accent); }
+	.column-boundary span::before { content: '↔'; font-size: 20px; line-height: 1; }
+	.column-boundary:hover span, .column-boundary:focus-visible span { background: var(--selection); outline: 2px solid var(--accent); }
 	table { width: 100%; min-width: 360px; border-collapse: collapse; table-layout: fixed; border-block: 1px solid var(--line); }
 	td { padding: 2px; }
 	.full td { border: 1px solid var(--line); }

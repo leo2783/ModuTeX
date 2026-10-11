@@ -90,6 +90,16 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			assert.match(await sourceEditor.textContent(), /\\\[x\\\]/);
 			const position = await page.locator('.visual-math').first().getAttribute('data-cell-index');
 			assert.equal(Number(position), 1, 'toolbar inserts a formula cell below the selected paragraph');
+			await page.locator('.visual-math').first().getByRole('button', { name: '編輯公式', exact: true }).click();
+			await draft.waitFor({ state: 'visible' });
+			await draft.click();
+			await page.waitForFunction(() => document.activeElement === document.querySelector('.inline-equation-draft math-field'));
+			await page.keyboard.press('Control+A'); await page.keyboard.type('y');
+			await page.getByRole('button', { name: '完成公式', exact: true }).click();
+			await page.waitForFunction(() => !document.querySelector('.inline-equation-draft'));
+			await page.locator('.visual-math').first().getByRole('button', { name: '編輯公式', exact: true }).click();
+			await draft.waitFor({ state: 'visible' }); assert.equal(await draft.evaluate(field => field.value), 'y');
+			await page.keyboard.press('Escape');
 		});
 		await t.test('typing updates the document immediately without a shifting status banner or rebuilding math', async () => {
 			const paragraph = page.locator('.source-block').filter({ hasText: 'Alpha paragraph.' }).first();
@@ -168,7 +178,14 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.waitForFunction(index => Number(document.querySelector('.visual-table')?.dataset.cellIndex) === index - 1, indexBefore);
 			await page.locator('.visual-cell-toolbar').getByRole('button', { name: '下移儲存格', exact: true }).click();
 			await page.waitForFunction(index => Number(document.querySelector('.visual-table')?.dataset.cellIndex) === index, indexBefore);
+			await page.keyboard.press('Escape'); await page.keyboard.press('Alt+ArrowUp');
+			await page.waitForFunction(index => Number(document.querySelector('.visual-table')?.dataset.cellIndex) === index - 1, indexBefore);
+			await page.keyboard.press('Alt+ArrowDown');
+			await page.waitForFunction(index => Number(document.querySelector('.visual-table')?.dataset.cellIndex) === index, indexBefore);
 			await table.getByRole('button', { name: '編輯表格', exact: true }).click();
+			const resizeHandle = page.locator('.column-boundary').first();
+			assert.equal(await resizeHandle.locator('span').evaluate(element => getComputedStyle(element, '::before').content), '"↔"');
+			await page.screenshot({ path: screenshotRoot + 'notebook-column-handles-dark.png' });
 			await page.locator('.table-panel td input').first().fill('Discard this draft');
 			await page.locator('.table-panel').getByRole('button', { name: '取消', exact: true }).click();
 			assert.equal(await table.getByRole('columnheader', { name: 'Notebook table', exact: true }).count(), 1);
@@ -200,13 +217,20 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.locator('summary[aria-label="數學"]').click();
 			await page.getByRole('button', { name: '行內公式', exact: true }).click();
 			await page.getByRole('button', { name: '展開數學選單', exact: true }).click();
-			await page.locator('.catalog-tab').filter({ hasText: '希臘小寫' }).click();
+			await page.locator('.catalog-tab').filter({ hasText: '希臘字母' }).click();
+			assert.equal(await page.getByRole('button', { name: 'Gamma', exact: true }).count(), 1);
+			const fieldRect = await page.locator('.inline-equation-input').boundingBox();
+			const menuRect = await page.locator('.inline-equation-catalog').boundingBox();
+			assert.ok(menuRect.y >= fieldRect.y + fieldRect.height, 'menu is below the input instead of covering it');
 			await page.getByRole('button', { name: 'alpha', exact: true }).click();
+			await page.getByRole('button', { name: '展開數學選單', exact: true }).click();
 			await page.locator('.catalog-tab').filter({ hasText: '極限與級數' }).click();
 			assert.equal(await page.getByRole('button', { name: '極限', exact: true }).count(), 1);
+			await page.getByRole('button', { name: '返回種類', exact: true }).click();
 			await page.locator('.catalog-tab').filter({ hasText: '微積分與導數' }).click();
 			assert.equal(await page.getByRole('button', { name: '微分元 dx', exact: true }).count(), 1);
 			assert.equal(await page.getByRole('button', { name: '偏導數', exact: true }).count(), 1);
+			await page.getByRole('button', { name: '返回種類', exact: true }).click();
 			await page.locator('.catalog-tab').filter({ hasText: '多行環境' }).click();
 			assert.equal(await page.getByRole('button', { name: '多行函數', exact: true }).count(), 1);
 			await page.screenshot({ path: screenshotRoot + 'math-parity-catalog-dark.png' });
@@ -218,6 +242,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 		});
 		await t.test('code cells insert, edit and cancel without executable HTML', async () => {
 			await page.getByRole('button', { name: '程式碼區塊', exact: true }).click();
+			await page.getByLabel('程式碼語言', { exact: true }).selectOption('typescript');
 			await page.locator('.code-panel textarea').fill('const value = "<script>alert(1)</script>";\nconsole.log(value);');
 			await page.locator('.code-panel').getByRole('button', { name: '插入', exact: true }).click();
 			const block = page.locator('.visual-raw').filter({ has: page.locator('.code-content') }).last();
@@ -225,6 +250,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			assert.match(await block.locator('.code-content').innerText(), /<script>/);
 			assert.equal(await block.locator('script').count(), 0);
 			await block.getByRole('button', { name: '編輯程式碼', exact: true }).click();
+			assert.equal(await page.getByLabel('程式碼語言', { exact: true }).inputValue(), 'typescript');
 			await page.locator('.code-panel textarea').fill('discarded');
 			await page.locator('.code-panel').getByRole('button', { name: '取消', exact: true }).click();
 			assert.match(await block.locator('.code-content').innerText(), /console.log/);
@@ -240,6 +266,17 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			assert.match(await sourceEditor.innerText(), /\\usepackage\{xcolor\}/);
 			assert.match(await sourceEditor.innerText(), /\\textcolor\[HTML\]\{B42318\}/);
 			await page.getByRole('button', { name: '視覺化', exact: true }).click();
+		});
+		await t.test('visual typing separates the document end and remains editable across consecutive inputs', async () => {
+			await page.getByRole('button', { name: '原始碼', exact: true }).click();
+			await sourceEditor.click(); await page.keyboard.press('Control+A');
+			await page.keyboard.insertText('\\documentclass{article}\n\\begin{document}\n2555\n\\par   58866\\end{document}');
+			await page.getByRole('button', { name: '視覺化', exact: true }).click();
+			const paragraph = page.locator('.source-block').filter({ hasText: '58866' });
+			await paragraph.click(); await page.keyboard.press('End'); await page.keyboard.type('XY');
+			await page.waitForFunction(() => [...document.querySelectorAll('.source-block')].some(node => node.textContent.includes('58866XY')));
+			await page.getByRole('button', { name: '原始碼', exact: true }).click();
+			assert.match(await sourceEditor.innerText(), /58866XY\n\\end\{document\}/);
 		});
 		await t.test('help topics are readable in both themes at desktop widths', async () => {
 			await page.getByRole('link', { name: '說明', exact: true }).click();

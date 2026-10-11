@@ -6,6 +6,10 @@
 	"licenseDecision": "Pending independent provenance review; new packages remain private UNLICENSED until review",
 	"references": [
 		{
+			"id": "frontend-notebook-interaction-20261011",
+			"path": "docs/architecture/FRONTEND_NOTEBOOK_INTERACTION_2026-10-11.md"
+		},
+		{
 			"id": "frontend-math-parity-20261011",
 			"path": "docs/architecture/FRONTEND_MATH_PARITY_2026-10-11.md"
 		},
@@ -56,6 +60,7 @@
 			"origin": "New independently authored implementation from owner-approved functional behavior; no legacy implementation copied",
 			"reviewStatus": "Actual AGY3 and API Luna3 reviewed by root; source transactions and real GUI/native compilation verified; application-wide provenance remains pending",
 			"referenceIds": [
+				"frontend-notebook-interaction-20261011",
 				"frontend-math-parity-20261011"
 			]
 		},
@@ -64,6 +69,7 @@
 			"origin": "New independently authored implementation from owner-approved functional behavior; no legacy implementation copied",
 			"reviewStatus": "Actual AGY3 and API Luna3 reviewed by root; source transactions and real GUI/native compilation verified; application-wide provenance remains pending",
 			"referenceIds": [
+				"frontend-notebook-interaction-20261011",
 				"frontend-math-parity-20261011"
 			]
 		},
@@ -72,6 +78,7 @@
 			"origin": "New independently authored implementation from owner-approved functional behavior; no legacy implementation copied",
 			"reviewStatus": "Actual AGY3 and API Luna3 reviewed by root; source transactions and real GUI/native compilation verified; application-wide provenance remains pending",
 			"referenceIds": [
+				"frontend-notebook-interaction-20261011",
 				"frontend-math-parity-20261011"
 			]
 		},
@@ -80,6 +87,7 @@
 			"origin": "New independently authored implementation from owner-approved functional behavior; no legacy implementation copied",
 			"reviewStatus": "Actual AGY3 and API Luna3 reviewed by root; source transactions and real GUI/native compilation verified; application-wide provenance remains pending",
 			"referenceIds": [
+				"frontend-notebook-interaction-20261011",
 				"frontend-math-parity-20261011"
 			]
 		},
@@ -96,6 +104,7 @@
 			"origin": "New original document-local editor using the existing shared MathLive field factory and source transactions",
 			"reviewStatus": "AGY independent catalog/inline patch integrated and reviewed by root; real GUI commit/cancel verified; application-wide provenance remains pending",
 			"referenceIds": [
+				"frontend-notebook-interaction-20261011",
 				"frontend-math-parity-20261011",
 				"frontend-inline-20261011"
 			]

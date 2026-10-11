@@ -4,7 +4,7 @@ import { DOMSerializer, type Node as VisualNode } from 'prosemirror-model';
 import { projectionIsCurrent, type SourceDocument, type SourcePatch, type SourceProjection, type SourceSpan } from '@modutex/document-core';
 import { parseTable, columnPercentages, type TableDraft } from '../tables/source.ts';
 import type { EquationDraft } from '../math/source.ts';
-import { parseVerbatimContent } from '../code/source.ts';
+import { parseCodeContent, codeLanguage } from '../code/source.ts';
 import { formatShortcut, type TextFormat } from '../source-editor/format.ts';
 import { advanceVisual, prepareVisualEdit, projectVisual, visualCaretAnchor, visualSchema, visualMarkName, createVisualMark, supportedVisualMark, type VisualProjection } from './schema.ts';
 import { text, type Language } from '../../i18n/text.ts';
@@ -75,9 +75,29 @@ export class VisualEditor {
 	private cachedLocale: string | undefined = undefined;
 	private cachedSelectedCell: number | null = null;
 	private toolbarKey = '';
+	private commandMode = false;
+	private pendingMove: { documentId: string; version: number; index: number } | null = null;
+	private moveCell(index: number, next: number): void {
+		const span = this.cellSpan(index), adjacent = this.cellSpan(next);
+		if (!span || !adjacent || !this.options.cellAction) return;
+		if (this.options.cellAction(next < index ? 'move-up' : 'move-down', span, adjacent) === false) return;
+		const source = this.options.source();
+		if (source.version === span.version) return;
+		this.cellOriginal = null;
+		this.pendingMove = { documentId: source.documentId, version: source.version, index: next };
+		if (this.projection?.version === source.version) { this.pendingMove = null; this.navigateCell(next); }
+	}
+	private navigateCell(index: number): void {
+		if (index < 0 || index >= this.view.state.doc.childCount) return;
+		let position = 0; for (let i = 0; i < index; i++) position += this.view.state.doc.child(i).nodeSize;
+		const node = this.view.state.doc.child(index);
+		this.view.dispatch(this.view.state.tr.setSelection(node.isAtom ? NodeSelection.create(this.view.state.doc, position) : TextSelection.create(this.view.state.doc, position + 1)).scrollIntoView());
+		this.selectCell(index); this.view.focus();
+	}
 	private clickCell(view: EditorView, event: MouseEvent): void {
 		const target = event.target as HTMLElement | null;
-		if (target?.closest('.visual-cell-toolbar, .visual-cell-boundary, .inline-equation-draft, .cell-panel-draft')) return;
+		if (target?.closest('.visual-cell-toolbar, .visual-cell-boundary, .inline-equation-draft, .cell-panel-draft, .visual-math, .visual-math-inline')) return;
+		this.commandMode = false;
 		const cell = target?.closest<HTMLElement>('[data-cell-index]');
 		if (!cell || !view.dom.contains(cell)) return;
 		const index = Number(cell.dataset.cellIndex);
@@ -345,9 +365,7 @@ export class VisualEditor {
 			const span = this.cellSpan(cellIndex);
 			const adjacent = this.cellSpan(cellIndex - 1);
 			if (!span || !adjacent) { this.options.rejected(); return; }
-			this.selectCell(cellIndex - 1);
-			this.cellOriginal = null;
-			this.options.cellAction('move-up', span, adjacent);
+			this.moveCell(cellIndex, cellIndex - 1);
 		});
 
 		const moveDownBtn = doc.createElement('button');
@@ -366,9 +384,7 @@ export class VisualEditor {
 			const span = this.cellSpan(cellIndex);
 			const adjacent = this.cellSpan(cellIndex + 1);
 			if (!span || !adjacent) { this.options.rejected(); return; }
-			this.selectCell(cellIndex + 1);
-			this.cellOriginal = null;
-			this.options.cellAction('move-down', span, adjacent);
+			this.moveCell(cellIndex, cellIndex + 1);
 		});
 
 		const deleteBtn = doc.createElement('button');
@@ -484,7 +500,7 @@ export class VisualEditor {
 				},
 				handleClick: (view, pos, event) => {
 					const target = event.target as HTMLElement | null;
-					if (target?.closest('.visual-cell-toolbar') || target?.closest('.visual-cell-boundary')) return false;
+					if (target?.closest('.visual-cell-toolbar, .visual-cell-boundary, .inline-equation-draft, .cell-panel-draft')) return false;
 					const cell = target?.closest<HTMLElement>('[data-cell-index]');
 					// Blank space between cells must not select the nearest paragraph.
 					if (!cell || !view.dom.contains(cell)) return false;
@@ -529,19 +545,22 @@ export class VisualEditor {
 				let node = initial, destroyed = false;
 				const document = target.ownerDocument;
 				const dom = document.createElement('section'); dom.className = 'visual-raw'; dom.contentEditable = 'false';
-				const isCode = ['verbatim', 'verbatim*'].includes(node.attrs.name);
+				const readCode = () => parseCodeContent(String(node.attrs.source).replace(/^\\begin\{(?:verbatim\*?|lstlisting)\}/, '').replace(/\\end\{(?:verbatim\*?|lstlisting)\}$/, ''), node.attrs.name);
+				const isCode = ['verbatim', 'verbatim*', 'lstlisting'].includes(node.attrs.name) && !!readCode();
 				const code = document.createElement('pre'); code.className = isCode ? 'code-content' : 'raw-latex'; code.setAttribute('aria-label', isCode ? this.text('程式碼區塊', 'Code block') : 'Raw LaTeX');
 				const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.textContent = isCode ? this.text('編輯程式碼', 'Edit code') : this.text('編輯原始碼', 'Edit source'); button.disabled = true;
 				button.dataset.code = String(isCode);
-				const render = () => { code.textContent = isCode ? parseVerbatimContent(String(node.attrs.source).replace(/^\\begin\{verbatim\*?\}/, '').replace(/\\end\{verbatim\*?\}$/, '')) : String(node.attrs.source); }; render();
-				const edit = () => {
+				const language = document.createElement('span'); language.className = 'code-language';
+				const render = () => { const draft = isCode ? readCode() : null; code.textContent = draft?.code ?? String(node.attrs.source); language.textContent = draft ? codeLanguage(draft.language)[2] : ''; }; render();
+				const edit = (event?: Event) => {
+					event?.preventDefault(); event?.stopPropagation();
 					if (destroyed || !this.editable() || !this.options.raw) return;
 					const anchored = this.anchorAt(getPos(), node); if (!anchored) return;
 					const source = this.options.source();
 					if (source.read(anchored.attrs.from, anchored.attrs.to) !== anchored.attrs.source) { this.options.rejected(); return; }
 					this.options.raw(String(anchored.attrs.source), { documentId: source.documentId, version: source.version, from: anchored.attrs.from, to: anchored.attrs.to });
 				};
-				this.rawButtons.add(button); button.addEventListener('click', edit); dom.append(code, button);
+				this.rawButtons.add(button); button.addEventListener('click', edit); if (isCode) dom.append(language); dom.append(code, button);
 				dom.addEventListener('click', () => {
 					const pos = getPos();
 					if (typeof pos === 'number' && !this.disposed) {
@@ -582,7 +601,8 @@ export class VisualEditor {
 					}
 					if (draft.header) table.append(head); table.append(body); dom.replaceChildren(table, button);
 				};
-				const edit = () => {
+				const edit = (event?: Event) => {
+					event?.preventDefault(); event?.stopPropagation();
 					if (destroyed || !this.editable() || !this.options.table) return;
 					const anchored = this.anchorAt(getPos(), node); if (!anchored) return;
 					const source = this.options.source();
@@ -624,7 +644,8 @@ export class VisualEditor {
 						release = renderEquation(content, String(node.attrs.latex));
 					}).catch(() => { if (!destroyed && !this.disposed && ticket === generation) content.textContent = this.text('公式無法顯示，請使用「編輯公式」。', 'Unable to display the equation. Use “Edit equation”.'); });
 				};
-				const edit = () => {
+				const edit = (event?: Event) => {
+					event?.preventDefault(); event?.stopPropagation();
 					if (destroyed || !this.editable() || !this.options.equation) return;
 					const anchored = this.anchorAt(getPos(), node); if (!anchored) return;
 					const source = this.options.source();
@@ -649,9 +670,18 @@ export class VisualEditor {
 			dispatchTransaction: (transaction) => this.dispatch(transaction),
 			handleKeyDown: (_view, event) => {
 				if (event.key === 'Escape' && this.selectedCellIndex !== null) {
-					this.selectCell(null);
+					this.commandMode = true; this.view.focus();
 					return true;
 				}
+				if (this.editable() && this.selectedCellIndex !== null && !event.isComposing && ['ArrowUp', 'ArrowDown'].includes(event.key)) {
+					const index = this.selectedCellIndex, next = index + (event.key === 'ArrowUp' ? -1 : 1);
+					if (event.altKey && !event.ctrlKey && !event.metaKey) {
+						this.moveCell(index, next);
+						return true;
+					}
+					if (this.commandMode || this.view.state.selection instanceof NodeSelection) { this.navigateCell(next); return true; }
+				}
+				if (event.key === 'Enter' && this.commandMode) { this.commandMode = false; return true; }
 				const format = formatShortcut(event);
 				if (format && this.options.format && this.editable()) { this.options.format(format); return true; }
 				if (!event.defaultPrevented && !event.isComposing && event.keyCode !== 229 && !event.repeat && !event.altKey &&
@@ -788,6 +818,10 @@ export class VisualEditor {
 		const document = this.projection.document;
 		const position = Math.min(this.view.state.selection.from, document.content.size);
 		this.view.updateState(EditorState.create({ doc: document, plugins: this.view.state.plugins, selection: TextSelection.near(document.resolve(position)) }));
+		if (this.pendingMove) {
+			const pending = this.pendingMove; this.pendingMove = null;
+			if (pending.documentId === source.documentId && pending.version === source.version) this.navigateCell(pending.index);
+		}
 		this.refresh();
 	}
 	private dispatch(transaction: Transaction): void {
