@@ -27,7 +27,7 @@ export function equationReplacement(source: SourceDocument, located: LocatedEqua
 	const inline = opening === '$' || opening === '\\(';
 	if (!(['$', '$$', '\\(', '\\['].includes(opening)) || closing !== ({ '$': '$', '$$': '$$', '\\(': '\\)', '\\[': '\\]' } as Record<string, string>)[opening] || inline !== located.draft.inline || source.read(content.from, content.to) !== located.draft.latex) throw new Error('STALE_EQUATION');
 	equationSource(draft.latex, draft.inline);
-	return draft.inline === inline ? opening + draft.latex + closing : equationSource(draft.latex, draft.inline);
+	return draft.inline === inline ? opening + equationLatex(draft.latex) + closing : equationSource(draft.latex, draft.inline);
 }
 export interface MatrixDraft { readonly rows: number; readonly columns: number; readonly cells: readonly string[] }
 export function matrixSize(value: number): number {
@@ -71,8 +71,13 @@ export function matrixSource(matrix: MatrixDraft, brackets: 'parentheses' | 'squ
 	const [opening, closing] = delimiters[brackets];
 	return '\\left' + opening + array + '\\right' + closing;
 }
-export function equationSource(value: string, inline: boolean): string {
+export function equationLatex(value: string): string {
+	value = value.replace(/\\placeholder(?:\[[^\]]*\])?\{[^{}]*\}/g, '');
 	if (!value.trim() || value.length > 65536 || value.includes('\u0000')) throw new Error('EQUATION_SOURCE');
 	if (/\\placeholder(?:\[[^\]]*\])?\{/.test(value)) throw new Error('EQUATION_INCOMPLETE');
+	return value;
+}
+export function equationSource(value: string, inline: boolean): string {
+	value = equationLatex(value);
 	return inline ? '\\(' + value + '\\)' : '\\[\n' + value + '\n\\]';
 }

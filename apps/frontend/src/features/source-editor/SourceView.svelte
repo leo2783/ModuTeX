@@ -3,16 +3,16 @@
 	import { Compartment, EditorState } from '@codemirror/state';
 	import { EditorView, lineNumbers, highlightActiveLineGutter, keymap } from '@codemirror/view';
 	import type { SourceDocument, SourceProjection, SourceSpan, SourcePatch } from '@modutex/document-core';
-	import { editableMatrix } from '../math/matrix.ts';
 	import { ParserClient } from '../parser/client.ts';
 	import { VisualEditor } from '../visual-editor/view.ts';
 	import 'prosemirror-view/style/prosemirror.css';
 	import { createSourceState, sourceState, sourcePatches, sourcePatchTransaction, historyTransaction, savedCheckpoint, insertionTarget, insertionTransaction, type InsertionTarget } from './state.ts';
+	import { cellMoveTransaction } from './cell-move.ts';
 	import MathPanel from '../math/MathPanel.svelte';
 	import ToolbarIcon from '../../components/ToolbarIcon.svelte';
 	import CodePanel from '../code/CodePanel.svelte';
 	import { codeAt, codeEditTransaction, type LocatedCode, type CodeDraft } from '../code/source.ts';
-	import { equationAt, equationSource, type EquationDraft, type LocatedEquation } from '../math/source.ts';
+	import { equationAt, equationSource, matrixSource, type EquationDraft, type LocatedEquation } from '../math/source.ts';
 	import { equationEditTransaction } from '../math/editor.ts';
 	import TablePanel from '../tables/TablePanel.svelte';
 	import { tableAt, type TableDraft } from '../tables/source.ts';
@@ -152,6 +152,7 @@
 	let equation = $state.raw<LocatedEquation | null>(null);
 	let equationKey = $state('insert');
 	let insertInline = $state(false);
+	let insertMatrix = $state(false);
 	let mathMenu = $state.raw<HTMLDetailsElement | null>(null);
 	let colorMenu = $state.raw<HTMLDetailsElement | null>(null);
 	function applyColor(hex: string) {
@@ -290,6 +291,7 @@
 	}
 	function applyEquation(draft: EquationDraft) {
 		if (!editor || !active || saving) return;
+		insertInline = draft.inline;
 		try {
 			if (equation) {
 				const transaction = equationEditTransaction(editor.state, equation, draft);
@@ -301,6 +303,7 @@
 	}
 	function openInlineEquation() {
 		if (!editor || saving || !active || tool !== null) return;
+		insertMatrix = false;
 		if (mathMenu) mathMenu.open = false;
 		try {
 			const captured = mode === 'visual' ? visual?.insertionSelection() : null;
@@ -319,7 +322,7 @@
 		if (span.documentId !== source.documentId || span.version !== source.version) return;
 		const located = equationAt(source, parsed, span.from);
 		if (!located || located.span.to !== span.to) return;
-		try { insertion = rangeInsertionTarget(editor.state, located.span); equation = located; equationKey = `${span.documentId}:${span.version}:${span.from}:${span.to}`; toolError = null; toolOwner = 'visual'; tool = editableMatrix(located.draft.latex) ? 'matrix' : 'equation'; }
+		try { insertion = rangeInsertionTarget(editor.state, located.span); equation = located; equationKey = `${span.documentId}:${span.version}:${span.from}:${span.to}`; toolError = null; toolOwner = 'visual'; tool = 'equation'; }
 		catch { toolError = 'equation-stale'; }
 	}
 	function openTable(draft: TableDraft, span: SourceSpan, owner: 'source' | 'visual' = 'visual') {
@@ -337,7 +340,7 @@
 		const span = equation?.span ?? visualInsertion?.span;
 		if (!span) return;
 		const current = visual;
-		if (!current.startEquation(equation?.draft ?? { latex: '', inline: insertInline }, span, applyEquation, closeTool)) toolError = 'equation-stale';
+		if (!current.startEquation(equation?.draft ?? { latex: insertMatrix ? matrixSource({ rows: 3, columns: 3, cells: Array(9).fill('\\placeholder{}') }, 'parentheses') : '', inline: insertInline }, span, applyEquation, closeTool)) toolError = 'equation-stale';
 		return () => current.closeEquation();
 	});
 	$effect(() => {
@@ -353,6 +356,7 @@
 		if (!editor || saving || !active) return;
 		insertInline = false;
 		if (tool !== null) closeTool();
+		insertMatrix = kind === 'matrix';
 		try {
 			insertion = rangeInsertionTarget(editor.state, span);
 			visualInsertion = { span, inlineOnly: false };
@@ -362,7 +366,7 @@
 			tableKey = `insert:${++draftSequence}`;
 			equation = null;
 			equationKey = `insert:${draftSequence}`;
-			tool = kind;
+			tool = kind === 'matrix' ? 'equation' : kind;
 		} catch { toolError = 'insert-stale'; }
 	}
 	function insertTextAtBoundary(span: SourceSpan, beforeText: boolean) {
@@ -421,19 +425,9 @@
 				toolError = 'insert-stale';
 				return;
 			}
-			const contentFirst = current.read(first.from, first.to);
-			const separator = current.read(first.to, second.from);
-			const contentSecond = current.read(second.from, second.to);
-			const swapped = contentSecond + separator + contentFirst;
-			const patch: SourcePatch = {
-				from: first.from,
-				to: second.to,
-				insert: swapped,
-				expected: current.read(first.from, second.to)
-			};
 			try {
-				const transaction = sourcePatchTransaction(editor.state, { documentId: current.documentId, version: current.version }, [patch]);
-				editor.dispatch(transaction);
+				const transaction = cellMoveTransaction(editor.state, [first, second], span.from === first.from ? 0 : 1, span.from === first.from ? 2 : 0);
+				if (transaction) editor.dispatch(transaction);
 				toolError = null;
 				visual?.focus();
 			} catch {
@@ -597,6 +591,11 @@
 			},
 			cellAction: (action, span, adjacent) => {
 				return handleCellAction(action, span, adjacent);
+			},
+			cellReorder: (cells, index, boundary) => {
+				if (!active || saving || tool !== null) return false;
+				try { const transaction = cellMoveTransaction(view.state, cells, index, boundary); if (!transaction) return false; view.dispatch(transaction); return true; }
+				catch { toolError = 'insert-stale'; return false; }
 			},
 			cellDone: () => { if (tool !== null) closeTool(); },
 			cellCancel: (span, original) => {

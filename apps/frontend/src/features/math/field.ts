@@ -19,12 +19,12 @@ if (typeof document !== 'undefined') {
 }
 
 /** Converts base LaTeX matrix array environments into native visual environments to prevent broken delimiters in MathLive. */
-export function toVisualLatex(latex: string): string {
+export function toVisualLatex(latex: string, editablePlaceholders = false): string {
 	const parsed = editableMatrix(latex);
 	if (!parsed) return latex;
 	const { matrix, brackets } = parsed;
 	const environment = { parentheses: 'pmatrix', square: 'bmatrix', none: 'matrix', curly: 'Bmatrix', bars: 'vmatrix', 'double-bars': 'Vmatrix' }[brackets];
-	const rows = Array.from({ length: matrix.rows }, (_, row) => matrix.cells.slice(row * matrix.columns, (row + 1) * matrix.columns).map(cell => cell || '{}').join(' & '));
+	const rows = Array.from({ length: matrix.rows }, (_, row) => matrix.cells.slice(row * matrix.columns, (row + 1) * matrix.columns).map(cell => cell || (editablePlaceholders ? '\\placeholder{}' : '{}')).join(' & '));
 	return '\\begin{' + environment + '}' + rows.join('\\\\') + '\\end{' + environment + '}';
 }
 

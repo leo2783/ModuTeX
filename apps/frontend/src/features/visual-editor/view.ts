@@ -5,6 +5,8 @@ import { projectionIsCurrent, type SourceDocument, type SourcePatch, type Source
 import { parseTable, columnPercentages, type TableDraft } from '../tables/source.ts';
 import type { EquationDraft } from '../math/source.ts';
 import { parseCodeContent, codeLanguage } from '../code/source.ts';
+import { cellDragHandle, disposeCellDragHandle } from './cell-drag.ts';
+import { highlightCode } from '../code/highlight.ts';
 import { formatShortcut, type TextFormat } from '../source-editor/format.ts';
 import { advanceVisual, prepareVisualEdit, projectVisual, visualCaretAnchor, visualSchema, visualMarkName, createVisualMark, supportedVisualMark, type VisualProjection } from './schema.ts';
 import { text, type Language } from '../../i18n/text.ts';
@@ -29,6 +31,7 @@ interface VisualOptions {
 	raw?(source: string, span: SourceSpan): void;
 	insertBlock?(kind: 'text' | 'equation' | 'matrix' | 'table' | 'code', span: SourceSpan, beforeText: boolean): void;
 	cellAction?(action: 'delete' | 'move-up' | 'move-down', span: SourceSpan, adjacent?: SourceSpan): boolean | void;
+	cellReorder?(cells: readonly SourceSpan[], index: number, boundary: number): boolean | void;
 	cellSelected?(span: SourceSpan): void;
 	cellDone?(): void;
 	cellCancel?(span: SourceSpan, original: string): void;
@@ -76,7 +79,20 @@ export class VisualEditor {
 	private cachedSelectedCell: number | null = null;
 	private toolbarKey = '';
 	private commandMode = false;
+	private dragCleanup: (() => void) | null = null;
 	private pendingMove: { documentId: string; version: number; index: number } | null = null;
+	private createDragHandle(index: number): HTMLElement {
+		return cellDragHandle(this.view.dom.ownerDocument, index, this.editable() && !!this.options.cellReorder, this.text('拖曳儲存格', 'Drag cell'), () => {
+			this.dragCleanup?.(); this.selectCell(index); const source = this.options.source(), cells: SourceSpan[] = [];
+			for (let i = 0; i < this.view.state.doc.childCount; i++) { const span = this.cellSpan(i); if (!span) return null; cells.push(span); }
+			return { cells, current: () => !this.disposed && this.editable() && this.options.source() === source, commit: boundary => {
+				if (this.options.cellReorder?.(cells, index, boundary) === false) return;
+				const next = this.options.source(); if (next.version === source.version) return;
+				this.cellOriginal = null; this.pendingMove = { documentId: next.documentId, version: next.version, index: boundary > index ? boundary - 1 : boundary };
+				if (this.projection?.version === next.version) { const pending = this.pendingMove; this.pendingMove = null; this.navigateCell(pending.index); }
+			} };
+		}, cleanup => { this.dragCleanup = cleanup; });
+	}
 	private moveCell(index: number, next: number): void {
 		const span = this.cellSpan(index), adjacent = this.cellSpan(next);
 		if (!span || !adjacent || !this.options.cellAction) return;
@@ -226,6 +242,7 @@ export class VisualEditor {
 		const doc = this.view?.dom.ownerDocument ?? document;
 		const container = doc.createElement('div');
 		container.className = 'visual-cell-boundary';
+		container.dataset.boundaryIndex = String(boundaryIndex);
 		container.contentEditable = 'false';
 		container.setAttribute('role', 'presentation');
 		const trigger = doc.createElement('button');
@@ -475,6 +492,7 @@ export class VisualEditor {
 						}));
 						if (i < count) {
 							const child = doc.child(i);
+							decorations.push(Decoration.widget(pos, () => this.createDragHandle(i), { side: 0, stopEvent: () => true, destroy: dom => disposeCellDragHandle(dom as HTMLElement), key: `cell-grip-${loc}-${i}-${editable}` }));
 							const isSelected = i === selected;
 							decorations.push(Decoration.node(pos, pos + child.nodeSize, {
 								class: `notebook-cell${isSelected ? ' is-selected' : ''}`,
@@ -551,7 +569,8 @@ export class VisualEditor {
 				const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.textContent = isCode ? this.text('編輯程式碼', 'Edit code') : this.text('編輯原始碼', 'Edit source'); button.disabled = true;
 				button.dataset.code = String(isCode);
 				const language = document.createElement('span'); language.className = 'code-language';
-				const render = () => { const draft = isCode ? readCode() : null; code.textContent = draft?.code ?? String(node.attrs.source); language.textContent = draft ? codeLanguage(draft.language)[2] : ''; }; render();
+				let releaseHighlight: (() => void) | null = null;
+				const render = () => { releaseHighlight?.(); const draft = isCode ? readCode() : null; code.textContent = draft?.code ?? String(node.attrs.source); language.textContent = draft ? codeLanguage(draft.language)[2] : ''; if (draft) { code.classList.add('syntax-colored'); releaseHighlight = highlightCode(code, draft.code, draft.language ?? 'text'); } }; render();
 				const edit = (event?: Event) => {
 					event?.preventDefault(); event?.stopPropagation();
 					if (destroyed || !this.editable() || !this.options.raw) return;
@@ -570,7 +589,7 @@ export class VisualEditor {
 				});
 				return { dom, stopEvent: () => true, ignoreMutation: () => true,
 					update: next => { if (next.type !== node.type || next.attrs.name !== node.attrs.name) return false; const changed = next.attrs.source !== node.attrs.source; node = next; if (changed) render(); return true; },
-					destroy: () => { destroyed = true; button.removeEventListener('click', edit); this.rawButtons.delete(button); }
+					destroy: () => { destroyed = true; releaseHighlight?.(); button.removeEventListener('click', edit); this.rawButtons.delete(button); }
 				};
 			}, table_block: (initial, _view, getPos) => {
 				let node = initial, destroyed = false;
@@ -950,7 +969,7 @@ export class VisualEditor {
 		if (dom instanceof HTMLElement && typeof dom.scrollIntoView === 'function') dom.scrollIntoView({ block: 'nearest' });
 		this.focus(); return true;
 	}
-	dispose(): void { if (this.disposed) return; this.closeEquation(); this.disposed = true; this.projection = null; this.cellOriginal = null; this.cachedDecorations = null; this.inserterButtons.clear(); this.cellActionButtons.clear(); this.view.destroy(); }
+	dispose(): void { if (this.disposed) return; this.dragCleanup?.(); this.closeEquation(); this.disposed = true; this.projection = null; this.cellOriginal = null; this.cachedDecorations = null; this.inserterButtons.clear(); this.cellActionButtons.clear(); this.view.destroy(); }
 	cellInsertionBoundary(): SourceSpan | null {
 		const index = this.selectedCellIndex ?? Math.min(this.view.state.selection.$from.index(0), this.view.state.doc.childCount - 1);
 		return this.boundarySpan(index + 1);

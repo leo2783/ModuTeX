@@ -211,6 +211,11 @@ button.primary {
 @media (prefers-reduced-motion: reduce) { .compile-progress span { animation: none; margin-inline: auto; } }
 .inline-equation-draft { display: block; position: relative; padding-block: 8px; min-height: 48px; }
 .inline-equation-draft.is-inline { display: inline-block; vertical-align: baseline; max-width: 100%; }
+.inline-equation-tools button[aria-pressed="true"] { color: var(--accent); background: var(--canvas); outline: 1px solid var(--accent); }
+.inline-matrix-options:not([hidden]) { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 0; }
+.inline-matrix-options label { display: flex; gap: 6px; align-items: center; }
+.inline-matrix-options input { width: 56px; }
+.inline-matrix-options input, .inline-matrix-options select { padding: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 4px; }
 .inline-equation-tools { display: flex; gap: 2px; margin-bottom: 4px; }
 .inline-equation-tools button { display: inline-flex; align-items: center; justify-content: center; width: 30px; min-height: 30px; padding: 4px; border-color: transparent; background: transparent; }
 .inline-equation-input { display: block; }
@@ -321,6 +326,27 @@ button.primary {
 }
 
 /* Notebook cell controls share the workbench palette. */
+.syntax-colored { color: var(--ink); }
+.syntax-colored .tok-keyword, .syntax-colored .tok-modifier { color: light-dark(#7b2c91, #d99be8); font-weight: 600; }
+.syntax-colored .tok-string, .syntax-colored .tok-string2 { color: light-dark(#21633e, #9fcea6); }
+.syntax-colored .tok-number, .syntax-colored .tok-bool, .syntax-colored .tok-atom { color: light-dark(#914a08, #edbb82); }
+.syntax-colored .tok-comment { color: light-dark(#596a75, #a0b0ba); font-style: italic; }
+.syntax-colored .tok-typeName, .syntax-colored .tok-className, .syntax-colored .tok-tagName { color: light-dark(#075f82, #82c7e2); }
+.syntax-colored .tok-function, .syntax-colored .tok-propertyName { color: light-dark(#5f4b94, #bdb0eb); }
+.syntax-colored .tok-heading, .syntax-colored .tok-meta, .syntax-colored .tok-attributeName { color: light-dark(#075f82, #82c7e2); }
+.syntax-colored .tok-link { color: light-dark(#075f82, #82c7e2); text-decoration: underline; }
+.syntax-colored .tok-definition { color: light-dark(#5f4b94, #bdb0eb); }
+.syntax-colored .tok-invalid { color: var(--error); text-decoration: underline wavy; }
+.cell-drag-gutter { position: relative; height: 0; pointer-events: none; }
+.cell-drag-handle { position: absolute; top: 4px; left: -24px; width: 24px; height: 28px; padding: 2px; border: 0; border-inline-start: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); cursor: grab; touch-action: none; pointer-events: auto; display: flex; align-items: center; justify-content: center; }
+.cell-drag-handle svg { opacity: .45; }
+.cell-drag-gutter:hover + .notebook-cell { outline: 1px solid var(--line); background: var(--canvas); }
+.cell-drag-handle:hover, .cell-drag-handle:focus-visible, .cell-drag-gutter:has(+ .notebook-cell.is-selected) .cell-drag-handle { color: var(--accent); background: var(--canvas); border-inline-start-color: var(--accent); outline: none; }
+.cell-drag-handle:hover svg, .cell-drag-handle:focus-visible svg { opacity: 1; }
+.cell-drag-handle:disabled { visibility: hidden; }
+.is-cell-dragging, .is-cell-dragging * { cursor: grabbing !important; user-select: none !important; }
+.is-cell-picked-up .notebook-cell.is-selected { z-index: 5; pointer-events: none; background: var(--surface); box-shadow: 0 8px 20px rgb(0 0 0 / .2); transform: translate(var(--cell-drag-x, 0px), var(--cell-drag-y, -2px)); outline: 1px solid var(--accent); }
+.visual-cell-boundary.is-drop-target { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--surface); }
 
 			.notebook-cell {
 				position: relative;

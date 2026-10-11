@@ -46,7 +46,7 @@ test('verbatim code is literal and unchanged editing keeps bytes; closing marker
 });
 
 test('multiline math and amsmath share one source history entry', () => {
-	assert.throws(() => equationSource('\\frac{\\placeholder{}}{2}', false), /EQUATION_INCOMPLETE/);
+	assert.equal(equationSource('\\frac{\\placeholder{}}{2}', false), '\\[\n\\frac{}{2}\n\\]');
  const original = SourceDocument.open(new TextEncoder().encode('\\documentclass{article}\n\\begin{document}\n\n\\end{document}'));
  let state = createSourceState(original);
  state = state.update({ selection: { anchor: state.doc.toString().indexOf('\\end{document}') } }).state;

@@ -1,6 +1,6 @@
-import { createMathField, disposeMathField } from './field.ts';
+import { createMathField, disposeMathField, toVisualLatex } from './field.ts';
 import { MATH_CATALOG } from './catalog.ts';
-import type { EquationDraft } from './source.ts';
+import { matrixSource, type EquationDraft } from './source.ts';
 
 /** A local draft at the document caret. Source and its undo history change only on Finish. */
 export function editInlineEquation(host: HTMLElement, draft: EquationDraft, text: (zh: string, en: string) => string,
@@ -15,8 +15,8 @@ export function editInlineEquation(host: HTMLElement, draft: EquationDraft, text
 	host.replaceChildren(tools, input, error, catalogPanel);
 	const field = createMathField(input);
 	field.setAttribute('aria-label', text('視覺公式輸入', 'Visual equation input'));
-	field.smartMode = false; field.setValue(draft.latex, { silenceNotifications: true });
-	let accepted = draft.latex, disposed = false, catalogOpen = false;
+	field.smartMode = false; field.setValue(toVisualLatex(draft.latex, true), { silenceNotifications: true });
+	let accepted = draft.latex, disposed = false, catalogOpen = false, inline = draft.inline;
 	function button(label: string, paths: string[], action: () => void, color?: string) {
 		const button = owner.createElement('button'); button.type = 'button'; button.title = label; button.setAttribute('aria-label', label);
 		const svg = owner.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -30,6 +30,7 @@ export function editInlineEquation(host: HTMLElement, draft: EquationDraft, text
 	}
 	function insertLatex(latex: string) {
 		field.focus();
+		latex = toVisualLatex(latex, true);
 		field.insert(field.selectionIsCollapsed ? latex.replaceAll('#@', '#?') : latex, { selectionMode: 'placeholder', format: 'latex' });
 	}
 	for (const [zh, en, latex, paths] of [
@@ -39,6 +40,15 @@ export function editInlineEquation(host: HTMLElement, draft: EquationDraft, text
 		['下標', 'Subscript', '_{#@}', ['M5 4l8 10M13 4 5 14M16 14h4v3h-4v3h4']],
 		['積分', 'Integral', '\\int_{#?}^{#?} #@', ['M16 3c-6-4-5 22-11 18']]
 	] as const) button(text(zh, en), [...paths], () => insertLatex(latex));
+	const matrixOptions = owner.createElement('div'); matrixOptions.className = 'inline-matrix-options'; matrixOptions.hidden = true; host.append(matrixOptions);
+	function size(label: string) { const wrap = owner.createElement('label'); wrap.textContent = label; const input = owner.createElement('input'); input.type = 'number'; input.min = '1'; input.max = '10'; input.value = '3'; wrap.append(input); matrixOptions.append(wrap); return input; }
+	const rows = size(text('行', 'Rows')), columns = size(text('列', 'Columns'));
+	const brackets = owner.createElement('select'); brackets.setAttribute('aria-label', text('矩陣括號', 'Matrix brackets'));
+	for (const [value, label] of [['parentheses', '( )'], ['square', '[ ]'], ['curly', '{ }'], ['bars', '| |'], ['double-bars', '‖ ‖'], ['none', text('無括號', 'None')]] as const) { const option = owner.createElement('option'); option.value = value; option.textContent = label; brackets.append(option); } matrixOptions.append(brackets);
+	const insertMatrix = owner.createElement('button'); insertMatrix.type = 'button'; insertMatrix.textContent = text('插入矩陣', 'Insert matrix'); insertMatrix.addEventListener('pointerdown', event => event.preventDefault());
+	insertMatrix.addEventListener('click', () => { const r = rows.valueAsNumber, c = columns.valueAsNumber; if (!Number.isInteger(r) || !Number.isInteger(c) || r < 1 || r > 10 || c < 1 || c > 10) { error.textContent = text('行與列須為 1 至 10。', 'Rows and columns must be 1–10.'); return; } insertLatex(matrixSource({ rows: r, columns: c, cells: Array(r * c).fill('#?') }, brackets.value as Parameters<typeof matrixSource>[1])); matrixOptions.hidden = true; }); matrixOptions.append(insertMatrix);
+	button(text('矩陣', 'Matrix'), ['M6 3H3v18h3M18 3h3v18h-3M8 7h1M15 7h1M8 13h1M15 13h1'], () => { matrixOptions.hidden = !matrixOptions.hidden; catalogPanel.style.display = 'none'; });
+	const placement = button(text('行內公式', 'Inline equation'), ['M3 18h18M7 12l6-8M7 4l6 8M16 12h5'], () => { inline = !inline; host.classList.toggle('is-inline', inline); placement.setAttribute('aria-pressed', String(inline)); }); placement.setAttribute('aria-pressed', String(inline));
 	let activeCategory: string | null = null;
 	function renderCatalog() {
 		catalogPanel.replaceChildren();
@@ -83,11 +93,10 @@ export function editInlineEquation(host: HTMLElement, draft: EquationDraft, text
 	function finish() {
 		if (disposed) return;
 		const latex = field.value;
-		if (/\\placeholder(?:\[[^\]]*\])?\{/.test(latex)) { error.textContent = text('請填入公式空格。', 'Fill in the equation placeholders.'); field.focus(); return; }
 		if (!latex.trim() || latex.length > 65536 || latex.includes('\u0000')) {
 			error.textContent = text('請輸入有效公式。', 'Enter a valid equation.'); field.focus(); return;
 		}
-		commit({ latex, inline: draft.inline });
+		commit({ latex, inline });
 	}
 	button(text('完成公式', 'Finish equation'), ['M5 12l4 4L19 6'], finish).classList.add('confirm-action');
 	button(text('取消公式', 'Cancel equation'), ['M6 6l12 12M18 6 6 18'], cancel).classList.add('cancel-action');

@@ -26,6 +26,8 @@ test('matrix emits base-LaTeX array with actual row separators, blanks and escap
 test('equation wrapper supports inline/display, requires source and does not add preamble packages', () => {
 	assert.equal(equationSource('x^2', true), '\\(x^2\\)');
 	assert.equal(equationSource('x^2', false), '\\[\nx^2\n\\]');
+	assert.equal(equationSource('\\int_{\\placeholder{}}^{b} f(x)\\,dx', true), '\\(\\int_{}^{b} f(x)\\,dx\\)');
+	assert.equal(equationSource('\\frac{\\placeholder{}}{x}', true), '\\(\\frac{}{x}\\)');
 	for (const value of ['', ' ', '\u0000', 'x'.repeat(65537)]) assert.throws(() => equationSource(value, false), /EQUATION_SOURCE/);
 });
 test('tool insertion uses actual CodeMirror undo, preserves unrelated BOM/EOL and rejects stale/foreign targets', () => {

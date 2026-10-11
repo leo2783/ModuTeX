@@ -21,6 +21,7 @@ interface SourceState {
 	readonly redo: readonly HistoryEntry[];
 }
 const projected = Annotation.define<EditorProjection>();
+const exactSource = Annotation.define<{ projection: EditorProjection; text: string; patches: readonly SourcePatch[] }>();
 export const sourcePatches = Annotation.define<readonly SourcePatch[]>();
 const navigate = StateEffect.define<'undo' | 'redo'>();
 export const savedCheckpoint = StateEffect.define<number>();
@@ -68,6 +69,11 @@ export function createSourceState(document: SourceDocument, onRejected: (reason?
 				patches.push({ from, to, insert: inserted.toString() });
 			});
 			try {
+				const exact = transaction.annotation(exactSource);
+				if (exact) {
+					if (exact.text !== transaction.newDoc.toString() || exact.projection.document.byteLength > sourceLimit) { onRejected(); return []; }
+					return [transaction, { annotations: [projected.of(exact.projection), sourcePatches.of(exact.patches)] }];
+				}
 				const next = current.apply(patches, current.document.version);
 				if (next.document.byteLength > sourceLimit) { onRejected('SOURCE_TOO_LARGE'); return []; }
 				const delta = patches.map((patch) => ({ from: current.toSource(patch.from), to: current.toSource(patch.to),
@@ -135,7 +141,7 @@ export function visualInsertionTransaction(state: EditorState, span: SourceSpan,
 	return insertionTransaction(state, target, insert);
 }
 
-export function sourcePatchTransaction(state: EditorState, identity: { documentId: string; version: number }, patches: readonly SourcePatch[]) {
+export function sourcePatchTransaction(state: EditorState, identity: { documentId: string; version: number }, patches: readonly SourcePatch[], preserveLineEndings = false) {
 	if (state.readOnly) throw new Error('EDITOR_READ_ONLY');
 	const projection = state.field(sourceState).projection, source = projection.document;
 	if (source.documentId !== identity.documentId || source.version !== identity.version) throw new Error('STALE_VISUAL');
@@ -151,8 +157,9 @@ export function sourcePatchTransaction(state: EditorState, identity: { documentI
 		end = patch.to; previousFrom = patch.from;
 		if (patch.expected === undefined || source.read(patch.from, patch.to) !== patch.expected) throw new Error('STALE_VISUAL');
 		const insert = patch.insert.replace(/\r\n|\r/g, '\n');
-		if (insert.replaceAll('\n', source.profile.preferredLineEnding) !== patch.insert) throw new Error('INSERTION_EOL');
+		if (!preserveLineEndings && insert.replaceAll('\n', source.profile.preferredLineEnding) !== patch.insert) throw new Error('INSERTION_EOL');
 		return { from: editorOffset(patch.from), to: editorOffset(patch.to), insert };
 	});
-	return state.update({ changes, userEvent: 'input.visual' });
+	const exact = preserveLineEndings ? EditorProjection.open(source.apply({ expectedVersion: source.version, patches }).document) : null;
+	return state.update({ changes, userEvent: 'input.visual', annotations: exact ? exactSource.of({ ...exact, patches }) : [] });
 }

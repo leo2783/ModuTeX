@@ -6,6 +6,10 @@
 	"licenseDecision": "Pending independent provenance review; new packages remain private UNLICENSED until review",
 	"references": [
 		{
+			"id": "frontend-cell-drag-code-20261011",
+			"path": "docs/architecture/FRONTEND_CELL_DRAG_CODE_2026-10-11.md"
+		},
+		{
 			"id": "frontend-notebook-interaction-20261011",
 			"path": "docs/architecture/FRONTEND_NOTEBOOK_INTERACTION_2026-10-11.md"
 		},
@@ -55,6 +59,46 @@
 		}
 	],
 	"files": [
+		{
+			"path": "apps/frontend/tests/editor/code-highlight.test.ts",
+			"origin": "Independently authored from owner-approved functional requirements; no legacy implementation read or copied in this batch",
+			"reviewStatus": "Root integrated actual AGY3 and API Luna3 reviews; source transactions and real mouse GUI verified",
+			"referenceIds": [
+				"frontend-cell-drag-code-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/editor/cell-move.test.ts",
+			"origin": "Independently authored from owner-approved functional requirements; no legacy implementation read or copied in this batch",
+			"reviewStatus": "Root integrated actual AGY3 and API Luna3 reviews; source transactions and real mouse GUI verified",
+			"referenceIds": [
+				"frontend-cell-drag-code-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/src/features/visual-editor/cell-drag.ts",
+			"origin": "Independently authored from owner-approved functional requirements; no legacy implementation read or copied in this batch",
+			"reviewStatus": "Root integrated actual AGY3 and API Luna3 reviews; source transactions and real mouse GUI verified",
+			"referenceIds": [
+				"frontend-cell-drag-code-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/src/features/source-editor/cell-move.ts",
+			"origin": "Independently authored from owner-approved functional requirements; no legacy implementation read or copied in this batch",
+			"reviewStatus": "Root integrated actual AGY3 and API Luna3 reviews; source transactions and real mouse GUI verified",
+			"referenceIds": [
+				"frontend-cell-drag-code-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/src/features/code/highlight.ts",
+			"origin": "Independently authored from owner-approved functional requirements; no legacy implementation read or copied in this batch",
+			"reviewStatus": "Root integrated actual AGY3 and API Luna3 reviews; source transactions and real mouse GUI verified",
+			"referenceIds": [
+				"frontend-cell-drag-code-20261011"
+			]
+		},
 		{
 			"path": "apps/frontend/tests/editor/math-parity.test.ts",
 			"origin": "New independently authored implementation from owner-approved functional behavior; no legacy implementation copied",

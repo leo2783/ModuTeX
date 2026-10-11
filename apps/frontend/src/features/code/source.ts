@@ -1,4 +1,5 @@
 import type { EditorState } from '@codemirror/state';
+import { languages } from '@codemirror/language-data';
 import {
 	projectionIsCurrent,
 	type SourceDocument,
@@ -13,12 +14,21 @@ export interface CodeDraft {
 	readonly language?: string;
 }
 
-export const CODE_LANGUAGES = [
+const PRIMARY_LANGUAGES = [
 	['text', '純文字', 'Plain text', ''], ['python', 'Python', 'Python', 'Python'],
 	['javascript', 'JavaScript', 'JavaScript', ''], ['typescript', 'TypeScript', 'TypeScript', ''],
 	['c', 'C', 'C', 'C'], ['cpp', 'C++', 'C++', 'C++'], ['json', 'JSON', 'JSON', ''],
 	['bash', 'Shell', 'Shell', 'bash'], ['sql', 'SQL', 'SQL', 'SQL']
 ] as const;
+type CodeLanguage = readonly [string, string, string, string];
+const primaryNames = new Set(PRIMARY_LANGUAGES.map(entry => entry[2]));
+export const CODE_LANGUAGES: readonly CodeLanguage[] = [
+	...PRIMARY_LANGUAGES,
+	['wsl', 'Shell（WSL）', 'Shell (WSL)', 'bash'],
+	...languages.filter(entry => !primaryNames.has(entry.name as never)).map(entry => [
+		entry.name.toLowerCase().replaceAll('+', 'plus').replaceAll('#', 'sharp').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''), entry.name, entry.name, ''
+	] as CodeLanguage)
+];
 
 export function codeLanguage(language = 'text') {
 	const entry = CODE_LANGUAGES.find(entry => entry[0] === language);
@@ -59,7 +69,7 @@ export function codeSource(code: string, starred = false, language = 'text'): st
 /** Read only our bounded language metadata; unsupported listing options stay Raw. */
 export function parseCodeContent(raw: string, environment: string): CodeDraft | null {
 	if (environment !== 'lstlisting') return { code: parseVerbatimContent(raw), language: 'text' };
-	const match = /^\[language=([A-Za-z+]*),name=([a-z]+)\](?=\r?\n)/.exec(raw);
+	const match = /^\[language=([A-Za-z+]*),name=([a-z0-9-]+)\](?=\r?\n)/.exec(raw);
 	if (!match) return null;
 	const entry = CODE_LANGUAGES.find(entry => entry[0] === match[2] && entry[3] === match[1]);
 	return entry ? { code: parseVerbatimContent(raw.slice(match[0].length)), language: entry[0] } : null;
