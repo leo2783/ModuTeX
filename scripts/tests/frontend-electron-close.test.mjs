@@ -4,10 +4,9 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { _electron as electron } from 'playwright';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -18,7 +17,7 @@ function bounded(promise, milliseconds, name) {
 }
 
 test('native window close resolves dirty documents without losing cancelled drafts', { timeout: 120000 }, async (t) => {
-	for (const action of ['cancel-then-discard', 'save', 'discard', 'failed-save-then-discard']) await t.test(action, async () => {
+	for (const action of ['unavailable-close-chunk', 'background-then-discard', 'cancel-then-discard', 'save', 'discard', 'failed-save-then-discard']) await t.test(action, async () => {
 		const fixture = mkdtempSync(join(tmpdir(), 'modutex-close-'));
 		assert.equal(dirname(resolve(fixture)), resolve(tmpdir()));
 		const file = join(fixture, 'main.tex');
@@ -26,17 +25,10 @@ test('native window close resolves dirty documents without losing cancelled draf
 		writeFileSync(join(fixture, 'frontend-recent-v1.json'), JSON.stringify({ version: 1, entries: [{ id: randomUUID(), selected: file, kind: 'file', openedAt: Date.now() }] }));
 		let desktop, browser, exited;
 		try {
-			desktop = spawn(require('electron'), ['.', '--disable-gpu', '--remote-debugging-port=0'], { cwd: repository, windowsHide: true, env: { ...process.env, MODUTEX_RENDERER: 'frontend-built', TEXPILE_USER_DATA: fixture }, stdio: ['ignore', 'pipe', 'pipe'] });
+			browser = await electron.launch({ executablePath: require('electron'), args: ['.', '--disable-gpu'], cwd: repository, env: { ...process.env, MODUTEX_RENDERER: 'frontend-built', TEXPILE_USER_DATA: fixture } });
+			desktop = browser.process();
 			exited = new Promise((resolveExit) => desktop.once('exit', (code) => resolveExit(code)));
-			const endpoint = await bounded(new Promise((resolveEndpoint, reject) => {
-				let output = '';
-				desktop.once('error', reject);
-				desktop.once('exit', (code) => reject(new Error('Electron exited before CDP: ' + code)));
-				for (const stream of [desktop.stdout, desktop.stderr]) stream.on('data', (chunk) => { output += chunk.toString(); const found = output.match(/DevTools listening on (ws:\/\/\S+)/); if (found) resolveEndpoint(found[1]); });
-			}), 25000, 'native startup');
-			browser = await chromium.connectOverCDP(endpoint, { timeout: 10000 });
-			const context = browser.contexts()[0];
-			const page = context.pages()[0] ?? await context.waitForEvent('page', { timeout: 15000 });
+			const page = await browser.firstWindow();
 			page.setDefaultTimeout(10000);
 			// Electron cancels dirty beforeunload itself. Its transient CDP event is
 			// not a browser prompt that Playwright can accept/dismiss.
@@ -48,12 +40,23 @@ test('native window close resolves dirty documents without losing cancelled draf
 			await editor.click();
 			await page.keyboard.press('Control+End');
 			await page.keyboard.insertText('% close draft');
+			if (action === 'unavailable-close-chunk') await browser.evaluate(({ BrowserWindow }) => {
+				globalThis.closeChunkAttempts = 0;
+				BrowserWindow.getAllWindows()[0].webContents.session.webRequest.onBeforeRequest({ urls: ['app://frontend/*'] }, (details, callback) => {
+					const blocked = /CloseDialog[^/]*\.js/.test(details.url);
+					if (blocked) globalThis.closeChunkAttempts++;
+					callback({ cancel: blocked });
+				});
+			});
 			if (action === 'failed-save-then-discard') writeFileSync(file, 'Disk changed independently.');
-			// Renderer window.close requests the actual Electron window close path,
-			// including beforeunload. This is not OS titlebar click automation.
-			await page.evaluate(() => { window.close(); });
+			if (action === 'background-then-discard') await browser.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].minimize(); });
+			// Request BrowserWindow.close in the main process, as native X does.
+			// This covers the native lifecycle without pretending to click the OS titlebar.
+			await browser.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
 			const dialog = page.getByRole('dialog');
 			await dialog.waitFor({ state: 'visible' });
+			if (action === 'unavailable-close-chunk') assert.equal(await browser.evaluate(() => globalThis.closeChunkAttempts), 0, 'Closing must not request a dialog chunk');
+			if (action === 'background-then-discard') await browser.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].restore(); });
 			if (action === 'cancel-then-discard') {
 				await dialog.getByRole('button', { name: /取消|Cancel/, exact: true }).click();
 				await dialog.waitFor({ state: 'hidden' });
@@ -61,7 +64,7 @@ test('native window close resolves dirty documents without losing cancelled draf
 				assert.equal(readFileSync(file, 'utf8'), initial);
 				assert.equal(page.isClosed(), false);
 				assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('cm-content')), true);
-				await page.evaluate(() => { window.close(); });
+				await browser.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
 				await dialog.waitFor({ state: 'visible' });
 			}
 			if (action === 'failed-save-then-discard') {

@@ -1,32 +1,29 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { text, type Language } from '../i18n/text.ts';
-	let { locale, name, saving, error, onSave, onDiscard, onCancel }: {
-		locale: Language; name: string; saving: boolean; error: string;
-		onSave: () => void; onDiscard: () => void; onCancel: () => void;
+	let { t, name, saving, error, save, discard, cancel }: {
+		t: (zh: string, en: string) => string; name: string; saving: boolean; error: string;
+		save: () => void; discard: () => void; cancel: () => void;
 	} = $props();
-	const t = (zh: string, en: string) => text(locale, zh, en);
 	let dialog: HTMLDialogElement;
 	onMount(() => {
 		const previous = document.activeElement;
 		dialog.showModal();
 		return () => {
-			dialog.close();
 			const target = previous instanceof HTMLElement && previous !== document.body && previous.isConnected ? previous :
-				Array.from(document.querySelectorAll<HTMLElement>('.cm-content, .ProseMirror')).find(element => !element.closest('[hidden], [inert]'));
+				[...document.querySelectorAll<HTMLElement>('.cm-content, .ProseMirror')].find(element => !element.closest('[hidden], [inert]'));
 			target?.focus();
 		};
 	});
 </script>
 
-<dialog bind:this={dialog} aria-labelledby="close-title" oncancel={(event) => { event.preventDefault(); if (!saving) onCancel(); }}>
-	<h2 id="close-title">{t('儲存變更？', 'Save changes?')}</h2>
+<dialog bind:this={dialog} aria-labelledby="close" oncancel={(event) => { event.preventDefault(); if (!saving) cancel(); }}>
+	<h2 id="close">{t('儲存變更？', 'Save changes?')}</h2>
 	<p>{t(`「${name}」有未儲存的變更。`, `“${name}” has unsaved changes.`)}</p>
 	{#if error}<p class="error" role="alert">{error}</p>{/if}
 	<div class="actions">
-		<button type="button" onclick={onCancel} disabled={saving}>{t('取消', 'Cancel')}</button>
-		<button type="button" onclick={onDiscard} disabled={saving}>{t('捨棄變更並關閉', 'Discard changes and close')}</button>
-		<button type="button" class="primary" onclick={onSave} disabled={saving}>{saving ? t('儲存中…', 'Saving…') : t('儲存後關閉', 'Save and close')}</button>
+		<button type="button" onclick={cancel} disabled={saving}>{t('取消', 'Cancel')}</button>
+		<button type="button" onclick={discard} disabled={saving}>{t('捨棄變更並關閉', 'Discard changes and close')}</button>
+		<button type="button" class="primary" onclick={save} disabled={saving}>{saving ? t('儲存中…', 'Saving…') : t('儲存後關閉', 'Save and close')}</button>
 	</div>
 </dialog>
 

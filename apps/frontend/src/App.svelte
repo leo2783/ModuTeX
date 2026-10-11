@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { SourceDocument, projectionIsCurrent, type SourceProjection, type SourceSpan } from '@modutex/document-core';
-	import { sourceOutline, type OutlineEntry } from './features/source-editor/outline.ts';
+	import type { OutlineEntry } from './features/source-editor/outline.ts';
 	import { onDestroy, onMount } from 'svelte';
+	import CloseDialog from './components/CloseDialog.svelte';
 	import { text } from './i18n/text.ts';
 	import { documentCommand } from './features/shortcuts/keyboard.ts';
-	import { helpTopic, type HelpTopic } from './features/help/topics.ts';
+	import { helpTopic, type HelpTopic } from './features/help/route.ts';
 	import { DEFAULT_PREFERENCES, readPreferences, savePreference, restorePreferences, subscribePreferences, decodePreference, effectiveAppearance, type Preferences } from './state/preferences.ts';
 	import type { WorkspaceInfo, FileEntry, FileEvent, CompileHandle, CompileIdentity, Diagnostic } from '@modutex/frontend-contracts';
-	import { diagnosticSpan, previewStatus } from './features/compile/navigation.ts';
+	import { diagnosticSpan } from './features/compile/diagnostic-span.ts';
 	import type { DiagnosticNavigationRequest } from './features/source-editor/diagnostics.ts';
 	import type { FileDesktopPort } from './features/files/desktop.ts';
 	import type { RecentDocument } from './features/files/recent.ts';
@@ -628,11 +629,11 @@
 			route = hash === '#/help' || hash.startsWith('#/help/') ? 'help' : hash === '#/settings' ? 'settings' : hash === '#/release-notes' || showLimitations ? 'release-notes' : hash === '#/workbench' || hash === '#/workspace' ? 'workbench' : 'home';
 		}; routes(); window.addEventListener('hashchange', routes);
 		const warn = (event: BeforeUnloadEvent) => {
-			if (closeConfirmed) return;
-			if (!dirty || !source) return;
+			if (closeConfirmed || !dirty || !source) return;
 			event.preventDefault();
 			event.returnValue = '';
-			if (!hasDesktopBridge || showCloseDialog) return;
+			if (!hasDesktopBridge) return;
+			// The close dialog is already bundled; no network request can strand this hold.
 			showCloseDialog = true;
 		};
 		window.addEventListener('beforeunload', warn);
@@ -1222,9 +1223,9 @@
 		{/if}
 		{#if workbenchVisited}
 		{#key workbenchLoadKey}
-		{#await import('./components/WorkbenchLayout.svelte')}
+		{#await Promise.all([import('./components/WorkbenchLayout.svelte'), import('./features/source-editor/outline.ts'), import('./features/compile/preview-status.ts')])}
 			<div class="empty-state" role="status"><p>{t('正在開啟工作台…', 'Loading workbench…')}</p></div>
-		{:then { default: WorkbenchLayout }}
+		{:then [{ default: WorkbenchLayout }, { sourceOutline }, { previewStatus }]}
 		<WorkbenchLayout
 			locale={preferences.language}
 			bind:activePane={workbenchPane}
@@ -1353,8 +1354,6 @@
 		{/if}
 	</footer>
 	{#if showCloseDialog && source}
-		{#await import('./components/CloseDialog.svelte') then { default: CloseDialog }}
-			<CloseDialog locale={preferences.language} name={sourceName || 'untitled.tex'} {saving} {error} onSave={saveAndClose} onDiscard={discardAndClose} onCancel={cancelClose} />
-		{/await}
+		<CloseDialog {t} name={sourceName} {saving} {error} save={saveAndClose} discard={discardAndClose} cancel={cancelClose} />
 	{/if}
 </div>
