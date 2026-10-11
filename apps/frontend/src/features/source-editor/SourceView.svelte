@@ -246,9 +246,7 @@
 			toolError = null; if (!useVisual) editor.focus(); else visual?.focus();
 		} catch { toolError = 'format'; }
 	}
-	function applyStructure(event: Event) {
-		const select = event.currentTarget as HTMLSelectElement, kind = select.value;
-		select.value = '';
+	function applyStructure(kind: string) {
 		if (!editor || !active || saving || tool !== null || mode !== 'visual') return;
 		const selected = visual?.textStructureSelection();
 		if (!selected) { toolError = 'format'; return; }
@@ -638,15 +636,14 @@
 			<button class="icon-tool" title={t('原始碼', 'Source')} aria-label={t('原始碼', 'Source')} aria-pressed={mode === 'source'} onclick={() => { if (tool !== null) closeTool(); mode = 'source'; editor?.focus(); }}><ToolbarIcon kind="source" /></button>
 		</div>
 		<div class="tool-group" role="group" aria-label={t('文字格式', 'Text format')}>
-			<select class="text-structure" aria-label={t('文字層級', 'Text structure')} onchange={applyStructure} disabled={!active || saving || tool !== null || !parsed || mode !== 'visual'}>
-				<option value="">{t('文字層級', 'Text structure')}</option>
-				<option value="paragraph">{t('正文', 'Paragraph')}</option>
-				<option value="title">{t('論文題目', 'Paper title')}</option>
-				<option value="abstract">{t('摘要', 'Abstract')}</option>
-				<option value="section">{t('# 一級標題', '# Heading 1')}</option>
-				<option value="subsection">{t('## 二級標題', '## Heading 2')}</option>
-				<option value="subsubsection">{t('### 三級標題', '### Heading 3')}</option>
-			</select>
+			<details class="math-menu structure-menu">
+				<summary aria-label={t('文字層級', 'Text structure')} title={t('文字層級', 'Text structure')}>{t('文字層級', 'Text structure')}<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="m2 4 3 3 3-3" fill="none" stroke="currentColor" /></svg></summary>
+				<div class="math-menu-items structure-options">
+					{#each [['paragraph', '正文', 'Paragraph'], ['title', '論文題目', 'Paper title'], ['abstract', '摘要', 'Abstract'], ['section', '一級標題', 'Heading 1'], ['subsection', '二級標題', 'Heading 2'], ['subsubsection', '三級標題', 'Heading 3']] as const as entry}
+						<button data-structure={entry[0]} disabled={!active || saving || tool !== null || !parsed || mode !== 'visual'} onclick={event => { applyStructure(entry[0]); event.currentTarget.closest('details')!.open = false; }}><span class="structure-mark">{entry[0] === 'section' ? 'H1' : entry[0] === 'subsection' ? 'H2' : entry[0] === 'subsubsection' ? 'H3' : 'T'}</span>{t(entry[1], entry[2])}</button>
+					{/each}
+				</div>
+			</details>
 			<button class="icon-tool" title={t('粗體', 'Bold')} aria-label={t('粗體', 'Bold')} onclick={() => applyFormat('strong')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="bold" /></button>
 			<button class="icon-tool" title={t('斜體', 'Italic')} aria-label={t('斜體', 'Italic')} onclick={() => applyFormat('em')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="italic" /></button>
 			<button class="icon-tool" title={t('底線', 'Underline')} aria-label={t('底線', 'Underline')} onclick={() => applyFormat('underline')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="underline" /></button>
@@ -699,9 +696,18 @@
 </div>
 
 <style>
+	.visual :global(.catalog-search) { position: sticky; top: 0; z-index: 1; box-sizing: border-box; width: 100%; min-height: 34px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); font: inherit; }
+	.visual :global(.inline-equation-catalog-grid .catalog-item-btn) { width: 132px; }
+	.visual :global(.inline-equation-catalog-grid .catalog-item-btn.wide-template) { width: 100%; }
+	.visual :global(.inline-equation-draft.is-inline .inline-equation-catalog) { width: min(480px, 70vw); }
+	.visual :global(.catalog-tab), .visual :global(.catalog-item-btn) { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px; width: 96px; min-height: 76px; }
+	.visual :global(.catalog-preview) { display: flex; align-items: center; justify-content: center; min-height: 32px; pointer-events: none; }
+	.visual :global(.catalog-preview math-field) { font-size: 21px; border: 0; padding: 0; background: transparent; pointer-events: none; min-width: 0; }
+	.visual :global(.catalog-label) { font-size: 12px; line-height: 1.3; }
 	.visual :global(.code-content) { font: 14px/1.6 Consolas, monospace; white-space: pre; overflow-x: auto; background: var(--canvas); padding: 12px; border: 1px solid var(--line); }
-	.visual :global(.inline-equation-catalog) { flex-direction: column; gap: 6px; width: min(560px, 100%); max-height: 36vh; overflow: auto; padding: 8px; box-sizing: border-box; background: var(--surface); border: 1px solid var(--line); margin-top: 8px; }
+	.visual :global(.inline-equation-catalog) { flex-direction: column; gap: 6px; width: min(480px, 100%); max-height: 30vh; overflow: auto; padding: 8px; box-sizing: border-box; background: var(--surface); border: 1px solid var(--line); margin-top: 8px; }
 	.visual :global(.inline-equation-catalog-nav), .visual :global(.inline-equation-catalog-grid) { display: flex; flex-wrap: wrap; gap: 4px; }
+	.visual :global(.catalog-tab), .visual :global(.catalog-item-btn) { min-height: 32px; font-size: 14px; padding: 5px 8px; } .visual :global(.catalog-back) { align-self: flex-start; padding: 4px 8px; border: 0; background: transparent; color: var(--accent); }
 	.visual :global(.catalog-tab.active) { background: var(--selection); }
 	.visual :global(.catalog-item-btn) { min-width: 40px; padding: 5px 8px; }
 	.visual :global(.confirm-action) { color: #15803d; }
@@ -726,7 +732,7 @@
 	.insert-bar { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 	.tool-group { display: flex; gap: 4px; }
 	.tool-group { padding-inline-start: 8px; border-inline-start: 1px solid var(--line); }
-	.text-structure { min-height: 36px; padding: 4px 8px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; }
+	.structure-menu summary { gap: 12px; padding: 5px 8px; } .structure-options button { display: flex; align-items: center; gap: 12px; min-height: 36px; } .structure-mark { color: var(--muted); width: 24px; font-size: 12px; font-weight: 600; }
 	.visual :global(.source-block[data-source-role='abstract']) { max-width: 70ch; margin-inline: auto; padding-block: 8px; }
 	.visual :global(.source-block[data-source-role='abstract']::before) { content: var(--abstract-label); display: block; text-align: center; font-weight: 600; margin-bottom: 8px; }
 	.visual :global(.source-block[data-structure='title']) { text-align: center; font-size: 28px; }

@@ -297,21 +297,41 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await paragraph.click(); await page.keyboard.press('End');
 			await page.locator('summary[aria-label="數學"]').click();
 			await page.getByRole('button', { name: '行內公式', exact: true }).click();
+			await page.locator('.inline-equation-draft math-field').waitFor({ state: 'visible' });
+			assert.equal(await page.locator('.inline-equation-draft').evaluate(node => node.parentElement.classList.contains('source-block')), true, 'inline draft stays in its text paragraph');
+			await page.getByRole('button', { name: '極限（lim）', exact: true }).click();
+			assert.equal(await page.getByRole('button', { name: '極限', exact: true }).count(), 1);
+			const findFormula = page.getByRole('searchbox', { name: '搜尋公式', exact: true });
+			await findFormula.fill('dx');
+			assert.equal(await page.getByRole('button', { name: '微分元 dx', exact: true }).count(), 1);
+			await findFormula.fill('lim');
+			assert.equal(await page.getByRole('button', { name: '極限', exact: true }).count(), 1);
+			await findFormula.fill('不存在的公式'); assert.match(await page.locator('.inline-equation-catalog').textContent(), /沒有符合/);
+			await page.getByRole('button', { name: '微積分', exact: true }).click();
+			assert.equal(await page.getByRole('button', { name: '封閉三重積分（上下限界）', exact: true }).count(), 1);
+			assert.equal(await page.getByRole('button', { name: '微分元 dθ', exact: true }).count(), 1);
+			await page.screenshot({ path: screenshotRoot + 'math-calculus-gallery-dark.png' });
+			await page.emulateMedia({ colorScheme: 'light' }); await page.screenshot({ path: screenshotRoot + 'math-calculus-gallery-light.png' }); await page.emulateMedia({ colorScheme: 'dark' });
+			await page.getByRole('button', { name: '返回', exact: true }).click();
 			await page.getByRole('button', { name: '展開數學選單', exact: true }).click();
+			await page.getByRole('button', { name: '展開數學選單', exact: true }).click();
+			await page.screenshot({ path: screenshotRoot + 'math-categories-gallery-dark.png' });
 			await page.locator('.catalog-tab').filter({ hasText: '希臘字母' }).click();
+			assert.equal(await page.locator('.inline-equation-catalog').evaluate(panel => panel.scrollTop), 0);
+			await page.screenshot({ path: screenshotRoot + 'math-gallery-inspection.png' });
 			assert.equal(await page.getByRole('button', { name: 'Gamma', exact: true }).count(), 1);
 			const fieldRect = await page.locator('.inline-equation-input').boundingBox();
 			const menuRect = await page.locator('.inline-equation-catalog').boundingBox();
 			assert.ok(menuRect.y >= fieldRect.y + fieldRect.height, 'menu is below the input instead of covering it');
 			await page.getByRole('button', { name: 'alpha', exact: true }).click();
 			await page.getByRole('button', { name: '展開數學選單', exact: true }).click();
-			await page.locator('.catalog-tab').filter({ hasText: '極限與級數' }).click();
+			await page.locator('.catalog-tab').filter({ hasText: '極限（lim）與級數' }).click();
 			assert.equal(await page.getByRole('button', { name: '極限', exact: true }).count(), 1);
-			await page.getByRole('button', { name: '返回種類', exact: true }).click();
-			await page.locator('.catalog-tab').filter({ hasText: '微積分與導數' }).click();
+			await page.getByRole('button', { name: '返回', exact: true }).click();
+			await page.locator('.catalog-tab').filter({ hasText: '微積分' }).click();
 			assert.equal(await page.getByRole('button', { name: '微分元 dx', exact: true }).count(), 1);
 			assert.equal(await page.getByRole('button', { name: '偏導數', exact: true }).count(), 1);
-			await page.getByRole('button', { name: '返回種類', exact: true }).click();
+			await page.getByRole('button', { name: '返回', exact: true }).click();
 			await page.locator('.catalog-tab').filter({ hasText: '多行環境' }).click();
 			assert.equal(await page.getByRole('button', { name: '多行函數', exact: true }).count(), 1);
 			await page.screenshot({ path: screenshotRoot + 'math-parity-catalog-dark.png' });
@@ -319,6 +339,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await paragraph.locator('.visual-math-inline').waitFor({ state: 'visible' });
 			await page.getByRole('button', { name: '原始碼', exact: true }).click();
 			assert.match(await sourceEditor.innerText(), /\\\(\\alpha\s*\\\)/);
+			assert.match(await sourceEditor.innerText(), /Beta paragraph\.\\\(\\alpha\s*\\\)/, 'inline equation adds no paragraph or newline');
 			await page.getByRole('button', { name: '視覺化', exact: true }).click();
 		});
 		await t.test('code cells insert, edit and cancel without executable HTML', async () => {
@@ -326,6 +347,13 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.getByLabel('程式碼語言', { exact: true }).selectOption('typescript');
 			await page.locator('.code-panel textarea').fill('const value = "<script>alert(1)</script>";\nconsole.log(value);');
 			await page.waitForFunction(() => document.querySelector('.code-highlight .tok-keyword'));
+			const layout = await page.locator('.code-panel').evaluate(panel => {
+				const language = panel.querySelector('.language-row').getBoundingClientRect(), input = panel.querySelector('.code-input-stack').getBoundingClientRect();
+				return { whitespace: getComputedStyle(panel).whiteSpace, gap: input.top - language.bottom, height: panel.getBoundingClientRect().height };
+			});
+			assert.equal(layout.whitespace, 'normal'); assert.ok(layout.gap <= 12); assert.ok(layout.height < 380);
+			await page.screenshot({ path: screenshotRoot + 'code-panel-cohesive-dark.png' });
+			await page.emulateMedia({ colorScheme: 'light' }); await page.screenshot({ path: screenshotRoot + 'code-panel-cohesive-light.png' }); await page.emulateMedia({ colorScheme: 'dark' });
 			assert.ok(await page.getByLabel('程式碼語言', { exact: true }).locator('option').count() > 100);
 			await page.locator('.code-panel').getByRole('button', { name: '插入', exact: true }).click();
 			const block = page.locator('.visual-raw').filter({ has: page.locator('.code-content') }).last();
@@ -397,7 +425,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await sourceEditor.click(); await page.keyboard.press('Control+A');
 			await page.keyboard.insertText('\\documentclass{article}\n\\begin{document}\nStructured text.\n\\end{document}\n');
 			await page.getByRole('button', { name: '視覺化', exact: true }).click();
-			const structure = page.getByRole('combobox', { name: '文字層級', exact: true });
+			const structure = page.locator('summary[aria-label="文字層級"]');
 			for (const [kind, selector, source] of [
 				['section', 'h2.source-block', /\\section\{Structured text\.\}/],
 				['subsection', 'h3.source-block', /\\subsection\{Structured text\.\}/],
@@ -407,7 +435,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 				['paragraph', 'p.source-block', /Structured text\./]
 			]) {
 				await page.locator('.source-block').filter({ hasText: 'Structured text.' }).click();
-				await structure.selectOption(kind);
+				await structure.click(); await page.locator('.structure-options [data-structure="'+kind+'"]').click();
 				await page.locator(selector).filter({ hasText: 'Structured text.' }).waitFor({ state: 'visible' });
 				assert.match(await sourceEditor.textContent(), source);
 				assert.equal(await page.locator('.visual-raw').count(), 0, 'generated structure stays visually editable');

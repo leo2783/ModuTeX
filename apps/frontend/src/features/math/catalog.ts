@@ -98,7 +98,7 @@ const categories: readonly CatalogCategory[] = [
 	},
 	{
 		id: 'lim-sum-prod',
-		nameZh: '極限與級數',
+		nameZh: '極限（lim）與級數',
 		nameEn: 'Limits & Sums',
 		items: [
 			{ id: 'lim', labelZh: '極限', labelEn: 'Limit', latex: '\\lim_{#? \\to #?} #@', display: 'lim' },
@@ -162,9 +162,23 @@ const categories: readonly CatalogCategory[] = [
 	}
 ];
 
-export const MATH_CATALOG: readonly CatalogCategory[] = categories
+const calculusVariants: CatalogItem[] = ['int', 'iint', 'iiint', 'oint', 'oiint', 'oiiint'].flatMap((command, index) =>
+	['', '\\nolimits_{#?}^{#?}', '\\limits_{#?}^{#?}'].map((limits, variant) => ({
+		id: command + '-variant-' + variant,
+		labelZh: ['單重積分', '雙重積分', '三重積分', '封閉單重積分', '封閉雙重積分', '封閉三重積分'][index]! + ['（無限界）', '（側置限界）', '（上下限界）'][variant]!,
+		labelEn: command + [' without limits', ' side limits', ' stacked limits'][variant],
+		latex: '\\' + command + limits + ' #@', display: command
+	})));
+const structureCategories: CatalogCategory[] = [
+	{ id: 'fractions', nameZh: '分數', nameEn: 'Fractions', items: symbols([['fraction', '分數', '\\frac{#?}{#?}'], ['inline-fraction', '行內分數', '\\tfrac{#?}{#?}'], ['slash-fraction', '斜線分數', '#?/#?']]) },
+	{ id: 'scripts', nameZh: '上下標', nameEn: 'Scripts', items: symbols([['sup', '上標', 'x^{#?}'], ['sub', '下標', 'x_{#?}'], ['both', '上下標', 'x_{#?}^{#?}']]) },
+	{ id: 'radicals', nameZh: '根號', nameEn: 'Radicals', items: symbols([['sqrt', '平方根', '\\sqrt{#?}'], ['root', 'n 次根', '\\sqrt[#?]{#?}']]) },
+	{ id: 'brackets', nameZh: '括號', nameEn: 'Brackets', items: symbols([['round', '圓括號', '\\left(#?\\right)'], ['square', '方括號', '\\left[#?\\right]'], ['curly', '大括號', '\\left\\{#?\\right\\}'], ['cases', '分段函數', '\\begin{cases}#?&#?\\\\#?&#?\\end{cases}'], ['stack', '上下堆疊', '\\substack{#?\\\\#?}'], ['binomial', '二項係數', '\\binom{#?}{#?}']]) },
+	{ id: 'accents', nameZh: '加強記號', nameEn: 'Accents', items: symbols([['hat', '帽號', '\\hat{x}'], ['bar', '上橫線', '\\overline{x}'], ['vector', '向量', '\\vec{x}'], ['dot', '一階時間導數', '\\dot{x}'], ['ddot', '二階時間導數', '\\ddot{x}']]) }
+];
+export const MATH_CATALOG: readonly CatalogCategory[] = [...structureCategories, ...categories]
 	.filter(category => category.id !== 'greek-upper')
 	.map(category => category.id === 'greek-lower' ? {
 		...category, id: 'greek', nameZh: '希臘字母', nameEn: 'Greek letters',
 		items: [...category.items, ...categories.find(value => value.id === 'greek-upper')!.items]
-	} : category);
+	} : category.id === 'calculus' ? { ...category, nameZh: '微積分', items: [...calculusVariants, ...category.items, ...symbols([['diff-dy', '微分元 dy', '\\,\\mathrm{d}y'], ['diff-theta', '微分元 dθ', '\\,\\mathrm{d}\\theta']])] } : category);

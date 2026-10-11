@@ -149,19 +149,23 @@
 </section>
 
 <style>
-	.language-row { display: flex; align-items: center; gap: 12px; margin: 6px 0 12px; }
+	.code-editor-wrapper { display: grid; gap: 10px; }
+	.language-row { display: flex; align-items: center; gap: 10px; margin: 0; }
 	.language-row label { font-size: 13px; color: var(--muted); }
 	.language-row select { min-width: 180px; max-width: 100%; padding: 7px 32px 7px 10px; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; }
 	.code-input-stack { position: relative; background: var(--canvas); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
 	.code-input-stack:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
-	.code-highlight { position: absolute; inset: 0; margin: 0; padding: 8px 10px; font: 13px/1.6 Consolas, 'Fira Code', monospace; white-space: pre; tab-size: 2; overflow: hidden; pointer-events: none; }
+	.code-highlight { position: absolute; inset: 0; margin: 0; padding: 12px; font: 14px/1.6 Consolas, 'Fira Code', monospace; white-space: pre; tab-size: 2; overflow: hidden; pointer-events: none; }
 	.code-panel {
+		white-space: normal;
+		font-size: 14px;
+		line-height: 1.4;
 		padding: 12px 16px;
 		border-bottom: 1px solid var(--line);
 		background: var(--surface);
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: 12px;
 		max-height: 60vh;
 		overflow-y: auto;
 	}
@@ -180,9 +184,12 @@
 		width: 100%;
 		box-sizing: border-box;
 		font-family: Consolas, 'Fira Code', monospace;
-		font-size: 13px;
+		font-size: 14px;
 		line-height: 1.6;
-		padding: 8px 10px;
+		padding: 12px;
+		display: block;
+		min-height: 144px;
+		height: clamp(144px, 24vh, 240px);
 		position: relative;
 		background: transparent;
 		color: transparent;
@@ -218,7 +225,7 @@
 	}
 	.btn-cancel {
 		background: var(--surface);
-		color: #b91c1c;
+		color: var(--error);
 	}
 	.btn-confirm {
 		background: #15803d;

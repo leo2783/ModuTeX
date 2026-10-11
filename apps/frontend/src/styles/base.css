@@ -210,7 +210,9 @@ button.primary {
 @keyframes compile-progress { from { transform: translateX(-100%); } to { transform: translateX(334%); } }
 @media (prefers-reduced-motion: reduce) { .compile-progress span { animation: none; margin-inline: auto; } }
 .inline-equation-draft { display: block; position: relative; white-space: normal; padding-block: 8px; min-height: 48px; }
-.inline-equation-draft.is-inline { display: inline-block; vertical-align: baseline; max-width: 100%; }
+.inline-equation-draft.is-inline { display: inline-block; vertical-align: baseline; max-width: 100%; z-index: 40; }
+.inline-equation-draft.is-inline .inline-equation-tools { position: absolute; bottom: 100%; left: 0; width: max-content; max-width: min(420px, 70vw); background: var(--surface); border: 1px solid var(--line); padding: 4px; border-radius: 4px; }
+.inline-equation-draft.is-inline .inline-equation-catalog { position: absolute; top: 100%; left: 0; width: min(480px, 70vw); z-index: 35; }
 .inline-equation-tools button[aria-pressed="true"] { color: var(--accent); background: var(--canvas); outline: 1px solid var(--accent); }
 .inline-matrix-options:not([hidden]) { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 0; }
 .inline-matrix-options label { display: flex; gap: 6px; align-items: center; }

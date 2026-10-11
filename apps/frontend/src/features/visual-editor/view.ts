@@ -144,12 +144,12 @@ export class VisualEditor {
 	}
 	private readonly options: VisualOptions;
 	private equationDraft: { dom: HTMLElement; from: number; to: number; dispose?: () => void } | null = null;
-	private placeDraft(span: SourceSpan, dom: HTMLElement): boolean {
+	private placeDraft(span: SourceSpan, dom: HTMLElement, atCaret = false): boolean {
 		if (this.disposed || !this.projection || span.documentId !== this.projection.documentId || span.version !== this.projection.version) return false;
 		this.closeEquation();
 		let from = this.view.state.selection.from, to = from, matched = false;
 		this.view.state.doc.descendants((node, pos) => {
-			if (matched) return false;
+			if (matched || atCaret && span.from === span.to) return false;
 			if (['math_inline', 'math_block', 'table_block', 'raw_block'].includes(node.type.name) && node.attrs.from === span.from && node.attrs.to === span.to) { from = pos; to = pos + node.nodeSize; matched = true; return false; }
 			if (span.from === span.to && typeof node.attrs.to === 'number' && node.attrs.to === span.from) { from = pos + node.nodeSize; to = from; matched = true; return false; }
 			if (span.from === span.to && typeof node.attrs.from === 'number' && span.from <= node.attrs.from) { from = pos; to = pos; matched = true; return false; }
@@ -161,7 +161,7 @@ export class VisualEditor {
 	/** Isolated draft; the caller keeps source authority and the shared undo history. */
 	startEquation(draft: EquationDraft, span: SourceSpan, commit: (draft: EquationDraft) => void, cancel: () => void): boolean {
 		const dom = this.view.dom.ownerDocument.createElement('span'); dom.className = `inline-equation-draft${draft.inline ? ' is-inline' : ''}`; dom.contentEditable = 'false';
-		if (!this.placeDraft(span, dom)) return false;
+		if (!this.placeDraft(span, dom, draft.inline)) return false;
 		const session = this.equationDraft!;
 		void import('../math/inline.ts').then(({ editInlineEquation }) => {
 			if (this.disposed || this.equationDraft !== session) return;
