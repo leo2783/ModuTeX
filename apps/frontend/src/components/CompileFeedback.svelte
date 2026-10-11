@@ -1,8 +1,9 @@
 <script lang="ts">
 	import type { Diagnostic } from '@modutex/frontend-contracts';
 	import { text, type Language } from '../i18n/text.ts';
-	let { locale, diagnostics, compileLog, canNavigateDiagnostic, navigateToDiagnostic }: {
+	let { locale, diagnostics, compileLog, expanded = false, canNavigateDiagnostic, navigateToDiagnostic }: {
 		locale: Language; diagnostics: readonly Diagnostic[]; compileLog: string;
+		expanded?: boolean;
 		canNavigateDiagnostic: (diagnostic: Diagnostic) => boolean;
 		navigateToDiagnostic: (diagnostic: Diagnostic) => void;
 	} = $props();
@@ -29,7 +30,7 @@
 		</section>
 	{/if}
 	{#if compileLog}
-		<details class="compile-log" open={diagnostics.some((d) => d.severity === 'error')}>
+		<details class="compile-log" open={expanded || diagnostics.some((d) => d.severity === 'error')}>
 			<summary>{t('TeX 編譯記錄', 'TeX compilation log')}</summary>
 			<pre>{compileLog}</pre>
 		</details>

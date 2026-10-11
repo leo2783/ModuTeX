@@ -1284,6 +1284,23 @@ test('cancel requested before compile start replies is applied to that compile',
 	});
 });
 
+test('file context actions are reachable and Escape restores file focus', { timeout: 180_000 }, async () => {
+	await withHostWorkbench(async (workbench) => {
+		await workbench.openFolder('first.tex', 'BASE_FIRST');
+		const row = await waitFor(() => workbench.fileRow('first.tex'), 10_000, workbench.flush);
+		const win = row.ownerDocument.defaultView!;
+		row.dispatchEvent(new win.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 100 }));
+		const menu = await waitFor(() => workbench.container.querySelector('.file-context-menu'), 10_000, workbench.flush);
+		assert.ok(menu);
+		assert.equal(menu.querySelectorAll('button').length, 3);
+		assert.ok(menu.textContent?.includes('Compile PDF') || menu.textContent?.includes('編譯 PDF'));
+		win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+		await workbench.flush();
+		assert.equal(workbench.container.querySelector('.file-context-menu'), null);
+		assert.equal(row.ownerDocument.activeElement, row);
+	});
+});
+
 test('an included-file diagnostic navigates through DesktopPort into the real editor', { timeout: 180_000 }, async () => {
 	await withHostWorkbench(async (workbench) => {
 		await workbench.openFolder('first.tex', 'BASE_FIRST');
@@ -1320,6 +1337,8 @@ test('an included-file diagnostic navigates through DesktopPort into the real ed
 			10_000,
 			workbench.flush
 		);
+		assert.ok(workbench.container.querySelector('.compile-details'));
+		assert.equal(workbench.container.querySelector('.compile-log pre')?.textContent, 'Included-file diagnostic fixture');
 		diagnostic.click();
 		await workbench.waitForSource('INCLUDED_SOURCE');
 		assert.equal(workbench.editorText().includes('BASE_FIRST'), false);

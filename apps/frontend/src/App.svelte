@@ -2,7 +2,6 @@
 	import { SourceDocument, projectionIsCurrent, type SourceProjection, type SourceSpan } from '@modutex/document-core';
 	import { sourceOutline, type OutlineEntry } from './features/source-editor/outline.ts';
 	import { onDestroy, onMount } from 'svelte';
-	import FileTree from './components/FileTree.svelte';
 	import { text } from './i18n/text.ts';
 	import { documentCommand } from './features/shortcuts/keyboard.ts';
 	import { helpTopic, type HelpTopic } from './features/help/topics.ts';
@@ -29,6 +28,7 @@
 	let compiling = $state(false);
 	let compileHandle = $state.raw<CompileHandle | null>(null);
 	let compileLog = $state('');
+	let showCompileDetails = $state(false);
 	let compileTicket = $state(0);
 	let compileCancellationRequestedFor = $state<number | null>(null);
 	let compileCancellationFailedFor: number | null = null;
@@ -221,8 +221,13 @@
 				return ['編譯逾時。請檢查 TeX 記錄並修正文件後再試。', 'Compilation timed out. Review the TeX log, correct the document, and try again.'];
 			case 'COMPILE_FAILED':
 				return ['編譯失敗。請檢查編譯問題或 TeX 記錄，修正後重新編譯。', 'Compilation failed. Review the problems or TeX log, then compile again.'];
+			case 'FILE_TOO_LARGE':
+				return ['工作區的編譯輸入超過大小上限。請將快取或其他非文件資料移出工作區後重試。', 'Workspace compile inputs exceed the size limit. Move caches or unrelated data outside the workspace and retry.'];
+			case 'TREE_TOO_LARGE':
+			case 'TREE_TOO_DEEP':
+				return ['工作區的檔案數或目錄深度超過上限。請開啟文件所在的較小資料夾後重試。', 'Workspace file count or directory depth exceeds the limit. Open a smaller document folder and retry.'];
 			default:
-				return ['無法完成編譯。請檢查 TeX 記錄並修正文件後再試。', 'Unable to complete compilation. Review the TeX log, correct the document, and try again.'];
+				return ['無法啟動或完成編譯。請查看編譯詳細資料。', 'Compilation could not start or finish. Review the compilation details.'];
 		}
 	}
 	function workspaceWatchIsCurrent(watch: WorkspaceWatch): boolean {
@@ -894,6 +899,7 @@
 		compileCancellationRequestedFor = null;
 		compileCancellationFailedFor = null;
 		compiling = true; errorState = null; compileNoticeState = null; compileLog = '';
+		showCompileDetails = false;
 		diagnostics = []; diagnosticIdentity = null;
 		let handleReturned = false;
 		try {
@@ -927,6 +933,8 @@
 			diagnostics = result.diagnostics; diagnosticIdentity = result.identity;
 			if (result.status === 'cancelled') { compileNoticeState = ['編譯已取消', 'Compilation cancelled']; return; }
 			if (result.status === 'failure') {
+				showCompileDetails = true;
+				if (!compileLog && !diagnostics.length) compileLog = t('編譯器回報失敗，但未提供記錄。請重試；若仍失敗，請檢查編譯引擎。', 'The compiler reported failure without a log. Retry; if it fails again, check the compile engine.');
 				const diag = result.diagnostics[0]?.message;
 				errorState = diag ? { raw: diag } : compileErrorDescriptor(new Error('COMPILE_FAILED'));
 				compileNoticeState = ['編譯失敗。請檢查編譯問題或 TeX 記錄，修正後重新編譯。', 'Compilation failed. Review the problems or TeX log, then compile again.'];
@@ -947,6 +955,9 @@
 					compileNoticeState = ['文件已變更，本次編譯結果未載入。請重新編譯。', 'The document changed, so this compile result was not loaded. Please compile again.'];
 				} else {
 					errorState = compileErrorDescriptor(value);
+					const reason = value instanceof Error ? value.message : typeof value === 'string' ? value : t('未取得失敗詳細資料。', 'No failure details were returned.');
+					compileLog = [handleReturned ? t('編譯執行失敗', 'Compilation execution failed') : t('編譯啟動前檢查失敗', 'Compilation preflight failed'), path, t(...compileErrorDescriptor(value)), reason].join('\n').slice(0, 256 * 1024);
+					showCompileDetails = true;
 					compileNoticeState = ['編譯失敗，請查看錯誤訊息。', 'Compilation failed. Review the error message.'];
 				}
 			}
@@ -1160,6 +1171,7 @@
 	{#if route === 'workbench' && (compiling || compileNotice)}
 		<div class="compile-status" role="status" aria-live="polite">
 			{compiling ? t('編譯中…', 'Compiling…') : compileNotice}
+			{#if compileLog || diagnostics.length}<button class="text-button" onclick={() => showCompileDetails = !showCompileDetails}>{showCompileDetails ? t('隱藏詳細資料', 'Hide details') : t('查看編譯記錄', 'View compilation log')}</button>{/if}
 			{#if !compiling && compileNoticeState?.[1] === 'Compilation completed'}
 				 · {pdfDisplayFailed ? t('PDF 無法顯示，請查看錯誤訊息。', 'PDF could not be displayed. Review the error message.') : pdfRendered ? t('PDF 已更新', 'PDF updated') : t('正在顯示 PDF…', 'Displaying PDF…')}
 			{/if}
@@ -1219,12 +1231,14 @@
 					<section class="explorer-section" aria-label={t('檔案總管', 'Explorer')}>
 						<div class="sidebar-heading"><span>{t('檔案總管', 'Explorer')}</span><button class="text-button" title={t('開啟資料夾', 'Open folder')} onclick={() => chooseSource('folder')} disabled={!desktop || opening || saving}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h6l2 2h10v12H3ZM12 11v6m-3-3h6" /></svg></button></div>
 						<div class="sidebar-scroll">
+							{#await import('./components/FileTree.svelte') then { default: FileTree }}
 							{#if workspace}
 								<div class="workspace-name" title={workspace.label}>{workspace.label}</div>
-								<FileTree {entries} selected={sourceName} disabled={opening || saving} onOpen={(path) => workspace && readDesktopFile(path, workspace)} />
+								<FileTree {entries} locale={preferences.language} selected={sourceName} disabled={opening || saving || compiling} onOpen={async (path) => { if (workspace) await readDesktopFile(path, workspace); }} onCompile={async (path) => { const owner = workspace; if (!owner) return; if (sourceName !== path) await readDesktopFile(path, owner); if (workspace === owner && sourceName === path) await compileSource(); }} />
 							{:else if source}
 								<FileTree entries={[{ path: sourceName, kind: 'file' }]} selected={sourceName} disabled={true} onOpen={() => {}} />
 							{:else}<p class="sidebar-empty">{t('尚未開啟文件', 'No document open')}</p>{/if}
+							{/await}
 						</div>
 					</section>
 					<section class="outline-section" aria-label={t('大綱', 'Outline')}>
@@ -1316,10 +1330,12 @@
 		{/if}
 	</main>
 	{#if error}<div class="error-strip" role="alert">{error}<button class="text-button" onclick={() => (errorState = null)}>{t('關閉', 'Close')}</button></div>{/if}
-	{#if diagnostics.length || compileLog}
+	{#if route === 'workbench' && showCompileDetails && (diagnostics.length || compileLog)}
+		<section class="compile-details" aria-label={t('編譯詳細資料', 'Compilation details')}>
 		{#await import('./components/CompileFeedback.svelte') then { default: CompileFeedback }}
-			<CompileFeedback locale={preferences.language} {diagnostics} {compileLog} {canNavigateDiagnostic} {navigateToDiagnostic} />
+			<CompileFeedback locale={preferences.language} {diagnostics} {compileLog} expanded={true} {canNavigateDiagnostic} {navigateToDiagnostic} />
 		{/await}
+		</section>
 	{/if}
 	<footer class="status-bar" aria-live="polite">
 		<span>{opening ? t('讀取中…', 'Reading…') : source ? sourceName + (dirty ? t(' · 未儲存', ' · Unsaved') : '') : t('尚未開啟文件', 'No document open')}</span>

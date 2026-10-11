@@ -129,6 +129,8 @@ button.primary {
 	border-top: 1px solid var(--line);
 	background: var(--canvas);
 }
+.compile-details { flex: none; max-height: 30dvh; overflow: auto; border-top: 1px solid var(--line); background: var(--surface); }
+.compile-details .compile-log { max-height: none; }
 .compile-log summary { cursor: pointer; }
 .compile-log pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 Consolas, monospace; }
 .files,

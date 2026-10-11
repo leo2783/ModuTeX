@@ -6,6 +6,10 @@
 	"licenseDecision": "Pending independent provenance review; new packages remain private UNLICENSED until review",
 	"references": [
 		{
+			"id": "frontend-compile-errors-20261011",
+			"path": "docs/architecture/FRONTEND_COMPILE_ERRORS_2026-10-11.md"
+		},
+		{
 			"id": "frontend-inline-20261011",
 			"path": "docs/architecture/FRONTEND_INLINE_ACCEPTANCE_2026-10-11.md"
 		},

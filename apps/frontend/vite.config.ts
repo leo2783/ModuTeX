@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { readFile } from 'node:fs/promises';
 
-export default defineConfig({ plugins: [svelte(), {
+export default defineConfig({ ssr: { optimizeDeps: { exclude: ['svelte', 'svelte/server', 'svelte/internal/server'] } }, plugins: [svelte(), {
 	name: 'frontend-notices',
 	async generateBundle() {
 		this.emitFile({ type: 'asset', fileName: 'THIRD_PARTY_NOTICES.md',

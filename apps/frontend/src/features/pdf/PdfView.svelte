@@ -72,7 +72,11 @@
 			if (disposed) { await destroyLoading(); return; }
 			document = pdf; count = pdf.numPages; onPageCount(count); schedule?.();
 		}).catch(() => { if (!disposed) { busy = false; onError('PDF_LOAD'); } });
+		let observedWidth = target.clientWidth;
 		const observer = new ResizeObserver(() => {
+			const width = target.clientWidth;
+			if (width === observedWidth) return;
+			observedWidth = width;
 			cancelAnimationFrame(resizeFrame);
 			resizeFrame = requestAnimationFrame(() => { if (zoom === 'fit') schedule?.(); });
 		});

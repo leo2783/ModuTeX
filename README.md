@@ -25,6 +25,8 @@ The new workbench opens in Visual mode, with icons for Source mode and equation,
 
 ## Features
 
+Right-click files to open, compile to PDF or copy their relative path. Compilation failures automatically show details; the compilation status also provides a log toggle. See [failure handling and validation](docs/architecture/FRONTEND_COMPILE_ERRORS_2026-10-11.md).
+
 - **Visual and source editing** — edit supported document structures visually, with direct access to LaTeX source for custom commands and layouts.
 - **Equations and matrices** — insert mathematical content and edit matrices within the document.
 - **Editable tables** — manage rows and columns, adjust column widths, choose caption placement, and apply common academic table styles.
