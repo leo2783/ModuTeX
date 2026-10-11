@@ -2,6 +2,7 @@
 	import { SourceDocument, projectionIsCurrent, type SourceProjection, type SourceSpan } from '@modutex/document-core';
 	import { sourceOutline, type OutlineEntry } from './features/source-editor/outline.ts';
 	import { onDestroy, onMount } from 'svelte';
+	import FileTree from './components/FileTree.svelte';
 	import { text } from './i18n/text.ts';
 	import { documentCommand } from './features/shortcuts/keyboard.ts';
 	import { helpTopic, type HelpTopic } from './features/help/topics.ts';
@@ -35,6 +36,8 @@
 	let diagnosticIdentity = $state.raw<CompileIdentity | null>(null);
 	let pdfIdentity = $state.raw<CompileIdentity | null>(null);
 	let pdfBytes = $state.raw<Uint8Array | null>(null);
+	let pdfRendered = $state(false), pdfDisplayFailed = $state(false);
+	$effect(() => { void pdfBytes; pdfRendered = false; pdfDisplayFailed = false; });
 	let pdfName = $state('');
 	let pdfLoadKey = $state(0);
 	let pageCount = $state(0);
@@ -944,6 +947,7 @@
 					compileNoticeState = ['文件已變更，本次編譯結果未載入。請重新編譯。', 'The document changed, so this compile result was not loaded. Please compile again.'];
 				} else {
 					errorState = compileErrorDescriptor(value);
+					compileNoticeState = ['編譯失敗，請查看錯誤訊息。', 'Compilation failed. Review the error message.'];
 				}
 			}
 		} finally {
@@ -1153,6 +1157,14 @@
 			{/if}
 		</div>
 	</header>
+	{#if route === 'workbench' && (compiling || compileNotice)}
+		<div class="compile-status" role="status" aria-live="polite">
+			{compiling ? t('編譯中…', 'Compiling…') : compileNotice}
+			{#if !compiling && compileNoticeState?.[1] === 'Compilation completed'}
+				 · {pdfDisplayFailed ? t('PDF 無法顯示，請查看錯誤訊息。', 'PDF could not be displayed. Review the error message.') : pdfRendered ? t('PDF 已更新', 'PDF updated') : t('正在顯示 PDF…', 'Displaying PDF…')}
+			{/if}
+		</div>
+	{/if}
 	{#if route === 'home'}{#key homeLoadKey}{#await import('./pages/Home.svelte')}<main class="empty-state" role="status"><p>{t('正在開啟首頁…', 'Loading home…')}</p></main>{:then { default: Home }}<Home locale={preferences.language} desktop={!!desktop} busy={opening || saving || compiling || desktopLoading} currentName={sourceName} {dirty} {recent} {recentNotice} onRecent={openRecent} onRemoveRecent={removeRecent} onOpen={openFromHome} onCreate={newDocument} />{:catch}<main class="empty-state" role="alert"><p>{t('無法載入首頁，文件內容已保留。', 'Home could not be loaded. Your document is preserved.')}</p><button onclick={() => homeLoadKey++}>{t('重試', 'Retry')}</button></main>{/await}{/key}{/if}
 	{#if route === 'settings'}{#key settingsLoadKey}{#await import('./pages/Settings.svelte')}<main class="empty-state" role="status"><p>{t('正在開啟設定…', 'Loading settings…')}</p></main>{:then { default: Settings }}<Settings {preferences} locale={preferences.language} notice={preferencesNotice} onChange={changePreference} onRestore={restoreDefaults} />{:catch}<main class="empty-state" role="alert"><p>{t('無法載入設定，文件內容已保留。', 'Settings could not be loaded. Your document is preserved.')}</p><button onclick={() => settingsLoadKey++}>{t('重試', 'Retry')}</button></main>{/await}{/key}{/if}
 	{#if route === 'release-notes'}{#key releaseLoadKey}{#await import('./pages/ReleaseNotes.svelte')}<main class="empty-state" role="status"><p>{t('正在開啟版本紀錄…', 'Loading release notes…')}</p></main>{:then { default: ReleaseNotes }}<ReleaseNotes locale={preferences.language} {showLimitations} />{:catch}<main class="empty-state" role="alert"><p>{t('無法載入版本紀錄，文件內容已保留。', 'Release notes could not be loaded. Your document is preserved.')}</p><button onclick={() => releaseLoadKey++}>{t('重試', 'Retry')}</button></main>{/await}{/key}{/if}
@@ -1204,11 +1216,20 @@
 		>
 			{#snippet sidebarContent()}
 				<aside class="files" aria-label={t('文件與大綱', 'Files and outline')}>
-					<div class="pane-title" role="group" aria-label={t('側欄內容', 'Sidebar content')}>
-						<button class="text-button" aria-pressed={sidebar === 'files'} onclick={() => sidebar = 'files'}>{t('文件', 'Files')}</button>
-						<button class="text-button" aria-pressed={sidebar === 'outline'} onclick={() => sidebar = 'outline'}>{t('大綱', 'Outline')}</button>
-					</div>
-					{#if sidebar === 'outline'}
+					<section class="explorer-section" aria-label={t('檔案總管', 'Explorer')}>
+						<div class="sidebar-heading"><span>{t('檔案總管', 'Explorer')}</span><button class="text-button" title={t('開啟資料夾', 'Open folder')} onclick={() => chooseSource('folder')} disabled={!desktop || opening || saving}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h6l2 2h10v12H3ZM12 11v6m-3-3h6" /></svg></button></div>
+						<div class="sidebar-scroll">
+							{#if workspace}
+								<div class="workspace-name" title={workspace.label}>{workspace.label}</div>
+								<FileTree {entries} selected={sourceName} disabled={opening || saving} onOpen={(path) => workspace && readDesktopFile(path, workspace)} />
+							{:else if source}
+								<FileTree entries={[{ path: sourceName, kind: 'file' }]} selected={sourceName} disabled={true} onOpen={() => {}} />
+							{:else}<p class="sidebar-empty">{t('尚未開啟文件', 'No document open')}</p>{/if}
+						</div>
+					</section>
+					<section class="outline-section" aria-label={t('大綱', 'Outline')}>
+						<div class="sidebar-heading">{t('大綱', 'Outline')}</div>
+						<div class="sidebar-scroll">
 						{#if source && outlineOwner === source.documentId && outline.length}
 							{#each outline as heading (heading.span.from)}
 								<button class="outline-row" style:padding-left={`${16 + heading.level * 12}px`}
@@ -1216,24 +1237,13 @@
 									onclick={() => navigation = { span: heading.span, sequence: ++navigationSequence }}>{heading.label}</button>
 							{/each}
 						{:else}<p class="sidebar-empty">{!source ? t('開啟文件後顯示章節', 'Open a document to view sections') : outlineFailed ? t('大綱暫停更新', 'Outline updates paused') : !projection ? t('正在更新大綱…', 'Updating outline…') : t('此文件沒有章節', 'This document has no sections')}</p>{/if}
-					{:else if workspace}
-						<div class="file-meta">{workspace.label}</div>
-						{#each entries.filter((entry) => entry.kind === 'file') as entry (entry.path)}
-							<button class="file-row" aria-current={entry.path === sourceName || entry.path === pdfName ? 'true' : undefined}
-								disabled={opening || saving} onclick={() => workspace && readDesktopFile(entry.path, workspace)}>{entry.path}</button>
-						{/each}
-					{:else if source}
-						<div class="file-row">{sourceName}</div>
-						<div class="file-meta">UTF-8{source.profile.bom ? ' · BOM' : ''}</div>
-					{:else}
-						<p class="sidebar-empty">{t('尚未開啟文件', 'No document open')}</p>
-					{/if}
+						</div>
+					</section>
 				</aside>
 			{/snippet}
 			{#snippet editor({ active, hidden, inert })}
 				<section class="editor-pane" aria-label={t('文件編輯', 'Document editor')} {hidden} {inert}>
 					<div class="pane-title"><span>{sourceName || t('原始碼', 'Source')}</span><span class="mode-label">LaTeX</span></div>
-					<div class="editor-bar"><span>{t('文件', 'Document')}</span><span class="muted">{dirty ? t('未儲存至磁碟', 'Not saved to disk') : 'UTF-8'}</span></div>
 					<div class="editor-content">
 						{#if source}
 							{#key source.documentId + ':' + editorLoadKey}
@@ -1282,7 +1292,8 @@
 									active={route === 'workbench' && active}
 									locale={preferences.language}
 									onPageCount={(count) => (pageCount = count)}
-									onError={(code) => (errorState = fileErrorDescriptor(new Error(code)))}
+									onRendered={() => { pdfRendered = true; pdfDisplayFailed = false; }}
+									onError={(code) => { pdfDisplayFailed = true; errorState = fileErrorDescriptor(new Error(code)); }}
 								/>{/key}
 							{:catch}
 								<div class="empty-state" role="alert"><p>{t('無法載入 PDF 預覽。', 'The PDF preview could not be loaded.')}</p><button onclick={() => pdfLoadKey++}>{t('重試', 'Retry')}</button></div>

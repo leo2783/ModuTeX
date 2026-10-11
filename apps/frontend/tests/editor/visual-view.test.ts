@@ -483,6 +483,8 @@ test('marked visual typing keeps current Raw/math anchors, rejects structural sp
 		assert.equal(edited.read(rawActions[0]!.span.from, rawActions[0]!.span.to), rawSource);
 		assert.equal(edited.read(equationActions[0]!.span.from, equationActions[0]!.span.to), mathSource);
 
+		// Editing an atom now selects that cell; exercise the structural guard in text.
+		view.view.dispatch(view.view.state.tr.setSelection(TextSelection.create(view.view.state.doc, 2)));
 		const beforeSplit = view.view.state;
 		view.view.dispatch(beforeSplit.tr.split(beforeSplit.selection.from));
 		assert.equal(rejected, 1);

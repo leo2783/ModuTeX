@@ -21,7 +21,7 @@
 ModuTeX brings document editing and PDF compilation into one desktop workspace. Switch between visual editing and LaTeX source, work with equations and tables, and preview the compiled document alongside your text.
 
 
-The new workbench provides Source/Visual modes and notebook cells for text, equations, matrices and tables. Edit text directly, finish or cancel an edit, insert above/below, move cells or delete them with shared undo. Closing unsaved documents offers Save, Discard or Cancel. See the [notebook validation and limits](docs/architecture/FRONTEND_NOTEBOOK_ACCEPTANCE_2026-10-11.md).
+The new workbench opens in Visual mode, with icons for Source mode and equation, matrix and table cells. Edit text and equations in the document, finish or cancel, insert above/below, move or delete cells with shared undo. The sidebar shows files above the outline. Compilation shows progress and success or failure; successful results automatically display the latest PDF. Closing unsaved documents offers Save, Discard or Cancel. See the [inline editing validation and limits](docs/architecture/FRONTEND_INLINE_ACCEPTANCE_2026-10-11.md).
 
 ## Features
 

@@ -27,10 +27,11 @@ interface VisualOptions {
 	format?(format: TextFormat): void;
 	raw?(source: string, span: SourceSpan): void;
 	insertBlock?(kind: 'text' | 'equation' | 'matrix' | 'table', span: SourceSpan, beforeText: boolean): void;
-	cellAction?(action: 'delete' | 'move-up' | 'move-down', span: SourceSpan, adjacent?: SourceSpan): void;
+	cellAction?(action: 'delete' | 'move-up' | 'move-down', span: SourceSpan, adjacent?: SourceSpan): boolean | void;
 	cellSelected?(span: SourceSpan): void;
 	cellDone?(): void;
 	cellCancel?(span: SourceSpan, original: string): void;
+	cellToolbar?(toolbar: HTMLElement | null): void;
 }
 
 let mathRendererPromise: Promise<typeof import('../math/render.ts')> | null = null;
@@ -72,7 +73,83 @@ export class VisualEditor {
 	private cachedEditable: boolean | undefined = undefined;
 	private cachedLocale: string | undefined = undefined;
 	private cachedSelectedCell: number | null = null;
+	private toolbarKey = '';
+	private clickCell(view: EditorView, event: MouseEvent): void {
+		const target = event.target as HTMLElement | null;
+		if (target?.closest('.visual-cell-toolbar, .visual-cell-boundary, .inline-equation-draft, .cell-panel-draft')) return;
+		const cell = target?.closest<HTMLElement>('[data-cell-index]');
+		if (!cell || !view.dom.contains(cell)) return;
+		const index = Number(cell.dataset.cellIndex);
+		if (!Number.isInteger(index) || index < 0 || index >= view.state.doc.childCount) return;
+		let position = 0; for (let i = 0; i < index; i++) position += view.state.doc.child(i).nodeSize;
+		const node = view.state.doc.child(index);
+		if (node.isAtom) { view.focus(); view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, position))); view.focus(); }
+		else {
+			const clamp = (pos: number) => Math.max(position + 1, Math.min(pos, position + node.nodeSize - 1));
+			const native = cell.ownerDocument.getSelection();
+			let from = position + 1, to = from;
+			if (native?.anchorNode && native.focusNode && cell.contains(native.anchorNode) && cell.contains(native.focusNode)) {
+				from = clamp(view.posAtDOM(native.anchorNode, native.anchorOffset)); to = clamp(view.posAtDOM(native.focusNode, native.focusOffset));
+			} else if (typeof cell.ownerDocument.elementFromPoint === 'function') {
+				from = to = clamp(view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? from);
+			}
+			view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)));
+		}
+		this.selectCell(index);
+	}
+	private refreshCellToolbar(): void {
+		if (!this.options.cellToolbar) return;
+		const key = `${this.selectedCellIndex}:${this.projection?.version}:${this.editable()}:${this.options.locale?.()}`;
+		if (key === this.toolbarKey) return;
+		this.toolbarKey = key;
+		this.options.cellToolbar(this.selectedCellIndex !== null && this.selectedCellIndex < this.view.state.doc.childCount
+			? this.createCellToolbarElement(this.selectedCellIndex) : null);
+	}
 	private readonly options: VisualOptions;
+	private equationDraft: { dom: HTMLElement; from: number; to: number; dispose?: () => void } | null = null;
+	private placeDraft(span: SourceSpan, dom: HTMLElement): boolean {
+		if (this.disposed || !this.projection || span.documentId !== this.projection.documentId || span.version !== this.projection.version) return false;
+		this.closeEquation();
+		let from = this.view.state.selection.from, to = from, matched = false;
+		this.view.state.doc.descendants((node, pos) => {
+			if (matched) return false;
+			if (['math_inline', 'math_block', 'table_block'].includes(node.type.name) && node.attrs.from === span.from && node.attrs.to === span.to) { from = pos; to = pos + node.nodeSize; matched = true; return false; }
+			if (span.from === span.to && typeof node.attrs.to === 'number' && node.attrs.to === span.from) { from = pos + node.nodeSize; to = from; matched = true; return false; }
+			if (span.from === span.to && typeof node.attrs.from === 'number' && span.from <= node.attrs.from) { from = pos; to = pos; matched = true; return false; }
+		});
+		const session = { dom, from, to, dispose: undefined as (() => void) | undefined }; this.equationDraft = session;
+		this.view.updateState(this.view.state.apply(this.view.state.tr));
+		return true;
+	}
+	/** Isolated draft; the caller keeps source authority and the shared undo history. */
+	startEquation(draft: EquationDraft, span: SourceSpan, commit: (draft: EquationDraft) => void, cancel: () => void): boolean {
+		const dom = this.view.dom.ownerDocument.createElement('span'); dom.className = `inline-equation-draft${draft.inline ? ' is-inline' : ''}`; dom.contentEditable = 'false';
+		if (!this.placeDraft(span, dom)) return false;
+		const session = this.equationDraft!;
+		void import('../math/inline.ts').then(({ editInlineEquation }) => {
+			if (this.disposed || this.equationDraft !== session) return;
+			session.dispose = editInlineEquation(dom, draft, (zh, en) => this.text(zh, en), commit, cancel);
+		}).catch(() => {
+			if (this.disposed || this.equationDraft !== session) return;
+			dom.textContent = this.text('公式工具無法載入。', 'Equation tools could not load.');
+			const close = dom.ownerDocument.createElement('button'); close.type = 'button'; close.textContent = this.text('取消', 'Cancel'); close.addEventListener('click', cancel); dom.append(close);
+		});
+		return true;
+	}
+	startCellPanel(span: SourceSpan, panel: HTMLElement): boolean {
+		const parent = panel.parentNode, next = panel.nextSibling;
+		if (!parent) return false;
+		const dom = panel.ownerDocument.createElement('div'); dom.className = 'cell-panel-draft'; dom.contentEditable = 'false';
+		if (!this.placeDraft(span, dom)) return false;
+		dom.append(panel);
+		this.equationDraft!.dispose = () => parent.insertBefore(panel, next?.parentNode === parent ? next : null);
+		return true;
+	}
+	closeEquation(): void {
+		const session = this.equationDraft; if (!session) return;
+		this.equationDraft = null; session.dispose?.();
+		if (!this.disposed) this.view.updateState(this.view.state.apply(this.view.state.tr));
+	}
 
 	private selectCell(index: number | null): void {
 		if (this.disposed || this.selectedCellIndex === index) return;
@@ -85,6 +162,7 @@ export class VisualEditor {
 		if (this.view) {
 			this.view.dispatch(this.view.state.tr);
 		}
+		this.refreshCellToolbar();
 	}
 
 	private cellSpan(index: number): SourceSpan | null {
@@ -181,6 +259,7 @@ export class VisualEditor {
 		const node = this.view.state.doc.child(cellIndex);
 		const container = doc.createElement('div');
 		container.className = 'visual-cell-toolbar';
+		container.addEventListener('pointerdown', event => event.preventDefault());
 		container.contentEditable = 'false';
 		container.setAttribute('role', 'toolbar');
 		container.setAttribute('aria-label', this.text('儲存格操作列', 'Cell actions'));
@@ -303,10 +382,9 @@ export class VisualEditor {
 			if (!this.editable() || !this.options.cellAction) return;
 			const span = this.cellSpan(cellIndex);
 			if (!span) { this.options.rejected(); return; }
-			this.selectCell(null);
-			this.options.cellDone?.();
-			this.view.dom.blur();
-			this.options.cellAction('delete', span);
+			if (this.options.cellAction('delete', span) !== false) {
+				this.selectCell(null); this.options.cellDone?.(); this.view.dom.blur();
+			}
 		});
 
 		const finishBtn = doc.createElement('button');
@@ -384,7 +462,7 @@ export class VisualEditor {
 								'data-cell-index': String(i),
 								'data-cell-type': child.type.name
 							}));
-							if (isSelected) {
+							if (isSelected && !this.options.cellToolbar) {
 								decorations.push(Decoration.widget(pos, () => this.createCellToolbarElement(i), {
 									side: 1,
 									stopEvent: () => true,
@@ -408,14 +486,36 @@ export class VisualEditor {
 					// Blank space between cells must not select the nearest paragraph.
 					if (!cell || !view.dom.contains(cell)) return false;
 					const cellIndex = Number(cell.dataset.cellIndex);
-					if (cellIndex !== null && cellIndex !== this.selectedCellIndex) {
-						this.selectCell(cellIndex);
-					}
-					return false;
+					if (!Number.isInteger(cellIndex) || cellIndex < 0 || cellIndex >= view.state.doc.childCount) return false;
+					let position = 0;
+					for (let index = 0; index < cellIndex; index++) position += view.state.doc.child(index).nodeSize;
+					const node = view.state.doc.child(cellIndex);
+					// Publish the clicked caret before adding its toolbar, so widget redraws
+					// cannot restore the previous cell's native selection.
+					const selection = node.isAtom ? NodeSelection.create(view.state.doc, position)
+						: TextSelection.create(view.state.doc, Math.max(position + 1, Math.min(pos, position + node.nodeSize - 1)));
+					view.dispatch(view.state.tr.setSelection(selection));
+					this.selectCell(cellIndex);
+					return true;
 				}
 			}
 		});
-		this.view = new EditorView(target, { state: EditorState.create({ schema: visualSchema, plugins: [notebookPlugin] }),
+		const equationPlugin = new Plugin({ props: { decorations: state => {
+			const draft = this.equationDraft;
+			if (!draft || draft.from > state.doc.content.size || draft.to > state.doc.content.size) return DecorationSet.empty;
+			const decorations = [Decoration.widget(draft.from, draft.dom, { side: -1, stopEvent: () => true })];
+			if (draft.to > draft.from) decorations.push(Decoration.node(draft.from, draft.to, { class: 'equation-draft-original' }));
+			return DecorationSet.create(state.doc, decorations);
+		} } });
+		this.view = new EditorView(target, { state: EditorState.create({ schema: visualSchema, plugins: [notebookPlugin, equationPlugin] }),
+			handleDOMEvents: {
+				click: (view, event) => { this.clickCell(view, event as MouseEvent); return false; },
+				mousedown: (view, event) => {
+					const target = event.target as HTMLElement | null;
+					if (target?.closest('button, input, textarea, .cell-panel-draft') || !target?.closest('[data-cell-type="table_block"]')) return false;
+					this.clickCell(view, event as MouseEvent); event.preventDefault(); return true;
+				}
+			},
 			attributes: { role: 'textbox', 'aria-multiline': 'true', 'aria-label': label + this.text(' 視覺編輯', ' visual editor') },
 			editable: () => this.editable(),
 			nodeViews: { source_block: initial => {
@@ -486,14 +586,17 @@ export class VisualEditor {
 					if (draft) this.options.table(draft, { documentId: source.documentId, version: source.version, from: anchored.attrs.from, to: anchored.attrs.to });
 				};
 				button.addEventListener('click', edit); render();
+				dom.addEventListener('mousedown', event => { if (!button.contains(event.target as Node)) event.preventDefault(); });
 				dom.addEventListener('click', () => {
 					const pos = getPos();
 					if (typeof pos === 'number' && !this.disposed) {
 						const cellIndex = this.view.state.doc.resolve(pos).index(0);
+						this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)));
+						this.view.focus();
 						if (this.selectedCellIndex !== cellIndex) this.selectCell(cellIndex);
 					}
 				});
-				return { dom, stopEvent: (event) => button.contains(event.target as Node), ignoreMutation: () => true,
+				return { dom, stopEvent: () => true, ignoreMutation: () => true,
 					update: (next) => { if (next.type !== node.type) return false; const changed = next.attrs.source !== node.attrs.source; node = next; if (changed) render(); return true; },
 					destroy: () => { destroyed = true; button.removeEventListener('click', edit); this.tableButtons.delete(button); }
 				};
@@ -523,8 +626,8 @@ export class VisualEditor {
 					if (source.read(anchored.attrs.from, anchored.attrs.to) !== anchored.attrs.source) { this.options.rejected(); return; }
 					this.options.equation({ latex: String(anchored.attrs.latex), inline: Boolean(anchored.attrs.inline) }, { documentId: source.documentId, version: source.version, from: anchored.attrs.from, to: anchored.attrs.to });
 				};
-				button.addEventListener('click', edit); render();
-				if (!inline) {
+				button.addEventListener('click', edit); content.addEventListener('click', edit); render();
+				{
 					dom.addEventListener('click', () => {
 						const pos = getPos();
 						if (typeof pos === 'number' && !this.disposed) {
@@ -585,6 +688,7 @@ export class VisualEditor {
 		if (this.view.state.storedMarks !== null) this.view.updateState(this.view.state.apply(this.view.state.tr.setStoredMarks(null)));
 	}
 	refresh(): void {
+		this.refreshCellToolbar();
 		if (this.disposed || this.applying) return;
 		const editable = this.editable();
 		if (!editable) this.clearStoredMarks();
@@ -749,7 +853,7 @@ export class VisualEditor {
 			this.projection = nextProjection;
 			this.cachedDecorations = null;
 			this.view.updateState(nextState);
-		} catch {
+		} catch (error) {
 			try { if (this.options.source() !== source) this.projection = null; }
 			catch { this.projection = null; }
 			this.options.rejected();
@@ -780,16 +884,17 @@ export class VisualEditor {
 		if (!selection.$from.sameParent(selection.$to) || selection.$from.parent.type.name !== 'source_block') return null;
 		const index = selection.$from.index(0), node = this.projection.document.child(index);
 		if (this.projection.segments?.[index]?.some(segment => segment.atom && selection.$from.parentOffset < segment.to && selection.$to.parentOffset > segment.from)) return null;
-		const boundary = (offset: number): number | null => {
+		const boundary = (offset: number, start: boolean): number | null => {
 			const segments = this.projection!.segments?.[index];
 			if (segments) {
-				const segment = segments.find(segment => !segment.atom && segment.from <= offset && segment.to >= offset);
+				const candidates = segments.filter(segment => !segment.atom && segment.from <= offset && segment.to >= offset);
+				const segment = candidates.find(segment => start ? segment.to > offset : segment.from < offset) ?? candidates[0];
 				return segment ? segment.editFrom + segment.boundaries[offset - segment.from]! : null;
 			}
 			const boundaries = this.projection!.boundaries[index];
 			return boundaries && offset < boundaries.length ? node.attrs.editFrom + boundaries[offset]! : null;
 		};
-		const from = boundary(selection.$from.parentOffset), to = boundary(selection.$to.parentOffset);
+		const from = boundary(selection.$from.parentOffset, true), to = boundary(selection.$to.parentOffset, false);
 		return from === null || to === null ? null : { documentId: this.projection.documentId, version: this.projection.version, from, to };
 	}
 	navigate(span: SourceSpan, atEnd = false): boolean {
@@ -805,5 +910,9 @@ export class VisualEditor {
 		if (dom instanceof HTMLElement && typeof dom.scrollIntoView === 'function') dom.scrollIntoView({ block: 'nearest' });
 		this.focus(); return true;
 	}
-	dispose(): void { if (this.disposed) return; this.disposed = true; this.projection = null; this.cellOriginal = null; this.cachedDecorations = null; this.inserterButtons.clear(); this.cellActionButtons.clear(); this.view.destroy(); }
+	dispose(): void { if (this.disposed) return; this.closeEquation(); this.disposed = true; this.projection = null; this.cellOriginal = null; this.cachedDecorations = null; this.inserterButtons.clear(); this.cellActionButtons.clear(); this.view.destroy(); }
+	cellInsertionBoundary(): SourceSpan | null {
+		const index = this.selectedCellIndex ?? Math.min(this.view.state.selection.$from.index(0), this.view.state.doc.childCount - 1);
+		return this.boundarySpan(index + 1);
+	}
 }

@@ -195,6 +195,24 @@ button.primary {
 }
 .outline-row { display: block; width: 100%; min-height: 36px; border: none; border-radius: 0; background: var(--surface); text-align: left; overflow-wrap: anywhere; padding: 6px 16px; }
 .files { overflow: auto; }
+.files { display: grid; grid-template-rows: minmax(120px, 2fr) minmax(96px, 1fr); overflow: hidden; background: var(--canvas); }
+.explorer-section, .outline-section { display: flex; flex-direction: column; min-height: 0; }
+.outline-section { border-top: 1px solid var(--line); }
+.sidebar-heading { min-height: 32px; display: flex; align-items: center; justify-content: space-between; padding: 4px 12px; font-size: 12px; font-weight: 600; }
+.sidebar-heading button { display: inline-flex; min-height: 24px; padding: 2px; }
+.sidebar-scroll { min-height: 0; flex: 1; overflow: auto; }
+.workspace-name { padding: 4px 12px; font-size: 12px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.compile-status { padding: 6px 16px; border-bottom: 1px solid var(--line); background: var(--canvas); font-size: 13px; }
+.inline-equation-draft { display: block; position: relative; padding-block: 8px; min-height: 48px; }
+.inline-equation-draft.is-inline { display: inline-flex; align-items: baseline; }
+.inline-equation-tools { display: flex; gap: 2px; margin-bottom: 4px; }
+.inline-equation-tools button { display: inline-flex; align-items: center; justify-content: center; width: 30px; min-height: 30px; padding: 4px; border-color: transparent; background: transparent; }
+.inline-equation-input math-field { min-width: 3em; width: auto; padding: 0; border: none; background: transparent; color: var(--ink); --caret-color: var(--accent); --selection-background-color: var(--selection); }
+.inline-equation-error { display: block; color: var(--error); font-size: 13px; }
+.equation-draft-original { display: none !important; }
+.cell-panel-draft { display: block; margin-block: 8px; }
+.cell-actions-bar { height: 36px; flex: none; overflow-x: auto; }
+.cell-actions-bar .visual-cell-toolbar { border: none; margin: 0; padding: 2px 12px; min-height: 34px; white-space: nowrap; }
 .files .pane-title { position: sticky; top: 0; background: var(--surface); }
 .files [aria-pressed='true'] { background: var(--selection); color: var(--accent); }
 .file-meta,
@@ -309,8 +327,7 @@ button.primary {
 				border-color: var(--line, #cdd2d7);
 			}
 			.notebook-cell.is-selected {
-				border-color: var(--accent, #3d617b);
-				box-shadow: 0 0 0 1px var(--accent, #3d617b);
+				border-inline-start-color: var(--accent, #3d617b);
 				background: var(--surface, #fff);
 			}
 			.visual-cell-toolbar {

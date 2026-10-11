@@ -4,8 +4,8 @@
 	import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 	import { PdfRenderQueue } from './render-queue.ts';
 	import { text, type Language } from '../../i18n/text.ts';
-	let { bytes, active = true, locale = 'zh-Hant', onError, onPageCount }: {
-		bytes: Uint8Array; active?: boolean; locale?: Language; onError: (message: string) => void; onPageCount: (count: number) => void;
+	let { bytes, active = true, locale = 'zh-Hant', onError, onPageCount, onRendered }: {
+		bytes: Uint8Array; active?: boolean; locale?: Language; onError: (message: string) => void; onPageCount: (count: number) => void; onRendered?: () => void;
 	} = $props();
 	const t = (traditionalChinese: string, english: string) => text(locale, traditionalChinese, english);
 	let target: HTMLDivElement;
@@ -52,7 +52,7 @@
 				if (!context) throw new Error('CANVAS');
 				render = page.render({ canvas, canvasContext: context, viewport, transform: [ratio, 0, 0, ratio, 0, 0] });
 				await render.promise;
-				if (current()) { displayedPage = request.page; busy = false; }
+				if (current()) { displayedPage = request.page; busy = false; onRendered?.(); }
 			} finally {
 				render = undefined;
 				page?.cleanup();

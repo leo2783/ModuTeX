@@ -62,6 +62,19 @@ interface MountedEditor {
 
 const bytesWithBom = (source: string) => new TextEncoder().encode(`\uFEFF${source}`);
 
+test('empty notebook caret accepts formatting and one undo restores the original placeholder bytes', () => {
+	const mounted = mount('\\documentclass{article}\r\n\\begin{document}\r\n\\null\r\n\\end{document}\r\n');
+	try {
+		const block = findBlock(mounted, node => node.type.name === 'source_block' && node.content.size === 0);
+		mounted.visual.view.dispatch(mounted.visual.view.state.tr.setSelection(TextSelection.create(mounted.visual.view.state.doc, block.position + 1)));
+		assert.equal(mounted.visual.toggleFormat('strong'), true);
+		mounted.visual.view.dispatch(mounted.visual.view.state.tr.insertText('Z'));
+		assert.match(mounted.source().read(), /\\textbf\{Z\}/);
+		assert.equal(mounted.source().read().includes('\\null'), false);
+		assert.deepEqual(undoAndSync(mounted).toBytes(), mounted.original.toBytes());
+	} finally { mounted.dispose(); }
+});
+
 function mount(sourceText: string): MountedEditor {
 	const { dom, restore } = installDOM();
 	dom.window.document.body.innerHTML = '<div id="source"></div><div id="visual"></div>';

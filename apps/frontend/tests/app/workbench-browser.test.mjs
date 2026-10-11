@@ -402,6 +402,7 @@ window.__unmountApp = () => unmount(appInstance);
 		await mainFileRow.click();
 
 		const cmContent = page.locator('.cm-content');
+		await page.getByRole('button', { name: /^(原始碼|Source)$/ }).click();
 		await cmContent.waitFor({ state: 'visible' });
 
 		// 9. 驗證非循環獨立期望之 BOM/換行保存，以及真實檔案切換再開啟

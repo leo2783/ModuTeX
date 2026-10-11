@@ -623,6 +623,8 @@ async function withHostWorkbench(
 			return gate;
 		};
 		const pasteIntoSource = (value: string) => {
+			const sourceMode = Array.from(container.querySelectorAll<HTMLButtonElement>('.modes button')).find(button => ['原始碼', 'Source'].includes(button.getAttribute('aria-label') ?? ''));
+			assert.ok(sourceMode); sourceMode.click(); flushSync();
 			const content = container.querySelector<HTMLElement>('.cm-content');
 			assert.ok(content, 'Mounted CodeMirror content must exist before editing');
 			content.focus();

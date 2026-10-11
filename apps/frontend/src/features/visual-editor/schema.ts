@@ -11,7 +11,7 @@ const visualMarkOrder = ['strong', 'em', 'underline'] as const;
 export const visualSchema = new Schema({ nodes: {
 	doc: { content: 'block*' },
 	text: { group: 'inline' },
-	source_block: { group: 'block', content: 'inline*', marks: 'strong em underline', attrs: anchors,
+	source_block: { group: 'block', content: 'inline*', marks: 'strong em underline', whitespace: 'pre', attrs: anchors,
 		toDOM(node) {
 			const tag = node.attrs.role === 'heading' ? 'h' + Math.max(1, Math.min(6, Number(node.attrs.level) || 2)) : 'p';
 			return [tag, { class: 'source-block', 'data-source-role': node.attrs.role }, 0];
@@ -207,7 +207,7 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 		boundaries.push(Object.freeze([0]));
 		segments.push(null);
 		blocks.push(visualSchema.nodes.source_block!.create({
-			from, to, editFrom: from, editTo: to,
+			from, to, editFrom: to, editTo: to,
 			role: 'paragraph', name: '', level: 2
 		}));
 	}
@@ -237,7 +237,7 @@ function plainSegment(projection: VisualProjection, index: number, block: Visual
 	if (!boundaries) return null;
 	const value = block.textBetween(0, block.content.size, '', '\ufffc');
 	const anchored = projection.document.child(index);
-	const editFrom = anchored.attrs.editFrom, editTo = anchored.attrs.editTo;
+	const editFrom = anchored.attrs.editFrom, editTo = value.length === 0 && boundaries.length === 1 ? editFrom : anchored.attrs.editTo;
 	if (boundaries.length !== value.length + 1 || boundaries[0] !== 0 || typeof editFrom !== 'number' ||
 		typeof editTo !== 'number' || boundaries.at(-1) !== editTo - editFrom) return null;
 	return Object.freeze({ from: 0, to: value.length, editFrom, editTo, boundaries,
@@ -343,9 +343,11 @@ function markedTextInsertion(
 	const closeInserted = [...wrappers].reverse().map(wrapper => wrapper.close).join('');
 	const textFrom = closeExisting.length + openInserted.length, textTo = textFrom + encoded.length;
 	const replacement = closeExisting + openInserted + encoded + closeInserted + openExisting;
+	const replaceTo = before.content.size === 0 && segment.wrappers.length === 0 ? before.attrs.editTo : sourcePoint;
 	return {
 		index, segment: anchor.segment, from, to: oldTo, insert: inserted,
-		patch: { from: sourcePoint, to: sourcePoint, expected: source.read(sourcePoint, sourcePoint), insert: replacement },
+		patch: { from: sourcePoint, to: replaceTo,
+			expected: source.read(sourcePoint, replaceTo), insert: replacement },
 		markedInsertion: { textFrom, textTo, boundaries: encodedBoundaries(inserted, source.profile.preferredLineEnding), marks, wrappers }
 	};
 }

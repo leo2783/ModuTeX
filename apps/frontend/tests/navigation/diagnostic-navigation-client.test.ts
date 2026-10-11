@@ -333,7 +333,7 @@ function diagnostic(source: SourceDocument, sequence: number, line: number, utf1
 
 function modeButton(document: Document, label: string): HTMLButtonElement {
 	const button = Array.from(document.querySelectorAll<HTMLButtonElement>('.modes button'))
-		.find((candidate) => candidate.textContent?.trim() === label);
+		.find((candidate) => candidate.getAttribute('aria-label') === label);
 	assert.ok(button);
 	// JSDOM click() does not perform the browser's pointer-focus default action.
 	button.focus();

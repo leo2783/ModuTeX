@@ -40,7 +40,7 @@
 			case 'raw-apply': return t('無法套用內容。請確認區段未變更，且文件未超過 5 MiB。', 'Could not apply the change. Make sure the section is unchanged and the document stays within 5 MiB.');
 			case 'preamble': return t('無法安全修改前言。請在原始碼加入 \\usepackage{booktabs}，或改選等粗線。', 'Could not safely update the preamble. Add \\usepackage{booktabs} in the source, or choose equal-weight rules.');
 			case 'table-apply': return t('無法套用表格。請確認插入位置未變更，且文件未超過 5 MiB。', 'Could not apply the table. Make sure the insertion point is unchanged and the document stays within 5 MiB.');
-			case 'format': return t('請選取文字或完整格式區段；原始碼中的未知語法保持不變。', 'Select text or a complete formatted section. Unknown syntax in the source stays unchanged.');
+			case 'format': return t('請將游標放在文字儲存格中，或選取要格式化的文字。', 'Place the cursor in a text cell or select text to format.');
 			case 'insert-selection': return t('請將游標放在文字中，或選取同一段文字；未知語法請在原始碼修改。', 'Place the cursor in text or select text within one paragraph. Edit unknown syntax in the source.');
 			case 'insert-stale': return t('內容已變更，請重新選取插入位置。', 'The content changed. Select the insertion point again.');
 			case 'table-pending': return t('表格資訊尚未更新。請稍後再試。', 'Table information is still updating. Try again shortly.');
@@ -57,8 +57,9 @@
 	}
 	let target: HTMLDivElement;
 	let visualTarget: HTMLDivElement;
+	let cellToolbarTarget: HTMLDivElement;
 	let visual = $state.raw<VisualEditor | null>(null);
-	let mode = $state<'source' | 'visual'>('source');
+	let mode = $state<'source' | 'visual'>('visual');
 	let visualStatus = $state<'ready' | 'updating'>('updating');
 	let parserFailed = $state(false);
 	let retryParser: (() => void) | null = null;
@@ -91,6 +92,7 @@
 	let insertion: InsertionTarget | null = null;
 	let visualInsertion: { span: SourceSpan; inlineOnly: boolean } | null = null;
 	let toolOwner: 'source' | 'visual' = 'source';
+	let mathPanelHost = $state.raw<HTMLDivElement | null>(null), tablePanelHost = $state.raw<HTMLDivElement | null>(null);
 	let pendingPackage = $state.raw<{ source: string; plan: PackagePlan } | null>(null);
 	function insertTable(source: string, booktabs = false) {
 		if (!editor || !insertion || !active || saving || tool !== 'table') return;
@@ -123,6 +125,7 @@
 	let tableKey = $state('insert'), editingTable = $state(false), toolError = $state<ToolError | null>(null);
 	let equation = $state.raw<LocatedEquation | null>(null);
 	let equationKey = $state('insert');
+	let draftSequence = 0;
 	let handledNavigation = 0;
 	let handledDiagnosticNavigation = 0;
 	let scheduledDiagnosticNavigation = 0;
@@ -207,13 +210,18 @@
 		if (!editor || saving || !active) return;
 		if (tool !== null) closeTool();
 		const useVisual = mode === 'visual';
+		if (useVisual) {
+			const boundary = visual?.cellInsertionBoundary();
+			if (boundary) openToolAtBoundary(kind, boundary); else toolError = 'insert-selection';
+			return;
+		}
 		const captured = useVisual ? visual?.insertionSelection() ?? null : null;
 		if (useVisual && !captured) { toolError = 'insert-selection'; return; }
 		try { insertion = captured ? rangeInsertionTarget(editor.state, captured.span) : insertionTarget(editor.state); }
 		catch { toolError = 'insert-stale'; return; }
 		visualInsertion = captured; toolOwner = useVisual ? 'visual' : 'source';
 		toolError = null; editingTable = false; tableKey = 'insert';
-		equation = null; equationKey = 'insert';
+		equation = null; equationKey = `insert:${++draftSequence}`;
 		tool = kind;
 	}
 	function editTable() {
@@ -269,7 +277,24 @@
 			editingTable = true; toolError = null; toolOwner = owner; tool = 'table';
 		} catch { toolError = 'table-stale'; }
 	}
-	function closeTool() { tool = null; insertion = null; visualInsertion = null; equation = null; pendingPackage = null; toolError = null; if (!active) return; if (mode === 'source') editor?.focus(); else visual?.focus(); }
+	function closeTool() { visual?.closeEquation(); tool = null; insertion = null; visualInsertion = null; equation = null; pendingPackage = null; toolError = null; if (!active) return; if (mode === 'source') editor?.focus(); else visual?.focus(); }
+	$effect(() => {
+		if (!active || mode !== 'visual' || tool !== 'equation' || !visual) return;
+		const span = equation?.span ?? visualInsertion?.span;
+		if (!span) return;
+		const current = visual;
+		if (!current.startEquation(equation?.draft ?? { latex: '', inline: false }, span, applyEquation, closeTool)) toolError = 'equation-stale';
+		return () => current.closeEquation();
+	});
+	$effect(() => {
+		if (!active || mode !== 'visual' || !visual || (tool !== 'matrix' && tool !== 'table')) return;
+		const panel = tool === 'matrix' ? mathPanelHost : tablePanelHost;
+		const span = equation?.span ?? visualInsertion?.span ?? (insertion ? { documentId: insertion.documentId, version: insertion.version, from: insertion.from, to: insertion.to } : null);
+		if (!panel || !span) return;
+		const current = visual;
+		if (!current.startCellPanel(span, panel)) toolError = 'insert-stale';
+		return () => current.closeEquation();
+	});
 	function openToolAtBoundary(kind: 'equation' | 'matrix' | 'table', span: SourceSpan) {
 		if (!editor || saving || !active) return;
 		if (tool !== null) closeTool();
@@ -279,9 +304,9 @@
 			toolOwner = 'visual';
 			toolError = null;
 			editingTable = false;
-			tableKey = 'insert';
+			tableKey = `insert:${++draftSequence}`;
 			equation = null;
-			equationKey = 'insert';
+			equationKey = `insert:${draftSequence}`;
 			tool = kind;
 		} catch { toolError = 'insert-stale'; }
 	}
@@ -314,7 +339,7 @@
 			const content = current.read(span.from, span.to);
 			const isNonEmpty = content.trim().length > 0 && content.trim() !== '\\par';
 			if (isNonEmpty && !window.confirm(t('確定要刪除此區塊嗎？', 'Delete this cell?'))) {
-				return;
+				return false;
 			}
 			const deleteFrom = span.from, deleteTo = span.to;
 			const patch: SourcePatch = {
@@ -328,10 +353,11 @@
 				editor.dispatch(transaction);
 				toolError = null;
 				visual?.focus();
+				return true;
 			} catch {
 				toolError = 'insert-stale';
+				return false;
 			}
-			return;
 		}
 		if (action === 'move-up' || action === 'move-down') {
 			if (!adjacent) return;
@@ -497,6 +523,7 @@
 			},
 			history: (direction) => history(direction)(view), readOnly: () => saving || tool !== null || !active,
 			rejected: onVisualRejected, status: (status) => { visualStatus = status; }, table: openTable, equation: openEquation, raw: openRaw,
+			cellToolbar: (toolbar) => cellToolbarTarget?.replaceChildren(...(toolbar ? [toolbar] : [])),
 			format: (format) => { applyFormat(format); },
 			locale: () => locale,
 			insertBlock: (kind, span, beforeText) => {
@@ -504,7 +531,7 @@
 				else openToolAtBoundary(kind, span);
 			},
 			cellAction: (action, span, adjacent) => {
-				handleCellAction(action, span, adjacent);
+				return handleCellAction(action, span, adjacent);
 			},
 			cellDone: () => { if (tool !== null) closeTool(); },
 			cellCancel: (span, original) => {
@@ -525,14 +552,11 @@
 
 <svelte:window onkeydown={(event) => { if (active && tool && event.key === 'Escape') { event.preventDefault(); closeTool(); } }} />
 <div class="source-view">
-	<div class="mode-bar">
-		<span class="mode-heading">{t('編輯模式', 'Editing mode')}</span>
-		<div class="modes" role="group" aria-label={t('編輯模式', 'Editing mode')}>
-			<button aria-pressed={mode === 'source'} onclick={() => { if (tool !== null) closeTool(); mode = 'source'; editor?.focus(); }}>{t('原始碼', 'Source')}</button>
-			<button aria-pressed={mode === 'visual'} onclick={() => { if (tool !== null) closeTool(); mode = 'visual'; visual?.focus(); }}>{t('視覺化', 'Visual')}</button>
-		</div>
-	</div>
 	<div class="insert-bar">
+		<div class="modes" role="group" aria-label={t('編輯模式', 'Editing mode')}>
+			<button class="icon-tool" title={t('視覺化', 'Visual')} aria-label={t('視覺化', 'Visual')} aria-pressed={mode === 'visual'} onclick={() => { if (tool !== null) closeTool(); mode = 'visual'; visual?.focus(); }}><ToolbarIcon kind="visual" /></button>
+			<button class="icon-tool" title={t('原始碼', 'Source')} aria-label={t('原始碼', 'Source')} aria-pressed={mode === 'source'} onclick={() => { if (tool !== null) closeTool(); mode = 'source'; editor?.focus(); }}><ToolbarIcon kind="source" /></button>
+		</div>
 		<div class="tool-group" role="group" aria-label={t('文字格式', 'Text format')}>
 			<button class="icon-tool" title={t('粗體', 'Bold')} aria-label={t('粗體', 'Bold')} onclick={() => applyFormat('strong')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="bold" /></button>
 			<button class="icon-tool" title={t('斜體', 'Italic')} aria-label={t('斜體', 'Italic')} onclick={() => applyFormat('em')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="italic" /></button>
@@ -546,9 +570,10 @@
 	</div>
 	{#if mode !== 'visual'}<div class="table-edit"><button class="text-button" onclick={editEquation} disabled={!active || saving || tool !== null || !parsed}>{t('編輯游標所在公式', 'Edit equation at cursor')}</button><button class="text-button" onclick={editTable} disabled={saving || tool !== null}>{t('編輯游標所在表格', 'Edit table at cursor')}</button><button class="text-button" onclick={() => editor && foldCode(editor)} disabled={!active || saving || tool !== null || !parsed}>{t('折疊目前區段', 'Fold current section')}</button><button class="text-button" onclick={() => editor && unfoldAll(editor)} disabled={!active || tool !== null}>{t('展開全部', 'Unfold all')}</button></div>{/if}
 	{#if toolError}<p class="tool-error" role="alert">{toolMessage(toolError)}</p>{/if}
+	<div class="cell-actions-bar" bind:this={cellToolbarTarget} hidden={mode !== 'visual'}></div>
 	{#if parserFailed}<div class="parser-error" role="alert"><span>{t('解析中斷，原始碼仍可編輯。', 'Parsing stopped. The source is still editable.')}</span><button class="text-button" onclick={() => retryParser?.()} disabled={saving || tool !== null}>{t('重新解析', 'Parse again')}</button></div>{/if}
-	<div hidden={tool !== 'equation' && tool !== 'matrix'}><MathPanel kind={tool === 'matrix' ? 'matrix' : 'equation'} showSource={mode === 'source'} {locale} active={active && (tool === 'equation' || tool === 'matrix')} initialDraft={equation?.draft ?? null} sessionKey={equationKey} editing={equation !== null} onEquation={applyEquation} onInsert={insert} onClose={closeTool} /></div>
-	<div hidden={tool !== 'table'}><TablePanel {locale} active={active && tool === 'table'} locked={pendingPackage !== null} initialDraft={tableDraft} sessionKey={tableKey} editing={editingTable} onInsert={insertTable} onClose={closeTool} /></div>
+	<div bind:this={mathPanelHost} hidden={tool !== 'matrix' && !(tool === 'equation' && mode === 'source')}><MathPanel kind={tool === 'matrix' ? 'matrix' : 'equation'} showSource={mode === 'source'} {locale} active={active && (tool === 'matrix' || tool === 'equation' && mode === 'source')} initialDraft={equation?.draft ?? null} sessionKey={equationKey} editing={equation !== null} onEquation={applyEquation} onInsert={insert} onClose={closeTool} /></div>
+	<div bind:this={tablePanelHost} hidden={tool !== 'table'}><TablePanel {locale} active={active && tool === 'table'} locked={pendingPackage !== null} initialDraft={tableDraft} sessionKey={tableKey} editing={editingTable} onInsert={insertTable} onClose={closeTool} /></div>
 	{#if pendingPackage}<section class="package-preview" aria-labelledby="package-heading">
 		<h2 id="package-heading">{t('新增 Booktabs 套件', 'Add the Booktabs package')}</h2><p>{t('表格需要以下前言設定。確認後會與表格一起套用，可一次復原。', 'This table needs the preamble setting below. Confirming applies it together with the table, and one undo reverts both.')}</p>
 		<pre>{pendingPackage.plan.insert.trim()}</pre>
@@ -573,22 +598,18 @@
 		min-height: 0;
 	}
 	.source-view { height: 100%; display: flex; flex-direction: column; min-height: 0; }
-	.insert-bar { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px; }
+	.insert-bar { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 	.tool-group { display: flex; gap: 4px; }
-	.tool-group + .tool-group { padding-inline-start: 8px; border-inline-start: 1px solid var(--line); }
+	.tool-group { padding-inline-start: 8px; border-inline-start: 1px solid var(--line); }
 	.icon-tool { width: 36px; height: 36px; padding: 7px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border-color: transparent; }
 	.table-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--line); }
 	.parser-error { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--ink); }
-	.mode-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--canvas); }
-	.mode-heading { font-size: 13px; font-weight: 600; color: var(--ink); }
 	.modes { display: flex; flex-wrap: wrap; gap: 4px; }
-	.modes button { min-height: 36px; padding: 6px 12px; white-space: nowrap; }
 	.modes [aria-pressed='true'] { background: var(--selection); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 	.editor-surfaces { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); }
 	.visual { min-height: 0; overflow: auto; padding: 24px; }
 	.visual :global(.ProseMirror) { position: relative; min-height: 100%; outline: none; line-height: 1.7; }
-	.visual :global(.ProseMirror:focus-visible) { outline: 2px solid var(--accent); outline-offset: 4px; }
-	.visual :global(.source-block) { display: block; white-space: normal; }
+	.visual :global(.source-block) { display: block; white-space: normal; white-space-collapse: preserve-spaces; }
 	.visual :global(.raw-latex) { font: 13px/1.6 Consolas, monospace; padding: 8px; border: 1px solid var(--line); background: var(--canvas); white-space: pre-wrap; overflow-wrap: anywhere; }
 	.tool-error { margin: 4px 12px; color: var(--ink); }
 	.raw-panel { padding: 12px; border-bottom: 1px solid var(--line); overflow: auto; max-height: 60%; }

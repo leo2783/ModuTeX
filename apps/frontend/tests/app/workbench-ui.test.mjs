@@ -25,10 +25,13 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 		await page.goto(`http://127.0.0.1:${address.port}/`);
 		await page.getByRole('button', { name: '新文件', exact: true }).click();
 		const sourceEditor = page.locator('.source-view .source .cm-content');
+		assert.equal(await page.getByRole('button', { name: '視覺化', exact: true }).getAttribute('aria-pressed'), 'true');
+		assert.equal(await page.locator('.editor-pane > .editor-bar').count(), 0);
+		await page.getByRole('button', { name: '原始碼', exact: true }).click();
 		await sourceEditor.waitFor({ state: 'visible' });
-		await t.test('explicit modes are separated from icon format and insert tools', async () => {
-			assert.deepEqual(await page.locator('.modes button').allTextContents(), ['原始碼', '視覺化']);
-			assert.equal(await page.locator('.insert-bar .modes').count(), 0);
+		await t.test('visual-first icons share one toolbar with format and cell tools', async () => {
+			assert.deepEqual(await page.locator('.modes button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label'))), ['視覺化', '原始碼']);
+			assert.equal(await page.locator('.insert-bar .modes').count(), 1);
 			for (const name of ['粗體', '斜體', '底線', '公式', '矩陣', '表格']) {
 				const button = page.locator('.insert-bar').getByRole('button', { name, exact: true });
 				assert.equal(await button.getAttribute('title'), name);
@@ -51,18 +54,40 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.locator('.math-panel').getByRole('button', { name: '取消', exact: true }).click();
 			assert.match(await sourceEditor.textContent(), /\\begin\{array\}\{cc\}1 & 2/);
 			await page.locator('.insert-bar').getByRole('button', { name: '公式', exact: true }).click();
-			const mathField = page.locator('.math-input math-field');
+			const mathField = page.locator('.inline-equation-draft math-field');
 			await mathField.waitFor({ state: 'visible' });
 			assert.equal(await page.locator('.math-panel .formula textarea:visible').count(), 0);
-			assert.equal(await page.locator('.math-input .input-error').count(), 0);
+			assert.equal(await page.locator('.inline-equation-error:not(:empty)').count(), 0);
 			await mathField.click();
-			await page.waitForFunction(() => document.activeElement === document.querySelector('.math-input math-field'));
+			await page.waitForFunction(() => document.activeElement === document.querySelector('.inline-equation-draft math-field'));
 			await page.keyboard.type('x');
-			await page.waitForFunction(() => document.querySelector('.math-input math-field')?.value.includes('x'));
-			assert.equal(await page.locator('.math-input').getByRole('button', { name: '數學鍵盤', exact: true }).count(), 0);
+			await page.waitForFunction(() => document.querySelector('.inline-equation-draft math-field')?.value.includes('x'));
+			assert.equal(await page.locator('.inline-equation-draft').getByRole('button', { name: '數學鍵盤', exact: true }).count(), 0);
 			assert.equal(await page.evaluate(() => window.mathVirtualKeyboard?.visible ?? false), false);
-			await page.locator('.math-panel').getByRole('button', { name: '取消', exact: true }).click();
+			assert.equal(await mathField.evaluate(field => !!field.closest('.ProseMirror')), true);
+			await page.getByRole('button', { name: '取消公式', exact: true }).click();
+			assert.equal(await page.locator('.inline-equation-draft').count(), 0);
 			await page.screenshot({ path: screenshotRoot + 'workbench-ui-dark-20261011.png' });
+		});
+		await t.test('formula cells edit in the document, cancel unchanged, and commit with Enter', async () => {
+			const before = await sourceEditor.textContent();
+			await page.locator('.visual-math-content').first().click();
+			const draft = page.locator('.inline-equation-draft math-field');
+			await draft.waitFor({ state: 'visible' });
+			await page.keyboard.press('Control+A'); await page.keyboard.type('z');
+			await page.keyboard.press('Escape');
+			assert.equal(await sourceEditor.textContent(), before);
+			await page.locator('.source-block').filter({ hasText: 'Alpha paragraph.' }).first().click();
+			const count = await page.locator('.visual-math').count();
+			await page.locator('.insert-bar').getByRole('button', { name: '公式', exact: true }).click();
+			await draft.waitFor({ state: 'visible' });
+			assert.equal(await draft.evaluate(field => field.value), '');
+			await page.waitForFunction(() => document.activeElement === document.querySelector('.inline-equation-draft math-field'));
+			await page.keyboard.type('x'); await page.keyboard.press('Enter');
+			await page.waitForFunction(count => document.querySelectorAll('.visual-math').length === count + 1, count);
+			assert.match(await sourceEditor.textContent(), /\\\[x\\\]/);
+			const position = await page.locator('.visual-math').first().getAttribute('data-cell-index');
+			assert.equal(Number(position), 1, 'toolbar inserts a formula cell below the selected paragraph');
 		});
 		await t.test('typing updates the document immediately without a shifting status banner or rebuilding math', async () => {
 			const paragraph = page.locator('.source-block').filter({ hasText: 'Alpha paragraph.' }).first();
@@ -120,18 +145,15 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 		});
 		await t.test('matrix and table blocks insert and re-edit through the document controls', async () => {
 			const matrixCount = await page.locator('.visual-math').count();
-			let boundary = page.locator('.visual-cell-boundary').last();
-			await boundary.hover(); await boundary.getByRole('button', { name: '在此處插入區塊', exact: true }).click();
-			await boundary.hover(); await boundary.getByRole('button', { name: '插入矩陣', exact: true }).click();
+			await page.locator('.ProseMirror p').filter({ hasText: 'Beta paragraph.' }).click();
+			await page.locator('.insert-bar').getByRole('button', { name: '矩陣', exact: true }).click();
 			await page.locator('.matrix-grid input').first().fill('42');
 			await page.waitForFunction(() => document.querySelector('.matrix-preview-host math-field')?.value.includes('42'));
 			await page.locator('.math-panel').getByRole('button', { name: '插入', exact: true }).click();
 			await page.waitForFunction((before) => document.querySelectorAll('.visual-math').length === before + 1, matrixCount);
 			await page.waitForFunction((before) => document.querySelectorAll('.visual-math-content math-field').length === before + 1, matrixCount);
 			assert.match(await page.locator('.visual-math-content math-field').last().evaluate((field) => field.value), /42/);
-			boundary = page.locator('.visual-cell-boundary').last();
-			await boundary.hover(); await boundary.getByRole('button', { name: '在此處插入區塊', exact: true }).click();
-			await boundary.hover(); await boundary.getByRole('button', { name: '插入表格', exact: true }).click();
+			await page.locator('.insert-bar').getByRole('button', { name: '表格', exact: true }).click();
 			await page.locator('.table-panel td input').first().fill('Notebook table');
 			await page.locator('.table-panel').getByRole('button', { name: '插入', exact: true }).click();
 			const table = page.locator('.visual-table').last();
@@ -155,7 +177,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			page.once('dialog', dialog => dialog.accept());
 			await page.locator('.visual-cell-toolbar').getByRole('button', { name: '刪除此儲存格', exact: true }).click();
 			await table.waitFor({ state: 'detached' });
-			await page.locator('.ProseMirror').click(); await page.keyboard.press('Control+z');
+			await page.locator('.source-block').filter({ hasText: 'Alpha paragraph.' }).first().click(); await page.keyboard.press('Control+z');
 			await table.getByRole('columnheader', { name: 'Notebook table', exact: true }).waitFor({ state: 'visible' });
 			await table.getByRole('button', { name: '編輯表格', exact: true }).click();
 			await page.locator('.table-panel td input').first().fill('Revised notebook table');
