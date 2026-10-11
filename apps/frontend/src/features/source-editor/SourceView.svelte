@@ -246,6 +246,22 @@
 			toolError = null; if (!useVisual) editor.focus(); else visual?.focus();
 		} catch { toolError = 'format'; }
 	}
+	function applyStructure(event: Event) {
+		const select = event.currentTarget as HTMLSelectElement, kind = select.value;
+		select.value = '';
+		if (!editor || !active || saving || tool !== null || mode !== 'visual') return;
+		const selected = visual?.textStructureSelection();
+		if (!selected) { toolError = 'format'; return; }
+		const { span, content } = selected;
+		const value = kind === 'abstract' ? '\\begin{abstract}\n' + content + '\n\\end{abstract}'
+			: kind === 'title' ? '\\title{' + content + '}\n\\maketitle'
+			: kind === 'paragraph' ? content : '\\' + kind + '{' + content + '}';
+		try {
+			const source = editor.state.field(sourceState).projection.document;
+			editor.dispatch(sourcePatchTransaction(editor.state, span, [{ from: span.from, to: span.to, insert: '\n' + value + '\n\n', expected: source.read(span.from, span.to) }]));
+			toolError = null;
+		} catch { toolError = 'format'; }
+	}
 	function openTool(kind: 'equation' | 'matrix' | 'table') {
 		if (!editor || saving || !active) return;
 		if (mathMenu) mathMenu.open = false;
@@ -615,13 +631,22 @@
 </script>
 
 <svelte:window onkeydown={(event) => { if (active && tool && event.key === 'Escape') { event.preventDefault(); closeTool(); } }} />
-<div class="source-view">
+<div class="source-view" style:--abstract-label={'"' + t('摘要', 'Abstract') + '"'}>
 	<div class="insert-bar">
 		<div class="modes" role="group" aria-label={t('編輯模式', 'Editing mode')}>
 			<button class="icon-tool" title={t('視覺化', 'Visual')} aria-label={t('視覺化', 'Visual')} aria-pressed={mode === 'visual'} onclick={() => { if (tool !== null) closeTool(); mode = 'visual'; visual?.focus(); }}><ToolbarIcon kind="visual" /></button>
 			<button class="icon-tool" title={t('原始碼', 'Source')} aria-label={t('原始碼', 'Source')} aria-pressed={mode === 'source'} onclick={() => { if (tool !== null) closeTool(); mode = 'source'; editor?.focus(); }}><ToolbarIcon kind="source" /></button>
 		</div>
 		<div class="tool-group" role="group" aria-label={t('文字格式', 'Text format')}>
+			<select class="text-structure" aria-label={t('文字層級', 'Text structure')} onchange={applyStructure} disabled={!active || saving || tool !== null || !parsed || mode !== 'visual'}>
+				<option value="">{t('文字層級', 'Text structure')}</option>
+				<option value="paragraph">{t('正文', 'Paragraph')}</option>
+				<option value="title">{t('論文題目', 'Paper title')}</option>
+				<option value="abstract">{t('摘要', 'Abstract')}</option>
+				<option value="section">{t('# 一級標題', '# Heading 1')}</option>
+				<option value="subsection">{t('## 二級標題', '## Heading 2')}</option>
+				<option value="subsubsection">{t('### 三級標題', '### Heading 3')}</option>
+			</select>
 			<button class="icon-tool" title={t('粗體', 'Bold')} aria-label={t('粗體', 'Bold')} onclick={() => applyFormat('strong')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="bold" /></button>
 			<button class="icon-tool" title={t('斜體', 'Italic')} aria-label={t('斜體', 'Italic')} onclick={() => applyFormat('em')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="italic" /></button>
 			<button class="icon-tool" title={t('底線', 'Underline')} aria-label={t('底線', 'Underline')} onclick={() => applyFormat('underline')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="underline" /></button>
@@ -701,6 +726,10 @@
 	.insert-bar { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 	.tool-group { display: flex; gap: 4px; }
 	.tool-group { padding-inline-start: 8px; border-inline-start: 1px solid var(--line); }
+	.text-structure { min-height: 36px; padding: 4px 8px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; }
+	.visual :global(.source-block[data-source-role='abstract']) { max-width: 70ch; margin-inline: auto; padding-block: 8px; }
+	.visual :global(.source-block[data-source-role='abstract']::before) { content: var(--abstract-label); display: block; text-align: center; font-weight: 600; margin-bottom: 8px; }
+	.visual :global(.source-block[data-structure='title']) { text-align: center; font-size: 28px; }
 	.icon-tool { width: 36px; height: 36px; padding: 7px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border-color: transparent; }
 	.table-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--line); }
 	.parser-error { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--ink); }
@@ -708,7 +737,7 @@
 	.modes [aria-pressed='true'] { background: var(--selection); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 	.editor-surfaces { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); }
 	.visual { min-height: 0; overflow: auto; padding: 24px; }
-	.visual :global(.ProseMirror) { position: relative; min-height: 100%; outline: none; line-height: 1.7; }
+	.visual :global(.ProseMirror) { position: relative; min-height: 100%; outline: none; font-size: 16px; line-height: 1.7; }
 	.visual :global(.source-block) { display: block; white-space: normal; white-space-collapse: preserve-spaces; }
 	.visual :global(.raw-latex) { font: 13px/1.6 Consolas, monospace; padding: 8px; border: 1px solid var(--line); background: var(--canvas); white-space: pre-wrap; overflow-wrap: anywhere; }
 	.tool-error { margin: 4px 12px; color: var(--ink); }
@@ -721,11 +750,14 @@
 	.package-preview h2 { font-size: 16px; margin: 0; }
 	.package-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.6 Consolas, monospace; }
 	.visual :global(.visual-math) { margin: 16px 0; }
-	.visual :global(.visual-math-content) { overflow-x: auto; margin-block-end: 6px; }
+	.visual :global(.visual-math-content) { display: block; width: 100%; overflow-x: auto; margin-block-end: 6px; padding: 0; border: 0; background: transparent; color: inherit; text-align: start; }
+	.visual :global(.visual-math-content:hover:not(:disabled)) { background: transparent; }
+	.visual :global(.visual-math:not(.visual-math-inline) .visual-math-content) { text-align: center; }
 	.visual :global(.visual-math-inline) { display: inline-flex; vertical-align: baseline; align-items: baseline; gap: 4px; margin: 0 2px; max-width: 100%; }
-	.visual :global(.visual-math-inline .visual-math-content) { display: inline; margin: 0; overflow-x: visible; }
+	.visual :global(.visual-math-inline .visual-math-content) { display: inline; width: auto; margin: 0; overflow-x: visible; }
 	.visual :global(.visual-math-inline .text-button) { padding: 2px 4px; min-height: 32px; font-size: 12px; }
-	.visual :global(.visual-math math-field) { color: var(--ink); background: var(--surface); border: none; max-width: 100%; --selection-background-color: var(--selection); }
+	.visual :global(.visual-math math-field) { font-size: 22px; color: var(--ink); background: var(--surface); border: none; max-width: 100%; --selection-background-color: var(--selection); }
+	.visual :global(.visual-math-inline math-field) { font-size: 1.125em; }
 	.visual :global(.visual-table) { margin: 24px 0; overflow-x: auto; }
 	.visual :global(.visual-table table) { margin: 0 auto 8px; border-collapse: collapse; table-layout: fixed; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); font-variant-numeric: tabular-nums; }
 	.visual :global(.visual-table th), .visual :global(.visual-table td) { padding: 6px 8px; text-align: left; overflow-wrap: anywhere; }

@@ -209,17 +209,21 @@ button.primary {
 .compile-progress span { display: block; width: 30%; height: 100%; background: var(--accent); animation: compile-progress 1.4s ease-in-out infinite; }
 @keyframes compile-progress { from { transform: translateX(-100%); } to { transform: translateX(334%); } }
 @media (prefers-reduced-motion: reduce) { .compile-progress span { animation: none; margin-inline: auto; } }
-.inline-equation-draft { display: block; position: relative; padding-block: 8px; min-height: 48px; }
+.inline-equation-draft { display: block; position: relative; white-space: normal; padding-block: 8px; min-height: 48px; }
 .inline-equation-draft.is-inline { display: inline-block; vertical-align: baseline; max-width: 100%; }
 .inline-equation-tools button[aria-pressed="true"] { color: var(--accent); background: var(--canvas); outline: 1px solid var(--accent); }
 .inline-matrix-options:not([hidden]) { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 0; }
 .inline-matrix-options label { display: flex; gap: 6px; align-items: center; }
 .inline-matrix-options input { width: 56px; }
 .inline-matrix-options input, .inline-matrix-options select { padding: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 4px; }
-.inline-equation-tools { display: flex; gap: 2px; margin-bottom: 4px; }
+.inline-equation-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
 .inline-equation-tools button { display: inline-flex; align-items: center; justify-content: center; width: 30px; min-height: 30px; padding: 4px; border-color: transparent; background: transparent; }
 .inline-equation-input { display: block; }
-.inline-equation-input math-field { min-width: 6em; max-width: 100%; width: auto; padding: 4px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); --caret-color: var(--accent); --selection-background-color: var(--selection); }
+.inline-equation-input math-field { font-size: 22px; min-width: 4em; max-width: 100%; width: auto; padding: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); --caret-color: var(--accent); --selection-background-color: var(--selection); }
+.inline-equation-draft:not(.is-inline) .inline-equation-tools, .inline-equation-draft:not(.is-inline) .inline-matrix-options { justify-content: center; }
+.inline-equation-draft:not(.is-inline) .inline-equation-input { text-align: center; }
+.inline-equation-draft.is-inline .inline-equation-input math-field { font-size: 1.125em; }
+.inline-matrix-options { font-size: 14px; white-space: normal; }
 .inline-equation-error { display: block; color: var(--error); font-size: 13px; }
 .equation-draft-original { display: none !important; }
 .cell-panel-draft { display: block; margin-block: 8px; }

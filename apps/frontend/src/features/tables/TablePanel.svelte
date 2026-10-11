@@ -121,8 +121,6 @@
 	<fieldset disabled={!active || locked}>
 	<div class="options">
 		<label>{t('樣式', 'Style')}<select value={table.style} onchange={(event) => { const style = event.currentTarget.value as TableDraft['style']; table = { ...table, style, rules: style === 'three-line' ? table.rules : 'hline' }; }}><option value="three-line">{t('三線表', 'Three-line')}</option><option value="full">{t('全框線', 'All borders')}</option><option value="horizontal">{t('僅橫線', 'Horizontal lines only')}</option></select></label>
-		{#if table.style === 'three-line'}<label>{t('線條', 'Rules')}<select value={table.rules ?? 'hline'} onchange={(event) => { table = { ...table, rules: event.currentTarget.value as TableDraft['rules'] }; }}><option value="hline">{t('等粗線（不加套件）', 'Equal-weight rules (no package)')}</option><option value="booktabs">Booktabs</option></select></label>{/if}
-		<label>{t('說明', 'Caption')}<select value={table.caption.position} onchange={(event) => { table = { ...table, caption: { ...table.caption, position: event.currentTarget.value as TableDraft['caption']['position'] } }; }}><option value="none">{t('無', 'None')}</option><option value="above">{t('置上', 'Above')}</option><option value="below">{t('置下', 'Below')}</option></select></label>
 		<label><input type="checkbox" checked={table.header} onchange={(event) => { table = { ...table, header: event.currentTarget.checked }; }} />{t('首列為表頭', 'First row is header')}</label>
 		<label>{t('寬度 (%)', 'Width (%)')}<input type="number" min="1" max="100" value={table.width} onchange={(event) => { const value = event.currentTarget.valueAsNumber; if (Number.isFinite(value) && value >= 1 && value <= 100) { table = { ...table, width: value }; error = null; } else error = 'width'; event.currentTarget.value = String(table.width); }} /></label>
 	</div>
@@ -134,7 +132,14 @@
 		<button class="text-button" onclick={() => change('row', 'delete', row)} disabled={table.rows === 1}>{t('刪除此行', 'Delete this row')}</button>
 		<button class="text-button" onclick={() => change('column', 'delete', column)} disabled={table.columns === 1}>{t('刪除此列', 'Delete this column')}</button>
 	</div>
-	<div class="widths">{#each table.weights as value, index}<label>{t('第 ' + (index + 1) + ' 列', 'Column ' + (index + 1))}<input type="number" min="0.01" max="1000" step="0.1" value={value} onchange={(event) => { weight(index, event.currentTarget.valueAsNumber); event.currentTarget.value = String(table.weights[index]); }} /><span>{percentages[index]!.toFixed(1)}%</span></label>{/each}</div>
+	<details class="advanced">
+		<summary>{t('線條、說明與欄寬', 'Rules, caption and column widths')}</summary>
+		<div class="options">
+			{#if table.style === 'three-line'}<label>{t('線條', 'Rules')}<select aria-label={t('線條', 'Rules')} value={table.rules ?? 'hline'} onchange={(event) => { table = { ...table, rules: event.currentTarget.value as TableDraft['rules'] }; }}><option value="hline">{t('等粗線（不加套件）', 'Equal-weight rules (no package)')}</option><option value="booktabs">Booktabs</option></select></label>{/if}
+			<label>{t('說明', 'Caption')}<select aria-label={t('說明', 'Caption')} value={table.caption.position} onchange={(event) => { table = { ...table, caption: { ...table.caption, position: event.currentTarget.value as TableDraft['caption']['position'] } }; }}><option value="none">{t('無', 'None')}</option><option value="above">{t('置上', 'Above')}</option><option value="below">{t('置下', 'Below')}</option></select></label>
+		</div>
+		<div class="widths">{#each table.weights as value, index}<label>{t('第 ' + (index + 1) + ' 列', 'Column ' + (index + 1))}<input type="number" min="0.01" max="1000" step="0.1" value={value} onchange={(event) => { weight(index, event.currentTarget.valueAsNumber); event.currentTarget.value = String(table.weights[index]); }} /><span>{percentages[index]!.toFixed(1)}%</span></label>{/each}</div>
+	</details>
 	<div class="table-scroll">
 		<div class="width-track" bind:this={widthTrack} aria-label={t('欄寬邊界', 'Column width boundaries')}>
 			{#each percentages.slice(0, -1) as _, index}
@@ -155,11 +160,14 @@
 </section>
 
 <style>
-	.table-panel { padding: 12px 16px; background: var(--canvas); border-bottom: 1px solid var(--line); max-height: 60dvh; overflow: auto; }
+	.table-panel { white-space: normal; font-size: 14px; line-height: 1.4; padding: 12px 16px; background: var(--canvas); border-bottom: 1px solid var(--line); max-height: 60dvh; overflow: auto; }
 	fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 	.header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 	h2 { margin: 0; font-size: 16px; font-weight: 600; }
-	.options, .row-tools, .widths { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-block: 12px; }
+	.options, .row-tools, .widths { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-block: 8px; }
+	.row-tools .text-button { padding: 5px 8px; }
+	.advanced { margin-block: 8px; }
+	summary { cursor: pointer; color: var(--accent); padding-block: 6px; min-height: 32px; }
 	label { display: flex; align-items: center; gap: 6px; }
 	input, select { color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 6px; }
 	input[type='number'] { width: 64px; }

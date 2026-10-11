@@ -168,7 +168,7 @@ test('actual visual math buttons bind current spans, reject read-only/stale auth
 		view.sync(parseSource(original));
 		assert.equal(target.querySelectorAll('.visual-math').length, 1);
 		const retired = target.querySelector('.visual-math button');
-		assert.ok(retired); assert.equal(retired.disabled, false); assert.match(retired.textContent, /編輯公式/);
+		assert.ok(retired); assert.equal(retired.disabled, false); assert.match(retired.getAttribute('aria-label')!, /編輯公式/);
 		retired.click(); assert.equal(actions.length, 1);
 		assert.deepEqual(actions[0]!.draft, { latex: '\\frac{1}{2}', inline: true });
 		assert.equal(original.read(actions[0]!.span.from, actions[0]!.span.to), '$\\frac{1}{2}$');

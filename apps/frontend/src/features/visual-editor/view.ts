@@ -650,9 +650,9 @@ export class VisualEditor {
 				const document = target.ownerDocument;
 				const inline = initial.type.name === 'math_inline';
 				const dom = document.createElement(inline ? 'span' : 'figure'); dom.className = inline ? 'visual-math visual-math-inline' : 'visual-math'; dom.contentEditable = 'false';
-				const content = document.createElement(inline ? 'span' : 'div'); content.className = 'visual-math-content';
-				const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.textContent = this.text('編輯公式', 'Edit equation'); button.disabled = true;
-				this.equationButtons.add(button); dom.append(content, button);
+				const content = document.createElement('button'); content.type = 'button'; content.className = 'visual-math-content';
+				const button = content; button.setAttribute('aria-label', this.text('編輯公式', 'Edit equation')); button.disabled = true;
+				this.equationButtons.add(button); dom.append(content);
 				const render = () => {
 					const ticket = ++generation;
 					if (release?.update) { release.update(String(node.attrs.latex)); return; }
@@ -671,7 +671,8 @@ export class VisualEditor {
 					if (source.read(anchored.attrs.from, anchored.attrs.to) !== anchored.attrs.source) { this.options.rejected(); return; }
 					this.options.equation({ latex: String(anchored.attrs.latex), inline: Boolean(anchored.attrs.inline) }, { documentId: source.documentId, version: source.version, from: anchored.attrs.from, to: anchored.attrs.to });
 				};
-				button.addEventListener('click', edit); content.addEventListener('click', edit); render();
+				const editKey = (event: KeyboardEvent) => { if (!event.isComposing && (event.key === 'Enter' || event.key === ' ')) edit(event); };
+				content.addEventListener('click', edit, true); content.addEventListener('keydown', editKey, true); render();
 				{
 					dom.addEventListener('click', () => {
 						const pos = getPos();
@@ -683,7 +684,7 @@ export class VisualEditor {
 				}
 				return { dom, stopEvent: () => true, ignoreMutation: () => true,
 					update: next => { if (next.type !== node.type) return false; const changed = next.attrs.latex !== node.attrs.latex; node = next; if (changed) render(); return true; },
-					destroy: () => { destroyed = true; generation++; release?.(); release = null; button.removeEventListener('click', edit); this.equationButtons.delete(button); }
+					destroy: () => { destroyed = true; generation++; release?.(); release = null; content.removeEventListener('click', edit, true); content.removeEventListener('keydown', editKey, true); this.equationButtons.delete(button); }
 				};
 			} },
 			dispatchTransaction: (transaction) => this.dispatch(transaction),
@@ -772,7 +773,7 @@ export class VisualEditor {
 		for (const button of this.equationButtons) {
 			const disabled = !editable || !this.options.equation;
 			if (button.disabled !== disabled) button.disabled = disabled;
-			if (button.textContent !== equationText) button.textContent = equationText;
+			if (button.getAttribute('aria-label') !== equationText) button.setAttribute('aria-label', equationText);
 		}
 		const inserterDisabled = !editable || !this.options.insertBlock;
 		for (const button of this.inserterButtons) {
@@ -973,5 +974,12 @@ export class VisualEditor {
 	cellInsertionBoundary(): SourceSpan | null {
 		const index = this.selectedCellIndex ?? Math.min(this.view.state.selection.$from.index(0), this.view.state.doc.childCount - 1);
 		return this.boundarySpan(index + 1);
+	}
+	textStructureSelection(): { span: SourceSpan; content: string } | null {
+		if (!this.editable()) return null;
+		const index = this.selectedCellIndex ?? Math.min(this.view.state.selection.$from.index(0), this.view.state.doc.childCount - 1);
+		const node = this.view.state.doc.child(index), span = this.cellSpan(index);
+		if (!span || node.type.name !== 'source_block') return null;
+		return { span, content: this.options.source().read(node.attrs.editFrom, node.attrs.editTo).trim() };
 	}
 }

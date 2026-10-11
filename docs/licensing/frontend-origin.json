@@ -6,6 +6,10 @@
 	"licenseDecision": "Pending independent provenance review; new packages remain private UNLICENSED until review",
 	"references": [
 		{
+			"id": "frontend-math-structure-20261012",
+			"path": "docs/architecture/FRONTEND_MATH_STRUCTURE_2026-10-12.md"
+		},
+		{
 			"id": "frontend-close-recovery-20261012",
 			"path": "docs/architecture/FRONTEND_CLOSE_RECOVERY_2026-10-12.md"
 		},
@@ -176,6 +180,7 @@
 			"origin": "New original document-local editor using the existing shared MathLive field factory and source transactions",
 			"reviewStatus": "AGY independent catalog/inline patch integrated and reviewed by root; real GUI commit/cancel verified; application-wide provenance remains pending",
 			"referenceIds": [
+				"frontend-math-structure-20261012",
 				"frontend-notebook-interaction-20261011",
 				"frontend-math-parity-20261011",
 				"frontend-inline-20261011"

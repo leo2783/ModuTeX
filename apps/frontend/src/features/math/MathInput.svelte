@@ -76,7 +76,7 @@
 	summary { cursor: pointer; padding: 5px; }
 	.catalog { position: absolute; z-index: 30; top: 100%; left: 0; width: min(500px, 65vw); max-height: 36vh; overflow: auto; background: var(--surface); padding: 8px; border: 1px solid var(--line); }
 	.items { display: flex; gap: 4px; flex-wrap: wrap; }
-	.field-host :global(math-field) { display: block; width: 100%; min-height: 64px; padding: 8px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; --caret-color: var(--accent); --selection-background-color: var(--selection); }
+	.field-host :global(math-field) { display: block; font-size: 22px; width: 100%; min-height: 64px; padding: 8px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; --caret-color: var(--accent); --selection-background-color: var(--selection); }
 	.field-host :global(math-field:focus-within) { outline: 2px solid var(--accent); outline-offset: 2px; }
 	.field-host :global(math-field::part(virtual-keyboard-toggle)),
 	.field-host :global(math-field::part(menu-toggle)) { display: none !important; }

@@ -73,7 +73,7 @@ test('locale refresh preserves mounted source-backed node views and shared histo
 		assert.ok(buttons.raw && buttons.table && buttons.math);
 		assert.equal(buttons.raw.textContent, 'Edit source');
 		assert.equal(buttons.table.textContent, 'Edit table');
-		assert.equal(buttons.math.textContent, 'Edit equation');
+		assert.equal(buttons.math.getAttribute('aria-label'), 'Edit equation');
 		assert.equal(view.view.dom.getAttribute('aria-label'), 'language.tex visual editor');
 
 		const pmState = view.view.state, pmDocument = pmState.doc, selection = pmState.selection;
@@ -98,7 +98,7 @@ test('locale refresh preserves mounted source-backed node views and shared histo
 			assert.strictEqual(mounted.math, buttons.math);
 			assert.equal(buttons.raw.textContent, names[0]);
 			assert.equal(buttons.table.textContent, names[1]);
-			assert.equal(buttons.math.textContent, names[2]);
+			assert.equal(buttons.math.getAttribute('aria-label'), names[2]);
 		};
 		locale = 'zh-Hant';
 		assertLocale('中文.tex', ' 視覺編輯', ['編輯原始碼', '編輯表格', '編輯公式']);

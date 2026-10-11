@@ -17,7 +17,7 @@ function bounded(promise, milliseconds, name) {
 }
 
 test('native window close resolves dirty documents without losing cancelled drafts', { timeout: 120000 }, async (t) => {
-	for (const action of ['unavailable-close-chunk', 'background-then-discard', 'cancel-then-discard', 'save', 'discard', 'failed-save-then-discard']) await t.test(action, async () => {
+	for (const action of ['unavailable-close-chunk', 'background-then-discard', 'cancel-then-discard', 'save', 'discard', 'failed-save-then-discard', 'math-ime-then-discard']) await t.test(action, async () => {
 		const fixture = mkdtempSync(join(tmpdir(), 'modutex-close-'));
 		assert.equal(dirname(resolve(fixture)), resolve(tmpdir()));
 		const file = join(fixture, 'main.tex');
@@ -40,6 +40,26 @@ test('native window close resolves dirty documents without losing cancelled draf
 			await editor.click();
 			await page.keyboard.press('Control+End');
 			await page.keyboard.insertText('% close draft');
+			if (action === 'math-ime-then-discard') {
+				await page.getByRole('button', { name: '視覺化', exact: true }).click();
+				await page.locator('.source-block').filter({ hasText: 'Unsaved close fixture.' }).click();
+				await page.locator('summary[aria-label="數學"]').click();
+				await page.getByRole('button', { name: '公式儲存格', exact: true }).click();
+				const field = page.locator('.inline-equation-draft math-field');
+				await field.waitFor({ state: 'visible' }); await field.click();
+				await page.waitForFunction(() => document.activeElement === document.querySelector('.inline-equation-draft math-field'));
+				const session = await page.context().newCDPSession(page);
+				try {
+					await session.send('Input.imeSetComposition', { text: '中文', selectionStart: 2, selectionEnd: 2 });
+					await session.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 229 });
+					assert.equal(await field.count(), 1);
+					await session.send('Input.insertText', { text: '中文' });
+					await session.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 229 });
+					assert.match(await field.evaluate(el => el.value), /中文/);
+				} finally { await session.detach(); }
+				await page.getByRole('button', { name: '完成公式', exact: true }).click();
+				assert.match(await editor.textContent(), /中文/);
+			}
 			if (action === 'unavailable-close-chunk') await browser.evaluate(({ BrowserWindow }) => {
 				globalThis.closeChunkAttempts = 0;
 				BrowserWindow.getAllWindows()[0].webContents.session.webRequest.onBeforeRequest({ urls: ['app://frontend/*'] }, (details, callback) => {

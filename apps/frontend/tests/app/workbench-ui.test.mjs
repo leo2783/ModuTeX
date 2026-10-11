@@ -10,7 +10,7 @@ const channel = process.env.MODUTEX_TEST_BROWSER_CHANNEL || 'chrome';
 if (!['chrome', 'msedge'].includes(channel)) throw new Error('Unsupported browser channel');
 
 test('actual frontend modes, math rendering and help layout', { timeout: 120000 }, async (t) => {
-	const server = await createServer({ root: frontendRoot, server: { host: '127.0.0.1', port: 0, strictPort: false } });
+	const server = await createServer({ root: frontendRoot, cacheDir: screenshotRoot + 'vite-workbench-ui', server: { host: '127.0.0.1', port: 0, strictPort: false } });
 	let browser;
 	try {
 		await server.listen();
@@ -51,7 +51,26 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			const matrixField = page.locator('.inline-equation-draft math-field');
 			await matrixField.waitFor({ state: 'visible' });
 			assert.match(await matrixField.evaluate(field => field.value), /pmatrix/);
-			await matrixField.click(); await page.keyboard.press('Control+End'); await page.keyboard.type('+z');
+			const matrixOptions = page.locator('.inline-matrix-options');
+			assert.equal(await matrixOptions.isVisible(), true);
+			assert.equal(await matrixOptions.getByLabel('行', { exact: true }).inputValue(), '2');
+			assert.equal(await matrixOptions.getByLabel('列', { exact: true }).inputValue(), '2');
+			await matrixField.click();
+			await page.waitForFunction(() => document.activeElement === document.querySelector('.inline-equation-draft math-field'));
+			await matrixField.evaluate(field => { field.position = field.lastOffset; });
+			await page.keyboard.type('+z');
+			assert.match(await matrixField.evaluate(field => field.value), /\\end\{pmatrix\}\+z/);
+			await matrixOptions.getByLabel('行', { exact: true }).fill('3');
+			await matrixOptions.getByLabel('列', { exact: true }).fill('4');
+			await matrixOptions.getByRole('button', { name: '套用尺寸', exact: true }).click();
+			const resized = await matrixField.evaluate(field => field.value);
+			assert.match(resized, /1 & 2/); assert.match(resized, /3 & 4/); assert.match(resized, /\+z/);
+			assert.equal((resized.match(/ & /g) ?? []).length, 9, '3 rows × 4 columns');
+			await matrixOptions.getByLabel('行', { exact: true }).fill('1');
+			await matrixOptions.getByRole('button', { name: '套用尺寸', exact: true }).click();
+			assert.equal(await matrixField.evaluate(field => field.value), resized, 'populated cells cannot be silently removed');
+			assert.match(await page.locator('.inline-equation-error').textContent(), /清空/);
+			await page.screenshot({ path: screenshotRoot + 'math-matrix-edit-dark-20261012.png' });
 			await page.getByRole('button', { name: '取消公式', exact: true }).click();
 			assert.match(await sourceEditor.textContent(), /\\begin\{array\}\{cc\}1 & 2/);
 			await page.locator('summary[aria-label="數學"]').click();
@@ -71,9 +90,55 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			assert.equal(await page.locator('.inline-equation-draft').count(), 0);
 			await page.screenshot({ path: screenshotRoot + 'workbench-ui-dark-20261011.png' });
 		});
-		await t.test('formula cells edit in the document, cancel unchanged, and commit with Enter', async () => {
+		await t.test('Chinese IME composition retains text in a formula draft', async () => {
 			const before = await sourceEditor.textContent();
 			await page.locator('.visual-math-content').first().click();
+			const draft = page.locator('.inline-equation-draft math-field');
+			await draft.waitFor({ state: 'visible' }); await draft.click();
+			await page.waitForFunction(() => document.activeElement === document.querySelector('.inline-equation-draft math-field'));
+			await page.keyboard.press('Control+A');
+			const session = await page.context().newCDPSession(page);
+			try {
+				await session.send('Input.imeSetComposition', { text: '中文', selectionStart: 2, selectionEnd: 2 });
+				await session.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 229 });
+				assert.equal(await draft.count(), 1, 'IME candidate Enter must not finish the equation');
+				await session.send('Input.insertText', { text: '中文' });
+				await session.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 229 });
+				assert.match(await draft.evaluate(field => field.value), /中文/);
+				await session.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 229 });
+				assert.equal(await draft.count(), 1, '229 must also be guarded after compositionend');
+				await session.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 229 });
+				await page.keyboard.press('Backspace');
+				assert.match(await draft.evaluate(field => field.value), /中/);
+				await session.send('Input.imeSetComposition', { text: '取消', selectionStart: 2, selectionEnd: 2 });
+				await session.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 });
+				assert.doesNotMatch(await draft.evaluate(field => field.value), /取消/);
+			} finally {
+				await session.detach();
+				await page.getByRole('button', { name: '取消公式', exact: true }).click();
+			}
+			assert.equal(await sourceEditor.textContent(), before);
+		});
+		await t.test('display formulas are centered with readable type during and after editing', async () => {
+			const content = page.locator('.visual-math:not(.visual-math-inline) .visual-math-content').first();
+			const field = content.locator('math-field');
+			const box = await content.boundingBox(), math = await field.boundingBox();
+			assert.ok(Math.abs(box.x + box.width / 2 - math.x - math.width / 2) < 2);
+			assert.equal(await field.evaluate(el => getComputedStyle(el).fontSize), '22px');
+			await content.locator('math-field').click();
+			const input = page.locator('.inline-equation-input'), draft = input.locator('math-field');
+			await draft.waitFor({ state: 'visible' });
+			const parent = await input.boundingBox(), editor = await draft.boundingBox();
+			assert.ok(Math.abs(parent.x + parent.width / 2 - editor.x - editor.width / 2) < 2);
+			assert.equal(await draft.evaluate(el => getComputedStyle(el).fontSize), '22px');
+			await page.emulateMedia({ colorScheme: 'light' });
+			await page.screenshot({ path: screenshotRoot + 'math-formula-edit-light-20261012.png' });
+			await page.emulateMedia({ colorScheme: 'dark' });
+			await page.getByRole('button', { name: '取消公式', exact: true }).click();
+		});
+		await t.test('formula cells edit in the document, cancel unchanged, and commit with Enter', async () => {
+			const before = await sourceEditor.textContent();
+			await page.locator('.visual-math-content math-field').first().click();
 			const draft = page.locator('.inline-equation-draft math-field');
 			await draft.waitFor({ state: 'visible' });
 			await page.keyboard.press('Control+A'); await page.keyboard.type('z');
@@ -170,6 +235,19 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.waitForFunction((before) => document.querySelectorAll('.visual-math-content math-field').length === before + 1, matrixCount);
 			assert.match(await page.locator('.visual-math-content math-field').last().evaluate((field) => field.value), /42/);
 			await page.locator('.insert-bar').getByRole('button', { name: '表格', exact: true }).click();
+			const panel = page.locator('.table-panel');
+			const panelBox = await panel.boundingBox();
+			assert.ok(panelBox.height < 420, `compact 3×3 table panel height: ${panelBox.height}`);
+			assert.equal(await panel.evaluate(el => getComputedStyle(el).whiteSpace), 'normal');
+			await page.screenshot({ path: screenshotRoot + 'table-panel-compact-dark-20261012.png' });
+			await page.emulateMedia({ colorScheme: 'light' });
+			await page.screenshot({ path: screenshotRoot + 'table-panel-compact-light-20261012.png' });
+			await page.emulateMedia({ colorScheme: 'dark' });
+			await panel.locator('summary').click();
+			assert.equal(await panel.getByLabel('線條', { exact: true }).isVisible(), true);
+			assert.equal(await panel.getByLabel('說明', { exact: true }).isVisible(), true);
+			assert.equal(await panel.locator('.widths input').count(), 3);
+			await panel.locator('summary').click();
 			await page.locator('.table-panel td input').first().fill('Notebook table');
 			await page.locator('.table-panel').getByRole('button', { name: '插入', exact: true }).click();
 			const table = page.locator('.visual-table').last();
@@ -313,6 +391,28 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.mouse.move(retry.x + retry.width / 2, retry.y + retry.height / 2); await page.mouse.down(); await page.mouse.move(target.x + 30, target.y + 1, { steps: 12 });
 			assert.equal(await page.locator('.is-drop-target').count(), 1); await page.mouse.up();
 			await page.waitForFunction(() => document.querySelector('.notebook-cell')?.textContent.trim() === 'Third');
+		});
+		await t.test('text cells switch title, abstract and heading levels without losing content', async () => {
+			await page.getByRole('button', { name: '原始碼', exact: true }).click();
+			await sourceEditor.click(); await page.keyboard.press('Control+A');
+			await page.keyboard.insertText('\\documentclass{article}\n\\begin{document}\nStructured text.\n\\end{document}\n');
+			await page.getByRole('button', { name: '視覺化', exact: true }).click();
+			const structure = page.getByRole('combobox', { name: '文字層級', exact: true });
+			for (const [kind, selector, source] of [
+				['section', 'h2.source-block', /\\section\{Structured text\.\}/],
+				['subsection', 'h3.source-block', /\\subsection\{Structured text\.\}/],
+				['subsubsection', 'h4.source-block', /\\subsubsection\{Structured text\.\}/],
+				['abstract', '.source-block[data-source-role="abstract"]', /\\begin\{abstract\}/],
+				['title', 'h1.source-block', /\\title\{Structured text\.\}\s*\\maketitle/],
+				['paragraph', 'p.source-block', /Structured text\./]
+			]) {
+				await page.locator('.source-block').filter({ hasText: 'Structured text.' }).click();
+				await structure.selectOption(kind);
+				await page.locator(selector).filter({ hasText: 'Structured text.' }).waitFor({ state: 'visible' });
+				assert.match(await sourceEditor.textContent(), source);
+				assert.equal(await page.locator('.visual-raw').count(), 0, 'generated structure stays visually editable');
+			}
+			await page.screenshot({ path: screenshotRoot + 'text-structure-20261012.png' });
 		});
 		await t.test('help topics are readable in both themes at desktop widths', async () => {
 			await page.getByRole('link', { name: '說明', exact: true }).click();

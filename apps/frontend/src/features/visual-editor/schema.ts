@@ -1,7 +1,7 @@
 import { Fragment, Schema, type Node as VisualNode, type Mark } from 'prosemirror-model';
 import type { Transaction } from 'prosemirror-state';
 import { parseTable } from '../tables/source.ts';
-import { mapPosition, projectionIsCurrent, type SourceDocument, type SourceProjection, type SyntaxNode, type SourcePatch, type SourceChange } from '@modutex/document-core';
+import { mapPosition, parseSource, projectionIsCurrent, type SourceDocument, type SourceProjection, type SyntaxNode, type SourcePatch, type SourceChange } from '@modutex/document-core';
 
 const anchors = { from: {}, to: {}, editFrom: {}, editTo: {}, role: { default: 'paragraph' }, name: { default: '' }, level: { default: 2 } };
 const visualFormatMarks: Record<string, string> = { textbf: 'strong', textit: 'em', emph: 'em', underline: 'underline' };
@@ -19,7 +19,7 @@ export const visualSchema = new Schema({ nodes: {
 	source_block: { group: 'block', content: 'inline*', marks: 'strong em underline color', whitespace: 'pre', attrs: anchors,
 		toDOM(node) {
 			const tag = node.attrs.role === 'heading' ? 'h' + Math.max(1, Math.min(6, Number(node.attrs.level) || 2)) : 'p';
-			return [tag, { class: 'source-block', 'data-source-role': node.attrs.role }, 0];
+			return [tag, { class: 'source-block', 'data-source-role': node.attrs.role, 'data-structure': node.attrs.name }, 0];
 		} },
 	table_block: { group: 'block', atom: true, selectable: true, attrs: { ...anchors, source: {} },
 		toDOM(node) { return ['pre', { contenteditable: 'false' }, String(node.attrs.source)]; } },
@@ -142,12 +142,24 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 	const blocks: VisualNode[] = [];
 	const boundaries: (readonly number[] | null)[] = [];
 	const segments: (readonly InlineSegment[] | null)[] = [];
+	const titleMarkers = new Set<number>();
 	const add = (node: SyntaxNode) => {
 		if (node.kind === 'environment' && node.name === 'document') { for (const child of node.children) add(child); return; }
 		const content = node.kind === 'text' ? node.span : node.content;
 		const attrs = { from: node.span.from, to: node.span.to, editFrom: content?.from ?? node.span.from,
 			editTo: content?.to ?? node.span.to, role: node.kind === 'heading' ? 'heading' : node.kind === 'format' ? 'format' : 'paragraph', name: node.name,
 			level: ({ title: 1, section: 2, subsection: 3, subsubsection: 4 } as Record<string, number>)[node.name.replace(/\*$/, '')] ?? 2 };
+		if (node.kind === 'heading' && node.name === 'title') {
+			const marker = /^\s*\\maketitle(?![A-Za-z])/.exec(source.read(node.span.to, source.length));
+			if (marker) { attrs.to += marker[0].length; titleMarkers.add(node.span.to + marker[0].indexOf('\\maketitle')); }
+		}
+		if (node.name === 'abstract' && content && ['raw', 'environment'].includes(node.kind)) {
+			const offset = content.from;
+			const shift = (item: SyntaxNode): SyntaxNode => ({ ...item, span: { ...item.span, from: item.span.from + offset, to: item.span.to + offset }, content: item.content && { ...item.content, from: item.content.from + offset, to: item.content.to + offset }, children: item.children.map(shift) });
+			const children = parseSource({ read: () => source.read(content.from, content.to), documentId: source.documentId, version: source.version }).nodes.map(shift);
+			const inline = decodeInline(source, children);
+			if (inline) { boundaries.push(null); segments.push(inline.segments); blocks.push(visualSchema.nodes.source_block!.create({ ...attrs, role: 'abstract' }, inline.content)); return; }
+		}
 		if (node.kind === 'math' && node.content && node.content.to - node.content.from <= 65536 && ['$', '$$', '(', '['].includes(node.name)) {
 			boundaries.push(null); segments.push(null);
 			blocks.push(visualSchema.nodes.math_block!.create({ ...attrs, source: source.read(node.span.from, node.span.to), latex: source.read(node.content.from, node.content.to), inline: node.name === '$' || node.name === '(' })); return;
@@ -202,7 +214,9 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 		blocks.push(visualSchema.nodes.source_block!.create(attrs, plain.text ? visualSchema.text(plain.text) : undefined));
 		boundaries.push(plain.boundaries); segments.push(null); plainNodes = [];
 	};
-	for (const node of body ? body.children : parsed.nodes) {
+	const nodes = body ? body.children : parsed.nodes;
+	for (const node of nodes) {
+		if (node.kind === 'raw' && node.name === 'maketitle' && titleMarkers.has(node.span.from)) { flush(); continue; }
 		if (node.kind === 'raw' && node.name === 'par' && node.content === null && source.read(node.span.from, node.span.to) === '\\par') { flush(); paragraphMarker = node; continue; }
 		if (node.kind === 'text' || (node.kind === 'raw' && Object.hasOwn(decodedEscapes, source.read(node.span.from, node.span.to))) || (node.kind === 'format' || node.kind === 'math' && ['$', '('].includes(node.name)) && decodeInline(source, [node])) plainNodes.push(node);
 		else { flush(); add(node); }

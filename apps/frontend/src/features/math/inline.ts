@@ -1,6 +1,7 @@
-import { createMathField, disposeMathField, toVisualLatex } from './field.ts';
+import { createMathField, disposeMathField, isMathComposition, toVisualLatex } from './field.ts';
 import { MATH_CATALOG } from './catalog.ts';
 import { matrixSource, type EquationDraft } from './source.ts';
+import { editableMatrix } from './matrix.ts';
 
 /** A local draft at the document caret. Source and its undo history change only on Finish. */
 export function editInlineEquation(host: HTMLElement, draft: EquationDraft, text: (zh: string, en: string) => string,
@@ -46,8 +47,41 @@ export function editInlineEquation(host: HTMLElement, draft: EquationDraft, text
 	const brackets = owner.createElement('select'); brackets.setAttribute('aria-label', text('矩陣括號', 'Matrix brackets'));
 	for (const [value, label] of [['parentheses', '( )'], ['square', '[ ]'], ['curly', '{ }'], ['bars', '| |'], ['double-bars', '‖ ‖'], ['none', text('無括號', 'None')]] as const) { const option = owner.createElement('option'); option.value = value; option.textContent = label; brackets.append(option); } matrixOptions.append(brackets);
 	const insertMatrix = owner.createElement('button'); insertMatrix.type = 'button'; insertMatrix.textContent = text('插入矩陣', 'Insert matrix'); insertMatrix.addEventListener('pointerdown', event => event.preventDefault());
-	insertMatrix.addEventListener('click', () => { const r = rows.valueAsNumber, c = columns.valueAsNumber; if (!Number.isInteger(r) || !Number.isInteger(c) || r < 1 || r > 10 || c < 1 || c > 10) { error.textContent = text('行與列須為 1 至 10。', 'Rows and columns must be 1–10.'); return; } insertLatex(matrixSource({ rows: r, columns: c, cells: Array(r * c).fill('#?') }, brackets.value as Parameters<typeof matrixSource>[1])); matrixOptions.hidden = true; }); matrixOptions.append(insertMatrix);
-	button(text('矩陣', 'Matrix'), ['M6 3H3v18h3M18 3h3v18h-3M8 7h1M15 7h1M8 13h1M15 13h1'], () => { matrixOptions.hidden = !matrixOptions.hidden; catalogPanel.style.display = 'none'; });
+	// A sole matrix may be surrounded by ordinary math: resize only that matrix.
+	function currentMatrix() {
+		const latex = field.value;
+		const starts = [...latex.matchAll(/\\begin\{(matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix)\}/g)];
+		if (starts.length !== 1) return null;
+		const start = starts[0]!, closing = '\\end{' + start[1] + '}';
+		const end = latex.indexOf(closing, start.index! + start[0].length);
+		if (end < 0) return null;
+		const parsed = editableMatrix(latex.slice(start.index, end + closing.length));
+		return parsed ? { ...parsed, from: start.index!, to: end + closing.length } : null;
+	}
+	function syncMatrixOptions() {
+		const current = currentMatrix();
+		if (current) { rows.value = String(current.matrix.rows); columns.value = String(current.matrix.columns); brackets.value = current.brackets; }
+		insertMatrix.textContent = current ? text('套用尺寸', 'Apply size') : text('插入矩陣', 'Insert matrix');
+	}
+	insertMatrix.addEventListener('click', () => {
+		const r = rows.valueAsNumber, c = columns.valueAsNumber;
+		if (!Number.isInteger(r) || !Number.isInteger(c) || r < 1 || r > 10 || c < 1 || c > 10) { error.textContent = text('行與列須為 1 至 10。', 'Rows and columns must be 1–10.'); return; }
+		const current = currentMatrix();
+		if (current && current.matrix.cells.some((cell, index) => cell && (Math.floor(index / current.matrix.columns) >= r || index % current.matrix.columns >= c))) {
+			error.textContent = text('縮小會移除已有內容，請先清空要移除的格子。', 'Clear the cells being removed before reducing the size.'); return;
+		}
+		const cells = Array.from({ length: r * c }, (_, index) => {
+			const row = Math.floor(index / c), col = index % c;
+			return current && row < current.matrix.rows && col < current.matrix.columns ? current.matrix.cells[row * current.matrix.columns + col] || '#?' : '#?';
+		});
+		const replacement = toVisualLatex(matrixSource({ rows: r, columns: c, cells }, brackets.value as Parameters<typeof matrixSource>[1]), true);
+		if (current) { field.setValue(field.value.slice(0, current.from) + replacement + field.value.slice(current.to)); field.focus(); }
+		else insertLatex(replacement);
+		error.textContent = ''; syncMatrixOptions();
+	}); matrixOptions.append(insertMatrix);
+	const matrixButton = button(text('矩陣尺寸與括號', 'Matrix size and brackets'), ['M6 3H3v18h3M18 3h3v18h-3M8 7h1M15 7h1M8 13h1M15 13h1'], () => { matrixOptions.hidden = !matrixOptions.hidden; if (!matrixOptions.hidden) syncMatrixOptions(); matrixButton.setAttribute('aria-expanded', String(!matrixOptions.hidden)); catalogPanel.style.display = 'none'; });
+	if (currentMatrix()) { matrixOptions.hidden = false; syncMatrixOptions(); }
+	matrixButton.setAttribute('aria-expanded', String(!matrixOptions.hidden));
 	const placement = button(text('行內公式', 'Inline equation'), ['M3 18h18M7 12l6-8M7 4l6 8M16 12h5'], () => { inline = !inline; host.classList.toggle('is-inline', inline); placement.setAttribute('aria-pressed', String(inline)); }); placement.setAttribute('aria-pressed', String(inline));
 	let activeCategory: string | null = null;
 	function renderCatalog() {
@@ -107,7 +141,7 @@ export function editInlineEquation(host: HTMLElement, draft: EquationDraft, text
 		} else { accepted = value; error.textContent = ''; }
 	};
 	const keydown = (event: KeyboardEvent) => {
-		if (event.isComposing) return;
+		if (isMathComposition(field, event)) return;
 		if (event.key === 'Escape' || event.key === 'Enter' && !event.shiftKey) {
 			event.preventDefault(); event.stopPropagation();
 			if (event.key === 'Escape') cancel(); else finish();
