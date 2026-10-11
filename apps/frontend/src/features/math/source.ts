@@ -73,5 +73,6 @@ export function matrixSource(matrix: MatrixDraft, brackets: 'parentheses' | 'squ
 }
 export function equationSource(value: string, inline: boolean): string {
 	if (!value.trim() || value.length > 65536 || value.includes('\u0000')) throw new Error('EQUATION_SOURCE');
+	if (/\\placeholder(?:\[[^\]]*\])?\{/.test(value)) throw new Error('EQUATION_INCOMPLETE');
 	return inline ? '\\(' + value + '\\)' : '\\[\n' + value + '\n\\]';
 }

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import type { MathfieldElement } from 'mathlive';
 	import { text, type Language } from '../../i18n/text.ts';
+	import { MATH_CATALOG } from './catalog.ts';
 	let { value, onChange, onUnavailable, locale = 'zh-Hant' }: { value: string; onChange: (latex: string) => void; onUnavailable?: () => void; locale?: Language } = $props();
 	const t = (traditionalChinese: string, english: string) => text(locale, traditionalChinese, english);
 	type MathInputError = 'too-long' | 'paste-too-long' | 'load-failed';
@@ -61,6 +62,7 @@
 		<button onclick={() => insert('^{#@}')} disabled={!field}>{t('上標', 'Superscript')}</button>
 		<button onclick={() => insert('_{#@}')} disabled={!field}>{t('下標', 'Subscript')}</button>
 		<button onclick={() => insert('\\int_{#?}^{#?} #@')} disabled={!field}>{t('積分', 'Integral')}</button>
+		<details><summary>{t('數學選單', 'Math menu')}</summary><div class="catalog">{#each MATH_CATALOG as category}<details><summary>{t(category.nameZh, category.nameEn)}</summary><div class="items">{#each category.items as item}<button title={t(item.labelZh, item.labelEn)} onclick={() => insert(item.latex)} disabled={!field}>{item.display}</button>{/each}</div></details>{/each}</div></details>
 	</div>
 	{#if loading}<p role="status">{t('正在載入公式工具…', 'Loading equation tools…')}</p>{/if}
 	<div class="field-host" bind:this={host}></div>
@@ -70,6 +72,10 @@
 <style>
 	.math-input { margin-block: 12px; min-width: 0; }
 	.formula-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-block-end: 8px; }
+	.formula-tools > details { position: relative; }
+	summary { cursor: pointer; padding: 5px; }
+	.catalog { position: absolute; z-index: 30; top: 100%; left: 0; width: min(500px, 65vw); max-height: 36vh; overflow: auto; background: var(--surface); padding: 8px; border: 1px solid var(--line); }
+	.items { display: flex; gap: 4px; flex-wrap: wrap; }
 	.field-host :global(math-field) { display: block; width: 100%; min-height: 64px; padding: 8px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; --caret-color: var(--accent); --selection-background-color: var(--selection); }
 	.field-host :global(math-field:focus-within) { outline: 2px solid var(--accent); outline-offset: 2px; }
 	.field-host :global(math-field::part(virtual-keyboard-toggle)),

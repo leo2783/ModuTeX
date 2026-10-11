@@ -10,6 +10,8 @@
 	import { createSourceState, sourceState, sourcePatches, sourcePatchTransaction, historyTransaction, savedCheckpoint, insertionTarget, insertionTransaction, type InsertionTarget } from './state.ts';
 	import MathPanel from '../math/MathPanel.svelte';
 	import ToolbarIcon from '../../components/ToolbarIcon.svelte';
+	import CodePanel from '../code/CodePanel.svelte';
+	import { codeAt, codeEditTransaction, type LocatedCode, type CodeDraft } from '../code/source.ts';
 	import { equationAt, equationSource, type EquationDraft, type LocatedEquation } from '../math/source.ts';
 	import { equationEditTransaction } from '../math/editor.ts';
 	import TablePanel from '../tables/TablePanel.svelte';
@@ -18,10 +20,10 @@
 	import { diagnosticSourceSpan, type DiagnosticNavigationRequest } from './diagnostics.ts';
 	import { foldCode, unfoldAll } from '@codemirror/language';
 	import { foldProjection, sourceFolding } from './folding.ts';
-	import { formatShortcut, formatTransaction, type TextFormat } from './format.ts';
+	import { formatShortcut, formatTransaction, colorTransaction, type TextFormat } from './format.ts';
 	import { rawEditTransaction } from './raw.ts';
 	import { visualInsertionTransaction } from './state.ts';
-	import { booktabsPlan, tableInsertionTransaction, type PackagePlan } from '../tables/preamble.ts';
+	import { booktabsPlan, tableInsertionTransaction, withPackage, type PackagePlan } from '../tables/preamble.ts';
 	import { text, type Language } from '../../i18n/text.ts';
 	let { document, label, saving, savedVersion, active = true, fontSize = 14, showLineNumbers = true, wrapLines = false, navigation = null, diagnosticNavigation = null, locale = 'zh-Hant', onChange, onRejected, onVisualRejected, onProjection, onParserFailure }: { document: SourceDocument; label: string;
 		active?: boolean; fontSize?: number; showLineNumbers?: boolean; wrapLines?: boolean; locale?: Language;
@@ -66,7 +68,26 @@
 	let editor = $state.raw<EditorView | null>(null);
 	const permission = new Compartment();
 	const gutter = new Compartment(), wrapping = new Compartment(), labels = new Compartment();
-	let tool = $state<'equation' | 'matrix' | 'table' | 'raw' | null>(null);
+	let tool = $state<'equation' | 'matrix' | 'table' | 'raw' | 'code' | null>(null);
+	let codePanelHost = $state.raw<HTMLDivElement | null>(null);
+	let codeDraft = $state.raw<LocatedCode | null>(null), codeKey = $state('insert');
+	function openCode(span?: SourceSpan) {
+		if (!editor || !active || saving) return;
+		if (tool !== null) closeTool();
+		try {
+			const boundary = span ?? (mode === 'visual' ? visual?.cellInsertionBoundary() : null);
+			if (mode === 'visual' && !boundary) throw new Error('INSERTION_RANGE');
+			insertion = boundary ? rangeInsertionTarget(editor.state, boundary) : insertionTarget(editor.state);
+			visualInsertion = boundary ? { span: boundary, inlineOnly: false } : null;
+			codeDraft = null; codeKey = `insert:${++draftSequence}`;
+			toolOwner = mode === 'visual' ? 'visual' : 'source'; toolError = null; tool = 'code';
+		} catch { toolError = 'insert-stale'; }
+	}
+	function applyCode(draft: CodeDraft) {
+		if (!editor || !active || saving || !codeDraft) return;
+		try { const transaction = codeEditTransaction(editor.state, codeDraft, draft); if (transaction) editor.dispatch(transaction); closeTool(); }
+		catch { toolError = 'raw-apply'; }
+	}
 	let rawSpan: SourceSpan | null = null;
 	let rawOriginal = '', rawDraft = $state('');
 	let rawInput = $state.raw<HTMLTextAreaElement | null>(null);
@@ -77,6 +98,11 @@
 			const source = editor.state.field(sourceState).projection.document;
 			rangeInsertionTarget(editor.state, span);
 			if (source.read(span.from, span.to) !== value) throw new Error('STALE_RAW');
+			const located = parsed ? codeAt(source, parsed, span.from) : null;
+			if (located?.span.from === span.from && located.span.to === span.to) {
+				codeDraft = located; codeKey = `edit:${++draftSequence}`; insertion = rangeInsertionTarget(editor.state, span);
+				visualInsertion = { span, inlineOnly: false }; toolOwner = 'visual'; toolError = null; tool = 'code'; return;
+			}
 			rawSpan = span; rawOriginal = value; rawDraft = value; toolError = null; toolOwner = 'visual'; tool = 'raw';
 		} catch { toolError = 'raw-stale'; }
 	}
@@ -125,6 +151,19 @@
 	let tableKey = $state('insert'), editingTable = $state(false), toolError = $state<ToolError | null>(null);
 	let equation = $state.raw<LocatedEquation | null>(null);
 	let equationKey = $state('insert');
+	let insertInline = $state(false);
+	let mathMenu = $state.raw<HTMLDetailsElement | null>(null);
+	let colorMenu = $state.raw<HTMLDetailsElement | null>(null);
+	function applyColor(hex: string) {
+		if (!editor || !parsed || !active || saving || tool !== null) return;
+		if (colorMenu) colorMenu.open = false;
+		try {
+			const span = mode === 'visual' ? visual?.formatSelection() : undefined;
+			if (mode === 'visual' && (!span || span.from === span.to)) throw new Error('FORMAT_RANGE');
+			editor.dispatch(colorTransaction(editor.state, parsed, hex, span ?? undefined));
+			toolError = null;
+		} catch { toolError = 'format'; }
+	}
 	let draftSequence = 0;
 	let handledNavigation = 0;
 	let handledDiagnosticNavigation = 0;
@@ -208,6 +247,8 @@
 	}
 	function openTool(kind: 'equation' | 'matrix' | 'table') {
 		if (!editor || saving || !active) return;
+		if (mathMenu) mathMenu.open = false;
+		insertInline = false;
 		if (tool !== null) closeTool();
 		const useVisual = mode === 'visual';
 		if (useVisual) {
@@ -252,11 +293,24 @@
 		try {
 			if (equation) {
 				const transaction = equationEditTransaction(editor.state, equation, draft);
-				if (transaction) editor.dispatch(transaction);
+				if (transaction) editor.dispatch(withPackage(editor.state, transaction, ['amsmath', 'amssymb']));
 				closeTool();
 			} else insert(equationSource(draft.latex, draft.inline).replace(/\r\n|\r/g, '\n'));
 		}
 		catch { toolError = 'equation-apply'; }
+	}
+	function openInlineEquation() {
+		if (!editor || saving || !active || tool !== null) return;
+		if (mathMenu) mathMenu.open = false;
+		try {
+			const captured = mode === 'visual' ? visual?.insertionSelection() : null;
+			if (mode === 'visual' && !captured) { toolError = 'insert-selection'; return; }
+			insertion = captured ? rangeInsertionTarget(editor.state, captured.span) : insertionTarget(editor.state);
+			visualInsertion = captured ? { ...captured, inlineOnly: true } : null;
+			toolOwner = mode === 'visual' ? 'visual' : 'source';
+			insertInline = true; equation = null; equationKey = `insert:${++draftSequence}`;
+			toolError = null; tool = 'equation';
+		} catch { toolError = 'insert-stale'; }
 	}
 	function openEquation(_draft: EquationDraft, span: SourceSpan) {
 		if (!editor || !active || saving || !parsed) return;
@@ -283,12 +337,12 @@
 		const span = equation?.span ?? visualInsertion?.span;
 		if (!span) return;
 		const current = visual;
-		if (!current.startEquation(equation?.draft ?? { latex: '', inline: false }, span, applyEquation, closeTool)) toolError = 'equation-stale';
+		if (!current.startEquation(equation?.draft ?? { latex: '', inline: insertInline }, span, applyEquation, closeTool)) toolError = 'equation-stale';
 		return () => current.closeEquation();
 	});
 	$effect(() => {
-		if (!active || mode !== 'visual' || !visual || (tool !== 'matrix' && tool !== 'table')) return;
-		const panel = tool === 'matrix' ? mathPanelHost : tablePanelHost;
+		if (!active || mode !== 'visual' || !visual || (tool !== 'matrix' && tool !== 'table' && tool !== 'code')) return;
+		const panel = tool === 'matrix' ? mathPanelHost : tool === 'code' ? codePanelHost : tablePanelHost;
 		const span = equation?.span ?? visualInsertion?.span ?? (insertion ? { documentId: insertion.documentId, version: insertion.version, from: insertion.from, to: insertion.to } : null);
 		if (!panel || !span) return;
 		const current = visual;
@@ -297,6 +351,7 @@
 	});
 	function openToolAtBoundary(kind: 'equation' | 'matrix' | 'table', span: SourceSpan) {
 		if (!editor || saving || !active) return;
+		insertInline = false;
 		if (tool !== null) closeTool();
 		try {
 			insertion = rangeInsertionTarget(editor.state, span);
@@ -389,9 +444,10 @@
 	function insert(source: string) {
 		if (!editor || !insertion || saving || !active) return;
 		try {
-			const transaction = visualInsertion ? visualInsertionTransaction(editor.state, visualInsertion.span, source, visualInsertion.inlineOnly) : insertionTransaction(editor.state, insertion, source);
+			let transaction = visualInsertion ? visualInsertionTransaction(editor.state, visualInsertion.span, source, visualInsertion.inlineOnly) : insertionTransaction(editor.state, insertion, source);
+			if (tool === 'equation' || tool === 'matrix') transaction = withPackage(editor.state, transaction, ['amsmath', 'amssymb']);
 			if (!transaction.docChanged && editor.state.doc.sliceString(insertion.from, insertion.to) !== source) throw new Error('INSERTION_REJECTED');
-			editor.dispatch(transaction); focusInsertedBlock('math_block'); closeTool();
+			editor.dispatch(transaction); if (tool !== 'code' && !insertInline) focusInsertedBlock('math_block'); closeTool();
 		} catch (error) { toolError = error instanceof Error && error.message === 'INSERTION_INLINE_ONLY' ? 'inline-only' : 'insert'; }
 	}
 	$effect(() => { editor?.dispatch({ effects: permission.reconfigure(EditorState.readOnly.of(saving || tool !== null || !active)) }); });
@@ -478,6 +534,11 @@
 			editor.dispatch(transaction);
 			return true;
 		};
+		const documentEdge = (end: boolean, extend = false) => (editor: EditorView) => {
+			const head = end ? editor.state.doc.length : 0;
+			editor.dispatch({ selection: { anchor: extend ? editor.state.selection.main.anchor : head, head }, scrollIntoView: true });
+			return true;
+		};
 		const view = new EditorView({
 			parent: target,
 			state: createSourceState(initial, onRejected, [
@@ -487,6 +548,8 @@
 					wrapping.of(wrapLines ? EditorView.lineWrapping : []),
 					EditorView.domEventHandlers({ keydown: (event) => { const format = formatShortcut(event); if (!format || view.state.readOnly) return false; applyFormat(format); return true; } }),
 					keymap.of([{ key: 'Mod-z', run: history('undo') }, { key: 'Mod-Shift-z', run: history('redo') },
+						{ key: 'Mod-End', run: documentEdge(true) }, { key: 'Mod-Home', run: documentEdge(false) },
+						{ key: 'Mod-Shift-End', run: documentEdge(true, true) }, { key: 'Mod-Shift-Home', run: documentEdge(false, true) },
 						{ key: 'Mod-y', run: history('redo') }]),
 					EditorView.updateListener.of((update) => {
 						for (const transaction of update.transactions) {
@@ -527,6 +590,7 @@
 			format: (format) => { applyFormat(format); },
 			locale: () => locale,
 			insertBlock: (kind, span, beforeText) => {
+				if (kind === 'code') { openCode(span); return; }
 				if (kind === 'text') insertTextAtBoundary(span, beforeText);
 				else openToolAtBoundary(kind, span);
 			},
@@ -561,19 +625,36 @@
 			<button class="icon-tool" title={t('粗體', 'Bold')} aria-label={t('粗體', 'Bold')} onclick={() => applyFormat('strong')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="bold" /></button>
 			<button class="icon-tool" title={t('斜體', 'Italic')} aria-label={t('斜體', 'Italic')} onclick={() => applyFormat('em')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="italic" /></button>
 			<button class="icon-tool" title={t('底線', 'Underline')} aria-label={t('底線', 'Underline')} onclick={() => applyFormat('underline')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="underline" /></button>
+			<details class="math-menu" bind:this={colorMenu}>
+				<summary title={t('文字顏色', 'Text color')} aria-label={t('文字顏色', 'Text color')}><ToolbarIcon kind="color" /></summary>
+				<div class="math-menu-items color-options">
+					{#each [{ hex: 'B42318', zh: '紅色', en: 'Red' }, { hex: '166534', zh: '綠色', en: 'Green' }, { hex: '1D4ED8', zh: '藍色', en: 'Blue' }, { hex: '7E22CE', zh: '紫色', en: 'Purple' }, { hex: '92400E', zh: '棕色', en: 'Brown' }] as color}
+						<button onclick={() => applyColor(color.hex)} disabled={!active || saving || tool !== null}><span class="color-swatch" style:background={'#' + color.hex}></span>{t(color.zh, color.en)}</button>
+					{/each}
+					<label>{t('自訂顏色', 'Custom color')}<input type="color" aria-label={t('自訂文字顏色', 'Custom text color')} onchange={event => applyColor(event.currentTarget.value.slice(1))} disabled={!active || saving || tool !== null} /></label>
+				</div>
+			</details>
 		</div>
 		<div class="tool-group" role="group" aria-label={t('插入內容', 'Insert')}>
-			<button class="icon-tool" title={t('公式', 'Equation')} aria-label={t('公式', 'Equation')} onclick={() => openTool('equation')} disabled={!active || saving || tool !== null}><ToolbarIcon kind="equation" /></button>
-			<button class="icon-tool" title={t('矩陣', 'Matrix')} aria-label={t('矩陣', 'Matrix')} onclick={() => openTool('matrix')} disabled={!active || saving || tool !== null}><ToolbarIcon kind="matrix" /></button>
+			<details class="math-menu" bind:this={mathMenu}>
+				<summary title={t('數學', 'Math')} aria-label={t('數學', 'Math')}><ToolbarIcon kind="equation" /><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="m2 4 3 3 3-3" fill="none" stroke="currentColor" /></svg></summary>
+				<div class="math-menu-items">
+					<button onclick={openInlineEquation} disabled={!active || saving || tool !== null}>{t('行內公式', 'Inline equation')}</button>
+					<button onclick={() => openTool('equation')} disabled={!active || saving || tool !== null}>{t('公式儲存格', 'Equation cell')}</button>
+					<button onclick={() => openTool('matrix')} disabled={!active || saving || tool !== null}>{t('矩陣', 'Matrix')}</button>
+				</div>
+			</details>
 			<button class="icon-tool" title={t('表格', 'Table')} aria-label={t('表格', 'Table')} onclick={() => openTool('table')} disabled={!active || saving || tool !== null}><ToolbarIcon kind="table" /></button>
+			<button class="icon-tool" title={t('程式碼區塊', 'Code block')} aria-label={t('程式碼區塊', 'Code block')} onclick={() => openCode()} disabled={!active || saving || tool !== null}><ToolbarIcon kind="code" /></button>
 		</div>
 	</div>
 	{#if mode !== 'visual'}<div class="table-edit"><button class="text-button" onclick={editEquation} disabled={!active || saving || tool !== null || !parsed}>{t('編輯游標所在公式', 'Edit equation at cursor')}</button><button class="text-button" onclick={editTable} disabled={saving || tool !== null}>{t('編輯游標所在表格', 'Edit table at cursor')}</button><button class="text-button" onclick={() => editor && foldCode(editor)} disabled={!active || saving || tool !== null || !parsed}>{t('折疊目前區段', 'Fold current section')}</button><button class="text-button" onclick={() => editor && unfoldAll(editor)} disabled={!active || tool !== null}>{t('展開全部', 'Unfold all')}</button></div>{/if}
 	{#if toolError}<p class="tool-error" role="alert">{toolMessage(toolError)}</p>{/if}
 	<div class="cell-actions-bar" bind:this={cellToolbarTarget} hidden={mode !== 'visual'}></div>
 	{#if parserFailed}<div class="parser-error" role="alert"><span>{t('解析中斷，原始碼仍可編輯。', 'Parsing stopped. The source is still editable.')}</span><button class="text-button" onclick={() => retryParser?.()} disabled={saving || tool !== null}>{t('重新解析', 'Parse again')}</button></div>{/if}
-	<div bind:this={mathPanelHost} hidden={tool !== 'matrix' && !(tool === 'equation' && mode === 'source')}><MathPanel kind={tool === 'matrix' ? 'matrix' : 'equation'} showSource={mode === 'source'} {locale} active={active && (tool === 'matrix' || tool === 'equation' && mode === 'source')} initialDraft={equation?.draft ?? null} sessionKey={equationKey} editing={equation !== null} onEquation={applyEquation} onInsert={insert} onClose={closeTool} /></div>
+	<div bind:this={mathPanelHost} hidden={tool !== 'matrix' && !(tool === 'equation' && mode === 'source')}><MathPanel kind={tool === 'matrix' ? 'matrix' : 'equation'} showSource={mode === 'source'} {locale} active={active && (tool === 'matrix' || tool === 'equation' && mode === 'source')} initialDraft={equation?.draft ?? (insertInline ? { latex: '', inline: true } : null)} sessionKey={equationKey} editing={equation !== null} onEquation={applyEquation} onInsert={insert} onClose={closeTool} /></div>
 	<div bind:this={tablePanelHost} hidden={tool !== 'table'}><TablePanel {locale} active={active && tool === 'table'} locked={pendingPackage !== null} initialDraft={tableDraft} sessionKey={tableKey} editing={editingTable} onInsert={insertTable} onClose={closeTool} /></div>
+	<div bind:this={codePanelHost} hidden={tool !== 'code'}><CodePanel {locale} active={active && tool === 'code'} initialDraft={codeDraft?.draft ?? null} sessionKey={codeKey} editing={codeDraft !== null} onInsert={insert} onApply={applyCode} onClose={closeTool} /></div>
 	{#if pendingPackage}<section class="package-preview" aria-labelledby="package-heading">
 		<h2 id="package-heading">{t('新增 Booktabs 套件', 'Add the Booktabs package')}</h2><p>{t('表格需要以下前言設定。確認後會與表格一起套用，可一次復原。', 'This table needs the preamble setting below. Confirming applies it together with the table, and one undo reverts both.')}</p>
 		<pre>{pendingPackage.plan.insert.trim()}</pre>
@@ -593,6 +674,25 @@
 </div>
 
 <style>
+	.visual :global(.code-content) { font: 14px/1.6 Consolas, monospace; white-space: pre; overflow-x: auto; background: var(--canvas); padding: 12px; border: 1px solid var(--line); }
+	.visual :global(.inline-equation-catalog) { flex-direction: column; gap: 6px; position: absolute; z-index: 40; top: 34px; left: 0; width: min(560px, 65vw); max-height: 36vh; overflow: auto; padding: 8px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 4px 12px #0002; }
+	.visual :global(.inline-equation-catalog-nav), .visual :global(.inline-equation-catalog-grid) { display: flex; flex-wrap: wrap; gap: 4px; }
+	.visual :global(.catalog-tab.active) { background: var(--selection); }
+	.visual :global(.catalog-item-btn) { min-width: 40px; padding: 5px 8px; }
+	.visual :global(.confirm-action) { color: #15803d; }
+	.visual :global(.cancel-action) { color: #b91c1c; }
+	:global([data-theme='dark']) .visual :global(.confirm-action) { color: #4ade80; }
+	:global([data-theme='dark']) .visual :global(.cancel-action) { color: #f87171; }
+	.math-menu { position: relative; }
+	.math-menu summary { display: flex; align-items: center; gap: 3px; cursor: pointer; list-style: none; padding: 5px; min-height: 32px; box-sizing: border-box; }
+	.math-menu summary::-webkit-details-marker { display: none; }
+	.math-menu summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+	.math-menu-items { position: absolute; z-index: 30; top: 100%; left: 0; padding: 4px; min-width: 150px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 4px 12px #0002; }
+	.math-menu-items button { display: block; width: 100%; text-align: start; white-space: nowrap; border: 0; background: transparent; padding: 7px 10px; }
+	.math-menu-items button:hover { background: var(--selection); }
+	.color-options button, .color-options label { display: flex; align-items: center; gap: 8px; }
+	.color-options label { padding: 7px 10px; white-space: nowrap; }
+	.color-swatch { display: inline-block; width: 14px; height: 14px; border: 1px solid var(--line); }
 	.source {
 		flex: 1;
 		min-height: 0;

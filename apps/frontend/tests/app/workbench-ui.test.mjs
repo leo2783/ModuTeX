@@ -32,10 +32,10 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 		await t.test('visual-first icons share one toolbar with format and cell tools', async () => {
 			assert.deepEqual(await page.locator('.modes button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label'))), ['視覺化', '原始碼']);
 			assert.equal(await page.locator('.insert-bar .modes').count(), 1);
-			for (const name of ['粗體', '斜體', '底線', '公式', '矩陣', '表格']) {
-				const button = page.locator('.insert-bar').getByRole('button', { name, exact: true });
+			for (const name of ['粗體', '斜體', '底線', '數學', '文字顏色', '表格', '程式碼區塊']) {
+				const button = ['數學', '文字顏色'].includes(name) ? page.locator('summary[aria-label="'+name+'"]') : page.locator('.insert-bar').getByRole('button', { name, exact: true });
 				assert.equal(await button.getAttribute('title'), name);
-				assert.equal(await button.locator('svg').count(), 1);
+				assert.equal(await button.locator('svg').count(), name === '數學' ? 2 : 1);
 			}
 		});
 		await t.test('visual equations and matrix use actual MathLive elements', async () => {
@@ -53,7 +53,8 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.locator('.matrix-grid input').first().fill('Discard matrix change');
 			await page.locator('.math-panel').getByRole('button', { name: '取消', exact: true }).click();
 			assert.match(await sourceEditor.textContent(), /\\begin\{array\}\{cc\}1 & 2/);
-			await page.locator('.insert-bar').getByRole('button', { name: '公式', exact: true }).click();
+			await page.locator('summary[aria-label="數學"]').click();
+			await page.getByRole('button', { name: '公式儲存格', exact: true }).click();
 			const mathField = page.locator('.inline-equation-draft math-field');
 			await mathField.waitFor({ state: 'visible' });
 			assert.equal(await page.locator('.math-panel .formula textarea:visible').count(), 0);
@@ -79,7 +80,8 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			assert.equal(await sourceEditor.textContent(), before);
 			await page.locator('.source-block').filter({ hasText: 'Alpha paragraph.' }).first().click();
 			const count = await page.locator('.visual-math').count();
-			await page.locator('.insert-bar').getByRole('button', { name: '公式', exact: true }).click();
+			await page.locator('summary[aria-label="數學"]').click();
+			await page.getByRole('button', { name: '公式儲存格', exact: true }).click();
 			await draft.waitFor({ state: 'visible' });
 			assert.equal(await draft.evaluate(field => field.value), '');
 			await page.waitForFunction(() => document.activeElement === document.querySelector('.inline-equation-draft math-field'));
@@ -146,6 +148,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 		await t.test('matrix and table blocks insert and re-edit through the document controls', async () => {
 			const matrixCount = await page.locator('.visual-math').count();
 			await page.locator('.ProseMirror p').filter({ hasText: 'Beta paragraph.' }).click();
+			await page.locator('summary[aria-label="數學"]').click();
 			await page.locator('.insert-bar').getByRole('button', { name: '矩陣', exact: true }).click();
 			await page.locator('.matrix-grid input').first().fill('42');
 			await page.waitForFunction(() => document.querySelector('.matrix-preview-host math-field')?.value.includes('42'));
@@ -190,6 +193,53 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.emulateMedia({ colorScheme: 'light' });
 			await page.screenshot({ path: screenshotRoot + 'workbench-blocks-light-20261011.png' });
 			await page.emulateMedia({ colorScheme: 'dark' });
+		});
+		await t.test('math catalog supports inline Greek, limits and calculus without a keyboard', async () => {
+			const paragraph = page.locator('.source-block').filter({ hasText: 'Beta paragraph.' }).first();
+			await paragraph.click(); await page.keyboard.press('End');
+			await page.locator('summary[aria-label="數學"]').click();
+			await page.getByRole('button', { name: '行內公式', exact: true }).click();
+			await page.getByRole('button', { name: '展開數學選單', exact: true }).click();
+			await page.locator('.catalog-tab').filter({ hasText: '希臘小寫' }).click();
+			await page.getByRole('button', { name: 'alpha', exact: true }).click();
+			await page.locator('.catalog-tab').filter({ hasText: '極限與級數' }).click();
+			assert.equal(await page.getByRole('button', { name: '極限', exact: true }).count(), 1);
+			await page.locator('.catalog-tab').filter({ hasText: '微積分與導數' }).click();
+			assert.equal(await page.getByRole('button', { name: '微分元 dx', exact: true }).count(), 1);
+			assert.equal(await page.getByRole('button', { name: '偏導數', exact: true }).count(), 1);
+			await page.locator('.catalog-tab').filter({ hasText: '多行環境' }).click();
+			assert.equal(await page.getByRole('button', { name: '多行函數', exact: true }).count(), 1);
+			await page.screenshot({ path: screenshotRoot + 'math-parity-catalog-dark.png' });
+			await page.getByRole('button', { name: '完成公式', exact: true }).click();
+			await paragraph.locator('.visual-math-inline').waitFor({ state: 'visible' });
+			await page.getByRole('button', { name: '原始碼', exact: true }).click();
+			assert.match(await sourceEditor.innerText(), /\\\(\\alpha\s*\\\)/);
+			await page.getByRole('button', { name: '視覺化', exact: true }).click();
+		});
+		await t.test('code cells insert, edit and cancel without executable HTML', async () => {
+			await page.getByRole('button', { name: '程式碼區塊', exact: true }).click();
+			await page.locator('.code-panel textarea').fill('const value = "<script>alert(1)</script>";\nconsole.log(value);');
+			await page.locator('.code-panel').getByRole('button', { name: '插入', exact: true }).click();
+			const block = page.locator('.visual-raw').filter({ has: page.locator('.code-content') }).last();
+			await block.locator('.code-content').waitFor({ state: 'visible' });
+			assert.match(await block.locator('.code-content').innerText(), /<script>/);
+			assert.equal(await block.locator('script').count(), 0);
+			await block.getByRole('button', { name: '編輯程式碼', exact: true }).click();
+			await page.locator('.code-panel textarea').fill('discarded');
+			await page.locator('.code-panel').getByRole('button', { name: '取消', exact: true }).click();
+			assert.match(await block.locator('.code-content').innerText(), /console.log/);
+			await page.screenshot({ path: screenshotRoot + 'math-parity-code-dark.png' });
+		});
+		await t.test('selected text color projects immediately and includes xcolor', async () => {
+			const paragraph = page.locator('.source-block').filter({ hasText: 'Alpha paragraph.' }).first();
+			await paragraph.click(); await page.keyboard.press('Home'); await page.keyboard.press('Shift+End');
+			await page.locator('summary[aria-label="文字顏色"]').click();
+			await page.getByRole('button', { name: '紅色', exact: true }).click();
+			await page.waitForFunction(() => [...document.querySelectorAll('.source-block span')].some(span => span.style.color === 'rgb(180, 35, 24)'));
+			await page.getByRole('button', { name: '原始碼', exact: true }).click();
+			assert.match(await sourceEditor.innerText(), /\\usepackage\{xcolor\}/);
+			assert.match(await sourceEditor.innerText(), /\\textcolor\[HTML\]\{B42318\}/);
+			await page.getByRole('button', { name: '視覺化', exact: true }).click();
 		});
 		await t.test('help topics are readable in both themes at desktop widths', async () => {
 			await page.getByRole('link', { name: '說明', exact: true }).click();

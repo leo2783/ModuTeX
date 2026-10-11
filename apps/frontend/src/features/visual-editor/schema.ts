@@ -1,4 +1,4 @@
-import { Fragment, Schema, type Node as VisualNode } from 'prosemirror-model';
+import { Fragment, Schema, type Node as VisualNode, type Mark } from 'prosemirror-model';
 import type { Transaction } from 'prosemirror-state';
 import { parseTable } from '../tables/source.ts';
 import { mapPosition, projectionIsCurrent, type SourceDocument, type SourceProjection, type SyntaxNode, type SourcePatch, type SourceChange } from '@modutex/document-core';
@@ -7,11 +7,16 @@ const anchors = { from: {}, to: {}, editFrom: {}, editTo: {}, role: { default: '
 const visualFormatMarks: Record<string, string> = { textbf: 'strong', textit: 'em', emph: 'em', underline: 'underline' };
 const visualMarkCommands: Record<string, string> = { strong: 'textbf', em: 'textit', underline: 'underline' };
 const visualMarkOrder = ['strong', 'em', 'underline'] as const;
+const colorKey = /^color:[0-9A-F]{6}$/;
+export const visualMarkName = (mark: Mark): string => mark.type.name === 'color' ? 'color:' + mark.attrs.value : mark.type.name;
+export const supportedVisualMark = (name: string): boolean => Object.hasOwn(visualMarkCommands, name) || colorKey.test(name);
+export const createVisualMark = (name: string): Mark => colorKey.test(name) ? visualSchema.marks.color!.create({ value: name.slice(6) }) : visualSchema.marks[name]!.create();
+const orderedMarks = (marks: readonly string[]) => [...visualMarkOrder.filter(mark => marks.includes(mark)), ...marks.filter(mark => colorKey.test(mark))];
 /** Original bounded source projection. No application schema or converter imported. */
 export const visualSchema = new Schema({ nodes: {
 	doc: { content: 'block*' },
 	text: { group: 'inline' },
-	source_block: { group: 'block', content: 'inline*', marks: 'strong em underline', whitespace: 'pre', attrs: anchors,
+	source_block: { group: 'block', content: 'inline*', marks: 'strong em underline color', whitespace: 'pre', attrs: anchors,
 		toDOM(node) {
 			const tag = node.attrs.role === 'heading' ? 'h' + Math.max(1, Math.min(6, Number(node.attrs.level) || 2)) : 'p';
 			return [tag, { class: 'source-block', 'data-source-role': node.attrs.role }, 0];
@@ -27,7 +32,8 @@ export const visualSchema = new Schema({ nodes: {
 }, marks: {
 	strong: { toDOM: () => ['strong', 0] },
 	em: { toDOM: () => ['em', 0] },
-	underline: { toDOM: () => ['u', 0] }
+	underline: { toDOM: () => ['u', 0] },
+	color: { attrs: { value: {} }, toDOM: mark => ['span', { style: /^[0-9A-F]{6}$/.test(mark.attrs.value) ? `color:#${mark.attrs.value}` : '' }, 0] }
 } });
 
 interface InlineSegment {
@@ -49,11 +55,11 @@ export interface VisualProjection {
 const normalized = (value: string) => value.replace(/\r\n|\r/g, '\n');
 function sourceWrapper(source: SourceDocument, node: SyntaxNode): InlineWrapper {
 	const open = source.read(node.span.from, node.content!.from), close = source.read(node.content!.to, node.span.to);
-	return Object.freeze({ open, close, safe: Object.hasOwn(visualFormatMarks, node.name) && open === `\\${node.name}{` && close === '}' });
+	return Object.freeze({ open, close, safe: close === '}' && (Object.hasOwn(visualFormatMarks, node.name) && open === `\\${node.name}{` || colorKey.test(node.name) && /^\\textcolor\[HTML\]\{[0-9a-fA-F]{6}\}\{$/.test(open)) });
 }
 function canonicalWrappers(marks: readonly string[]): readonly InlineWrapper[] {
-	return Object.freeze(visualMarkOrder.filter(mark => marks.includes(mark)).map(mark => Object.freeze({
-		open: `\\${visualMarkCommands[mark]}{`, close: '}', safe: true
+	return Object.freeze(orderedMarks(marks).map(mark => Object.freeze({
+		open: colorKey.test(mark) ? `\\textcolor[HTML]{${mark.slice(6)}}{` : `\\${visualMarkCommands[mark]}{`, close: '}', safe: true
 	})));
 }
 function sameMarkSet(left: readonly string[], right: readonly string[]): boolean {
@@ -94,7 +100,7 @@ function decodeInline(source: SourceDocument, nodes: readonly SyntaxNode[]): { c
 			if (!plain.length) return true;
 			const from = plain[0]!.span.from, to = plain.at(-1)!.span.to;
 			const decoded = decodePlain(source, plain, from, to); if (!decoded) return false;
-			if (decoded.text) children.push(visualSchema.text(decoded.text, marks.map((name) => visualSchema.marks[name]!.create())));
+			if (decoded.text) children.push(visualSchema.text(decoded.text, marks.map(createVisualMark)));
 			segments.push(Object.freeze({ from: offset, to: offset + decoded.text.length, editFrom: from, editTo: to,
 				boundaries: decoded.boundaries, marks: Object.freeze([...marks]), wrapped, wrappers: Object.freeze([...wrappers]) }));
 			offset += decoded.text.length; plain = []; return true;
@@ -108,7 +114,7 @@ function decodeInline(source: SourceDocument, nodes: readonly SyntaxNode[]): { c
 				segments.push(Object.freeze({ from: offset, to: offset, editFrom: node.span.from, editTo: node.span.from,
 					boundaries: Object.freeze([0]), marks: Object.freeze([...marks]), wrapped: true, wrappers: Object.freeze([...wrappers]) }));
 				children.push(visualSchema.nodes.math_inline!.create({ from: node.span.from, to: node.span.to, editFrom: node.content.from, editTo: node.content.to,
-					source: source.read(node.span.from, node.span.to), latex: source.read(node.content.from, node.content.to), inline: true }, undefined, marks.map((name) => visualSchema.marks[name]!.create())));
+					source: source.read(node.span.from, node.span.to), latex: source.read(node.content.from, node.content.to), inline: true }, undefined, marks.map(createVisualMark)));
 				segments.push(Object.freeze({ from: offset, to: offset + 1, editFrom: node.span.from, editTo: node.span.to,
 					boundaries: Object.freeze([0, node.span.to - node.span.from]), marks: Object.freeze([...marks]), wrapped,
 					wrappers: Object.freeze([...wrappers]), atom: true }));
@@ -118,9 +124,10 @@ function decodeInline(source: SourceDocument, nodes: readonly SyntaxNode[]): { c
 				continue;
 			}
 			if (node.kind !== 'format' || !node.content) return false;
-			const name = visualFormatMarks[node.name];
+			const name = colorKey.test(node.name) ? node.name : visualFormatMarks[node.name];
 			if (!name) return false;
-			const nested = node.name === 'emph' && marks.includes('em') ? marks.filter((mark) => mark !== 'em') : [...new Set([...marks, name])];
+			const inherited = colorKey.test(name) ? marks.filter(mark => !colorKey.test(mark)) : marks;
+			const nested = node.name === 'emph' && marks.includes('em') ? marks.filter((mark) => mark !== 'em') : [...new Set([...inherited, name])];
 			const nestedWrappers = Object.freeze([...wrappers, sourceWrapper(source, node)]);
 			if (!walk(node.children, nested, nestedWrappers, true)) return false;
 			if (!node.children.length) segments.push(Object.freeze({ from: offset, to: offset, editFrom: node.content.from, editTo: node.content.to,
@@ -301,12 +308,12 @@ function insertedMarkNames(fragment: Fragment, expected: string): readonly strin
 	fragment.forEach(node => {
 		if (!node.isText) { valid = false; return; }
 		value += node.text ?? '';
-		const names = node.marks.map(mark => mark.type.name);
-		if (names.some(name => !Object.hasOwn(visualMarkCommands, name)) || marks && !sameMarkSet(marks, names)) valid = false;
+		const names = node.marks.map(visualMarkName);
+		if (names.some(name => !supportedVisualMark(name)) || marks && !sameMarkSet(marks, names)) valid = false;
 		if (marks === null) marks = names;
 	});
 	if (!valid || value !== expected || marks === null) return null;
-	return Object.freeze(visualMarkOrder.filter(mark => marks!.includes(mark)));
+	return Object.freeze(orderedMarks(marks!));
 }
 function markedTextInsertion(
 	source: SourceDocument, projection: VisualProjection, transaction: Transaction, index: number, before: VisualNode,
@@ -322,7 +329,7 @@ function markedTextInsertion(
 	const oldCaret = transaction.before.resolve(oldStart + from);
 	const side: VisualCaretSide = oldCaret.nodeAfter?.isAtom ? 'atom' : oldCaret.nodeAfter?.isText ? 'right'
 		: oldCaret.nodeBefore?.isText ? 'left' : 'atom';
-	const anchor = visualCaretAnchor(projection, index, before, from, side, oldCaret.marks().map(mark => mark.type.name));
+	const anchor = visualCaretAnchor(projection, index, before, from, side, oldCaret.marks().map(visualMarkName));
 	if (!anchor || anchor.segment >= segments.length) throw new Error('VISUAL_INLINE_BOUNDARY');
 	const segment = segments[anchor.segment]!, local = from - segment.from;
 	if (local < 0 || local >= segment.boundaries.length || sameMarkSet(segment.marks, marks) ||
@@ -429,7 +436,7 @@ function blockEdits(source: SourceDocument, projection: VisualProjection, transa
 			const segmentIndex = inline.findIndex((segment) => {
 				if (segment.atom) return false;
 				if (segment.from > from || segment.to < oldTo) return false;
-				const insertion = inserted ? Fragment.from(visualSchema.text(inserted, segment.marks.map((name) => visualSchema.marks[name]!.create()))) : Fragment.empty;
+				const insertion = inserted ? Fragment.from(visualSchema.text(inserted, segment.marks.map(createVisualMark))) : Fragment.empty;
 				return before.content.cut(0, from).append(insertion).append(before.content.cut(oldTo)).eq(after.content);
 			});
 			if (segmentIndex < 0 && from === oldTo) {
@@ -441,7 +448,7 @@ function blockEdits(source: SourceDocument, projection: VisualProjection, transa
 				const origin = inline.findIndex((segment) => {
 					if (segment.atom) return false;
 					if (segment.from > from || segment.to < from) return false;
-					const insertion = inserted ? Fragment.from(visualSchema.text(inserted, segment.marks.map((name) => visualSchema.marks[name]!.create()))) : Fragment.empty;
+					const insertion = inserted ? Fragment.from(visualSchema.text(inserted, segment.marks.map(createVisualMark))) : Fragment.empty;
 					return before.content.cut(0, from).append(insertion).append(before.content.cut(oldTo)).eq(after.content);
 				});
 				if (origin < 0) throw new Error('VISUAL_INLINE_BOUNDARY');

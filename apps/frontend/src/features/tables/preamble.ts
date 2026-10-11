@@ -1,10 +1,28 @@
 import { parseSource, projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan } from '@modutex/document-core';
 import type { EditorState } from '@codemirror/state';
+import type { Transaction } from '@codemirror/state';
 import { insertionTransaction, rangeInsertionTarget, sourceState, visualInsertionTransaction, type InsertionTarget } from '../source-editor/state.ts';
 
 export interface PackagePlan { readonly span: SourceSpan; readonly insert: string }
+/** Apply a required package in the same source history entry as the content. */
+export function withPackage(state: EditorState, transaction: Transaction, name: 'amsmath' | readonly ('amsmath' | 'amssymb')[]): Transaction {
+	if (!transaction.docChanged) return transaction;
+	const source = state.field(sourceState).projection.document;
+	const parsed = parseSource(source);
+	const plans = (typeof name === 'string' ? [name] : [...new Set(name)]).map(value => packagePlan(source, parsed, value)).filter((plan): plan is PackagePlan => plan !== null);
+	if (!plans.length) return transaction;
+	const target = rangeInsertionTarget(state, plans[0]!.span);
+	const insert = plans.map(plan => plan.insert).join('');
+	const changes = [{ from: target.from, to: target.to, insert }];
+	transaction.changes.iterChanges((from, to, _a, _b, value) => changes.push({ from, to, insert: value.toString() }));
+	if (changes.slice(1).some(change => change.from < target.to || change.from === target.from)) throw new Error('PREAMBLE_RANGE');
+	return state.update({ changes, selection: { anchor: transaction.newSelection.main.head + insert.length }, userEvent: 'input.tool' });
+}
 /** Inspect current parser nodes, not arbitrary substrings in comments, macros or document text. */
 export function booktabsPlan(source: SourceDocument, parsed: SourceProjection): PackagePlan | null {
+	return packagePlan(source, parsed, 'booktabs');
+}
+export function packagePlan(source: SourceDocument, parsed: SourceProjection, name: 'booktabs' | 'xcolor' | 'amsmath' | 'amssymb'): PackagePlan | null {
 	if (!projectionIsCurrent(source, parsed)) throw new Error('STALE_PREAMBLE');
 	const documents = parsed.nodes.filter(node => node.kind === 'environment' && node.name === 'document');
 	const body = documents[0];
@@ -15,11 +33,11 @@ export function booktabsPlan(source: SourceDocument, parsed: SourceProjection): 
 		const command = source.read(node.span.from, node.span.to);
 		const match = /^\\(?:usepackage|RequirePackage)\s*(?:\[[^\[\]\\%]*\]\s*)?\{([A-Za-z0-9_.-]+(?:\s*,\s*[A-Za-z0-9_.-]+)*)\}$/.exec(command);
 		if (!match) throw new Error('PREAMBLE_UNSUPPORTED');
-		if (match[1]!.split(',').some(name => name.trim() === 'booktabs')) return null;
+		if (match[1]!.split(',').some(value => value.trim() === name)) return null;
 	}
 	const at = body.span.from;
 	const before = at ? source.read(at - 1, at) : '';
-	return { span: { documentId: source.documentId, version: source.version, from: at, to: at }, insert: (before && !/[\r\n]/.test(before) ? '\n' : '') + '\\usepackage{booktabs}\n' };
+	return { span: { documentId: source.documentId, version: source.version, from: at, to: at }, insert: (before && !/[\r\n]/.test(before) ? '\n' : '') + `\\usepackage{${name}}\n` };
 }
 
 /** Package insertion and table replacement are one history entry, never a partial preamble write. */

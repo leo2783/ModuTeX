@@ -6,6 +6,10 @@
 	"licenseDecision": "Pending independent provenance review; new packages remain private UNLICENSED until review",
 	"references": [
 		{
+			"id": "frontend-math-parity-20261011",
+			"path": "docs/architecture/FRONTEND_MATH_PARITY_2026-10-11.md"
+		},
+		{
 			"id": "frontend-compile-errors-20261011",
 			"path": "docs/architecture/FRONTEND_COMPILE_ERRORS_2026-10-11.md"
 		},
@@ -48,34 +52,77 @@
 	],
 	"files": [
 		{
+			"path": "apps/frontend/tests/editor/math-parity.test.ts",
+			"origin": "New independently authored implementation from owner-approved functional behavior; no legacy implementation copied",
+			"reviewStatus": "Actual AGY3 and API Luna3 reviewed by root; source transactions and real GUI/native compilation verified; application-wide provenance remains pending",
+			"referenceIds": [
+				"frontend-math-parity-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/src/features/code/CodePanel.svelte",
+			"origin": "New independently authored implementation from owner-approved functional behavior; no legacy implementation copied",
+			"reviewStatus": "Actual AGY3 and API Luna3 reviewed by root; source transactions and real GUI/native compilation verified; application-wide provenance remains pending",
+			"referenceIds": [
+				"frontend-math-parity-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/src/features/code/source.ts",
+			"origin": "New independently authored implementation from owner-approved functional behavior; no legacy implementation copied",
+			"reviewStatus": "Actual AGY3 and API Luna3 reviewed by root; source transactions and real GUI/native compilation verified; application-wide provenance remains pending",
+			"referenceIds": [
+				"frontend-math-parity-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/src/features/math/catalog.ts",
+			"origin": "New independently authored implementation from owner-approved functional behavior; no legacy implementation copied",
+			"reviewStatus": "Actual AGY3 and API Luna3 reviewed by root; source transactions and real GUI/native compilation verified; application-wide provenance remains pending",
+			"referenceIds": [
+				"frontend-math-parity-20261011"
+			]
+		},
+		{
 			"path": "apps/frontend/src/components/FileTree.svelte",
 			"origin": "New original nested file tree from owner-approved functional requirements",
 			"reviewStatus": "Root implementation; existing desktop file contracts reused without legacy UI imports",
-			"referenceIds": ["frontend-inline-20261011"]
+			"referenceIds": [
+				"frontend-inline-20261011"
+			]
 		},
 		{
 			"path": "apps/frontend/src/features/math/inline.ts",
 			"origin": "New original document-local editor using the existing shared MathLive field factory and source transactions",
-			"reviewStatus": "Root implementation; real browser commit/cancel verified; application-wide provenance remains pending",
-			"referenceIds": ["frontend-inline-20261011"]
+			"reviewStatus": "AGY independent catalog/inline patch integrated and reviewed by root; real GUI commit/cancel verified; application-wide provenance remains pending",
+			"referenceIds": [
+				"frontend-math-parity-20261011",
+				"frontend-inline-20261011"
+			]
 		},
 		{
 			"path": "apps/frontend/src/features/math/matrix.ts",
 			"origin": "Owner-authorized reuse of the project owner's original 0.1.0 matrixResize.ts parser, with new grid and base-array adaptation; no legacy UI imports",
 			"reviewStatus": "User explicitly confirmed authorship and authorized direct reuse on 2026-10-11; runtime and source-preservation checks recorded separately from application-wide provenance review",
-			"referenceIds": ["frontend-notebook-20261011"]
+			"referenceIds": [
+				"frontend-notebook-20261011"
+			]
 		},
 		{
 			"path": "apps/frontend/tests/editor/notebook-cells.test.ts",
 			"origin": "New API Luna test fixture using actual CodeMirror, ProseMirror and source patch transactions",
 			"reviewStatus": "Root corrected fixture control selection and source-byte expectations; genuine GUI operations validated separately",
-			"referenceIds": ["frontend-notebook-20261011"]
+			"referenceIds": [
+				"frontend-notebook-20261011"
+			]
 		},
 		{
 			"path": "apps/frontend/tests/workspace/parser-client-immediate.test.ts",
 			"origin": "New real ParserEngine acknowledgement fixture checking scheduling without a debounce timer",
 			"reviewStatus": "Passes without simulated parsing; transport scheduling fixture is not GUI latency acceptance",
-			"referenceIds": ["frontend-notebook-20261011"]
+			"referenceIds": [
+				"frontend-notebook-20261011"
+			]
 		},
 		{
 			"path": "apps/frontend/scripts/run-tests.mjs",

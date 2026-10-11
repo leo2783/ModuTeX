@@ -1,10 +1,12 @@
 import { ChangeSet, type EditorState } from '@codemirror/state';
 import { projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan, type SyntaxNode } from '@modutex/document-core';
-import { rangeInsertionTarget, sourceState } from './state.ts';
+import { rangeInsertionTarget, sourceState, sourcePatchTransaction } from './state.ts';
+import { packagePlan } from '../tables/preamble.ts';
 
 export type TextFormat = 'strong' | 'em' | 'underline';
 const commands = { strong: 'textbf', em: 'textit', underline: 'underline' } as const;
 const formats: Record<string, TextFormat> = { textbf: 'strong', textit: 'em', emph: 'em', underline: 'underline' };
+const knownFormat = (name: string) => Object.hasOwn(formats, name) || /^color:[0-9A-F]{6}$/.test(name);
 
 /** Find a source range contained by exactly one decoded text leaf under known format nodes. */
 function selectedTextPath(root: SyntaxNode, from: number, to: number): SyntaxNode[] | null {
@@ -14,7 +16,7 @@ function selectedTextPath(root: SyntaxNode, from: number, to: number): SyntaxNod
 			if (node.span.from <= from && node.span.to >= to) paths.push([...wrappers, node]);
 			return;
 		}
-		if (node.kind !== 'format' || !node.content || !Object.hasOwn(formats, node.name)) return;
+		if (node.kind !== 'format' || !node.content || !knownFormat(node.name)) return;
 		const next = [...wrappers, node];
 		for (const child of node.children) visit(child, next);
 	};
@@ -28,7 +30,7 @@ function isSafeNestedTextPath(root: SyntaxNode, path: readonly SyntaxNode[]): bo
 	const visit = (node: SyntaxNode, index: number): boolean => {
 		if (node === leaf) return node.kind === 'text';
 		if (node.kind === 'text') return true;
-		if (node !== path[index] || node.kind !== 'format' || !node.content || !Object.hasOwn(formats, node.name)) return false;
+		if (node !== path[index] || node.kind !== 'format' || !node.content || !knownFormat(node.name)) return false;
 		const next = path[index + 1];
 		if (!next) return false;
 		let found = false;
@@ -135,7 +137,7 @@ function collectInlineRange(nodes: readonly SyntaxNode[], source: SourceDocument
 		if (invalid || node.span.to <= from || node.span.from >= to) return;
 		if (node.kind === 'text') { leaves.push({ node, wrappers }); return; }
 		if (node.kind === 'format') {
-			if (!node.content || !Object.hasOwn(formats, node.name)) { invalid = true; return; }
+			if (!node.content || !knownFormat(node.name)) { invalid = true; return; }
 			const next = [...wrappers, node];
 			for (const child of node.children) visit(child, next);
 			return;
@@ -164,7 +166,7 @@ function collectInlineRange(nodes: readonly SyntaxNode[], source: SourceDocument
 
 function isKnownTextTree(node: SyntaxNode): boolean {
 	if (node.kind === 'text') return true;
-	return node.kind === 'format' && !!node.content && Object.hasOwn(formats, node.name) &&
+	return node.kind === 'format' && !!node.content && knownFormat(node.name) &&
 		node.children.every(isKnownTextTree);
 }
 
@@ -329,6 +331,20 @@ function applyInlineRange(state: EditorState, range: InlineRange, format: TextFo
 export function formatShortcut(event: KeyboardEvent): TextFormat | null {
 	if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat || event.altKey || event.shiftKey || event.ctrlKey === event.metaKey) return null;
 	return ({ b: 'strong', i: 'em', u: 'underline' } as Record<string, TextFormat>)[event.key.toLowerCase()] ?? null;
+}
+
+/** Color only decoded text leaves; unknown commands and math remain opaque. */
+export function colorTransaction(state: EditorState, parsed: SourceProjection, hex: string, span?: SourceSpan) {
+	if (state.readOnly || !/^[0-9a-fA-F]{6}$/.test(hex)) throw new Error('FORMAT_RANGE');
+	const projection = state.field(sourceState).projection, source = projection.document;
+	if (!projectionIsCurrent(source, parsed)) throw new Error('STALE_FORMAT');
+	const selected = span ? rangeInsertionTarget(state, span) : state.selection.main;
+	const from = projection.toSource(selected.from), to = projection.toSource(selected.to);
+	if (!collectInlineRange(parsed.nodes, source, from, to)) throw new Error('FORMAT_RANGE');
+	const plan = packagePlan(source, parsed, 'xcolor');
+	const patches = [{ from, to: from, insert: `\\textcolor[HTML]{${hex.toUpperCase()}}{`, expected: '' }, { from: to, to, insert: '}', expected: '' }];
+	if (plan) patches.unshift({ from: plan.span.from, to: plan.span.to, insert: plan.insert.replace(/\n/g, source.profile.preferredLineEnding), expected: '' });
+	return sourcePatchTransaction(state, source, patches);
 }
 
 /** Explicit source command: preserve existing bytes with boundary-only edits. */

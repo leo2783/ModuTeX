@@ -37,7 +37,7 @@ function installDOM(): { dom: InstanceType<typeof JSDOM>; restore(): void } {
 type CellAction = 'delete' | 'move-up' | 'move-down';
 interface ActionRequest { readonly action: CellAction; readonly span: SourceSpan; readonly adjacent?: SourceSpan }
 interface InsertRequest {
-	readonly kind: 'text' | 'equation' | 'matrix' | 'table';
+	readonly kind: 'text' | 'equation' | 'matrix' | 'table' | 'code';
 	readonly span: SourceSpan;
 	readonly beforeText: boolean;
 }

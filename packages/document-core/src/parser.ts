@@ -268,6 +268,14 @@ export function parseSource(document: Pick<SourceDocument, 'read' | 'documentId'
 						issues.push(Object.freeze({ code: 'UNCLOSED', offset: start }));
 						i = to;
 						nodes.push(node('raw', start, i, cmd.name));
+					} else if (cmd.name === 'textcolor' && !starred && /^\\textcolor\[HTML\]\{[0-9a-fA-F]{6}\}\{/.test(text.slice(start, i))) {
+						const prefix = /^\\textcolor\[HTML\]\{([0-9a-fA-F]{6})\}\{/.exec(text.slice(start, i))!;
+						const opening = start + prefix[0].length - 1;
+						const end = balanced(opening, to);
+						if (end === i) {
+							const colorContent = span(opening + 1, end - 1);
+							nodes.push(node('format', start, i, 'color:' + prefix[1]!.toUpperCase(), colorContent, parse(colorContent.from, colorContent.to, depth + 1)));
+						} else nodes.push(node('raw', start, i, cmd.name));
 					} else if (content && headings.has(cmd.name))
 						nodes.push(node('heading', start, i, cmd.name + (starred ? '*' : ''), content, parse(content.from, content.to, depth + 1)));
 					else if (content && formatting.has(cmd.name) && !starred)

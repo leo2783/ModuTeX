@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { MATH_CATALOG } from '../../apps/frontend/src/features/math/catalog.ts';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -24,7 +25,9 @@ test('built Electron frontend loads, changes route and retains narrow IPC', { ti
   const workspaceDir = join(fixtureDir, 'workspace');
   mkdirSync(workspaceDir);
   const mainPath = join(workspaceDir, 'main.tex');
-  const initialBytes = Buffer.from('\uFEFF\\documentclass{article}\r\n\r\n\\begin{document}\r\n2555\r\n\\par   58866\\end{document}\n', 'utf8');
+  const catalog = process.env.MODUTEX_TEST_MATH_CATALOG === '1' ? '\\usepackage{amsmath,amssymb,xcolor}\r\n' : '';
+  const examples = catalog ? MATH_CATALOG.flatMap(category => category.items).map(item => '\\[' + item.latex.replace(/#[@?]/g, 'x').replace(/\n/g, '\r\n') + '\\]\r\n').join('') + '\\textcolor[HTML]{B42318}{Color sample}\r\n\\begin{verbatim}\r\nconst value = "<script>";\r\n\\end{verbatim}\r\n' : '';
+  const initialBytes = Buffer.from('\uFEFF\\documentclass{article}\r\n'+catalog+'\r\n\\begin{document}\r\n2555\r\n\\par   58866\r\n'+examples+'\\end{document}\n', 'utf8');
   writeFileSync(mainPath, initialBytes);
   cpSync(join(repository, '.verification-artifacts/frontend-runtime-2026-10-07/tectonic-cache'), join(fixtureDir, 'tectonic-cache'), {recursive:true});
   writeFileSync(join(fixtureDir, 'frontend-recent-v1.json'), JSON.stringify({version:1,entries:[{id:randomUUID(),selected:mainPath,kind:'file',openedAt:Date.now()}]}));

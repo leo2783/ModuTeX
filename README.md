@@ -28,7 +28,8 @@ The new workbench opens in Visual mode, with icons for Source mode and equation,
 Right-click files to open, compile to PDF or copy their relative path. Compilation failures automatically show details; the compilation status also provides a log toggle. See [failure handling and validation](docs/architecture/FRONTEND_COMPILE_ERRORS_2026-10-11.md).
 
 - **Visual and source editing** — edit supported document structures visually, with direct access to LaTeX source for custom commands and layouts.
-- **Equations and matrices** — insert mathematical content and edit matrices within the document.
+- **Equations and matrices** — use one math menu for inline equations and cells, with Greek letters, limits, calculus, common formulas, multiline functions, and editable matrix grids.
+- **Code and color** — insert literal code cells and apply preset or custom colors to selected text.
 - **Editable tables** — manage rows and columns, adjust column widths, choose caption placement, and apply common academic table styles.
 - **Built-in PDF compilation** — use the bundled Tectonic engine without installing a separate TeX distribution. Missing resources are downloaded from a fixed source and cached locally.
 - **English and Traditional Chinese** — switch the interface language in preferences.
@@ -63,6 +64,8 @@ npm run electron:frontend
 ```
 
 The new workbench is under development and is not the published 0.1.0 package. `npm run electron:dev` opens the legacy editor on port 5173. Stop the current development process with `Ctrl+C` before switching launch modes. See [Frontend and Electron integration](docs/architecture/FRONTEND_ELECTRON_INTEGRATION.md) for validation details and limitations.
+
+Frontend development, builds and tests first rebuild the shared document core and contracts. The unified math menu includes inline equations, matrix cells, Greek letters, limits, calculus and multiline templates; code cells and text colors share document undo. See [Math and content acceptance](docs/architecture/FRONTEND_MATH_PARITY_2026-10-11.md).
 
 Build the legacy production app or run its verification suite:
 

@@ -5,6 +5,10 @@
 	"type": "module",
 	"license": "UNLICENSED",
 	"scripts": {
+		"build:shared": "npm run build --workspace=@modutex/document-core && npm run build --workspace=@modutex/frontend-contracts",
+		"predev": "npm run build:shared",
+		"prebuild": "npm run build:shared",
+		"pretest": "npm run build:shared",
 		"dev": "vite --host 127.0.0.1 --port 5174 --strictPort",
 		"build": "vite build",
 		"check": "svelte-check --tsconfig ./tsconfig.json",

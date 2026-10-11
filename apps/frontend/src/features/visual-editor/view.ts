@@ -4,8 +4,9 @@ import { DOMSerializer, type Node as VisualNode } from 'prosemirror-model';
 import { projectionIsCurrent, type SourceDocument, type SourcePatch, type SourceProjection, type SourceSpan } from '@modutex/document-core';
 import { parseTable, columnPercentages, type TableDraft } from '../tables/source.ts';
 import type { EquationDraft } from '../math/source.ts';
+import { parseVerbatimContent } from '../code/source.ts';
 import { formatShortcut, type TextFormat } from '../source-editor/format.ts';
-import { advanceVisual, prepareVisualEdit, projectVisual, visualCaretAnchor, visualSchema, type VisualProjection } from './schema.ts';
+import { advanceVisual, prepareVisualEdit, projectVisual, visualCaretAnchor, visualSchema, visualMarkName, createVisualMark, supportedVisualMark, type VisualProjection } from './schema.ts';
 import { text, type Language } from '../../i18n/text.ts';
 
 interface VisualOptions {
@@ -26,7 +27,7 @@ interface VisualOptions {
 	equation?(draft: EquationDraft, span: SourceSpan): void;
 	format?(format: TextFormat): void;
 	raw?(source: string, span: SourceSpan): void;
-	insertBlock?(kind: 'text' | 'equation' | 'matrix' | 'table', span: SourceSpan, beforeText: boolean): void;
+	insertBlock?(kind: 'text' | 'equation' | 'matrix' | 'table' | 'code', span: SourceSpan, beforeText: boolean): void;
 	cellAction?(action: 'delete' | 'move-up' | 'move-down', span: SourceSpan, adjacent?: SourceSpan): boolean | void;
 	cellSelected?(span: SourceSpan): void;
 	cellDone?(): void;
@@ -113,7 +114,7 @@ export class VisualEditor {
 		let from = this.view.state.selection.from, to = from, matched = false;
 		this.view.state.doc.descendants((node, pos) => {
 			if (matched) return false;
-			if (['math_inline', 'math_block', 'table_block'].includes(node.type.name) && node.attrs.from === span.from && node.attrs.to === span.to) { from = pos; to = pos + node.nodeSize; matched = true; return false; }
+			if (['math_inline', 'math_block', 'table_block', 'raw_block'].includes(node.type.name) && node.attrs.from === span.from && node.attrs.to === span.to) { from = pos; to = pos + node.nodeSize; matched = true; return false; }
 			if (span.from === span.to && typeof node.attrs.to === 'number' && node.attrs.to === span.from) { from = pos + node.nodeSize; to = from; matched = true; return false; }
 			if (span.from === span.to && typeof node.attrs.from === 'number' && span.from <= node.attrs.from) { from = pos; to = pos; matched = true; return false; }
 		});
@@ -217,7 +218,7 @@ export class VisualEditor {
 		this.inserterButtons.add(trigger);
 		const menu = doc.createElement('div');
 		menu.className = 'boundary-menu';
-		const makeItem = (kind: 'text' | 'equation' | 'matrix' | 'table', label: string, title: string) => {
+		const makeItem = (kind: 'text' | 'equation' | 'matrix' | 'table' | 'code', label: string, title: string) => {
 			const button = doc.createElement('button');
 			button.type = 'button';
 			button.className = 'boundary-btn';
@@ -247,7 +248,8 @@ export class VisualEditor {
 			makeItem('text', this.text('文字', 'Text'), this.text('插入文字段落', 'Insert text paragraph')),
 			makeItem('equation', this.text('公式', 'Equation'), this.text('插入公式', 'Insert equation')),
 			makeItem('matrix', this.text('矩陣', 'Matrix'), this.text('插入矩陣', 'Insert matrix')),
-			makeItem('table', this.text('表格', 'Table'), this.text('插入表格', 'Insert table'))
+			makeItem('table', this.text('表格', 'Table'), this.text('插入表格', 'Insert table')),
+			makeItem('code', this.text('程式碼', 'Code'), this.text('插入程式碼區塊', 'Insert code block'))
 		);
 		container.append(trigger, menu);
 		return container;
@@ -269,7 +271,7 @@ export class VisualEditor {
 		let typeName = this.text('文字', 'Text');
 		if (node.type.name === 'math_block') typeName = this.text('公式', 'Equation');
 		else if (node.type.name === 'table_block') typeName = this.text('表格', 'Table');
-		else if (node.type.name === 'raw_block') typeName = this.text('原始碼', 'Raw LaTeX');
+		else if (node.type.name === 'raw_block') typeName = ['verbatim', 'verbatim*'].includes(node.attrs.name) ? this.text('程式碼', 'Code') : this.text('原始碼', 'Raw LaTeX');
 		typeBadge.textContent = typeName;
 
 		const leftGroup = doc.createElement('div');
@@ -291,7 +293,7 @@ export class VisualEditor {
 			this.cellActionButtons.add(trigger);
 			const menu = doc.createElement('div');
 			menu.className = 'cell-insert-menu';
-			const makeItem = (kind: 'text' | 'equation' | 'matrix' | 'table', label: string) => {
+			const makeItem = (kind: 'text' | 'equation' | 'matrix' | 'table' | 'code', label: string) => {
 				const button = doc.createElement('button');
 				button.type = 'button';
 				button.className = 'cell-menu-btn';
@@ -320,7 +322,8 @@ export class VisualEditor {
 				makeItem('text', this.text('文字', 'Text')),
 				makeItem('equation', this.text('公式', 'Equation')),
 				makeItem('matrix', this.text('矩陣', 'Matrix')),
-				makeItem('table', this.text('表格', 'Table'))
+				makeItem('table', this.text('表格', 'Table')),
+				makeItem('code', this.text('程式碼', 'Code'))
 			);
 			wrap.append(trigger, menu);
 			return wrap;
@@ -526,9 +529,11 @@ export class VisualEditor {
 				let node = initial, destroyed = false;
 				const document = target.ownerDocument;
 				const dom = document.createElement('section'); dom.className = 'visual-raw'; dom.contentEditable = 'false';
-				const code = document.createElement('pre'); code.className = 'raw-latex'; code.setAttribute('aria-label', 'Raw LaTeX');
-				const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.textContent = this.text('編輯原始碼', 'Edit source'); button.disabled = true;
-				const render = () => { code.textContent = String(node.attrs.source); }; render();
+				const isCode = ['verbatim', 'verbatim*'].includes(node.attrs.name);
+				const code = document.createElement('pre'); code.className = isCode ? 'code-content' : 'raw-latex'; code.setAttribute('aria-label', isCode ? this.text('程式碼區塊', 'Code block') : 'Raw LaTeX');
+				const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.textContent = isCode ? this.text('編輯程式碼', 'Edit code') : this.text('編輯原始碼', 'Edit source'); button.disabled = true;
+				button.dataset.code = String(isCode);
+				const render = () => { code.textContent = isCode ? parseVerbatimContent(String(node.attrs.source).replace(/^\\begin\{verbatim\*?\}/, '').replace(/\\end\{verbatim\*?\}$/, '')) : String(node.attrs.source); }; render();
 				const edit = () => {
 					if (destroyed || !this.editable() || !this.options.raw) return;
 					const anchored = this.anchorAt(getPos(), node); if (!anchored) return;
@@ -545,7 +550,7 @@ export class VisualEditor {
 					}
 				});
 				return { dom, stopEvent: () => true, ignoreMutation: () => true,
-					update: next => { if (next.type !== node.type) return false; const changed = next.attrs.source !== node.attrs.source; node = next; if (changed) render(); return true; },
+					update: next => { if (next.type !== node.type || next.attrs.name !== node.attrs.name) return false; const changed = next.attrs.source !== node.attrs.source; node = next; if (changed) render(); return true; },
 					destroy: () => { destroyed = true; button.removeEventListener('click', edit); this.rawButtons.delete(button); }
 				};
 			}, table_block: (initial, _view, getPos) => {
@@ -705,7 +710,8 @@ export class VisualEditor {
 		for (const button of this.rawButtons) {
 			const disabled = !editable || !this.options.raw;
 			if (button.disabled !== disabled) button.disabled = disabled;
-			if (button.textContent !== rawText) button.textContent = rawText;
+			const label = button.dataset.code === 'true' ? this.text('編輯程式碼', 'Edit code') : rawText;
+			if (button.textContent !== label) button.textContent = label;
 		}
 		const tableText = this.text('編輯表格', 'Edit table');
 		for (const button of this.tableButtons) {
@@ -741,16 +747,16 @@ export class VisualEditor {
 		const side = resolved.nodeAfter?.isAtom ? 'atom' : resolved.nodeAfter?.isText ? 'right'
 			: resolved.nodeBefore?.isText ? 'left' : 'atom';
 		const anchor = visualCaretAnchor(this.projection, index, this.projection.document.child(index), resolved.parentOffset, side,
-			resolved.marks().map(mark => mark.type.name));
+			resolved.marks().map(visualMarkName));
 		if (!anchor) return false;
-		const active = state.storedMarks === null ? [...anchor.marks] : state.storedMarks.map(mark => mark.type.name);
-		if (active.some(name => !['strong', 'em', 'underline'].includes(name))) return false;
+		const active = state.storedMarks === null ? [...anchor.marks] : state.storedMarks.map(visualMarkName);
+		if (active.some(name => !supportedVisualMark(name))) return false;
 		const next = new Set(active);
 		if (next.has(format)) next.delete(format); else next.add(format);
-		const nextNames = ['strong', 'em', 'underline'].filter(name => next.has(name));
+		const nextNames = [...next];
 		const changesSourceMarks = nextNames.length !== anchor.marks.length || nextNames.some(name => !anchor.marks.includes(name));
 		if (changesSourceMarks && !anchor.safeToSplit) return false;
-		this.view.dispatch(state.tr.setStoredMarks(nextNames.map(name => visualSchema.marks[name]!.create())));
+		this.view.dispatch(state.tr.setStoredMarks(nextNames.map(createVisualMark)));
 		return true;
 	}
 	setLabel(label: string): void {
