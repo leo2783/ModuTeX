@@ -205,6 +205,10 @@ button.primary {
 .sidebar-scroll { min-height: 0; flex: 1; overflow: auto; }
 .workspace-name { padding: 4px 12px; font-size: 12px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .compile-status { padding: 6px 16px; border-bottom: 1px solid var(--line); background: var(--canvas); font-size: 13px; }
+.compile-progress { height: 4px; margin-top: 6px; overflow: hidden; background: var(--line); border-radius: 2px; }
+.compile-progress span { display: block; width: 30%; height: 100%; background: var(--accent); animation: compile-progress 1.4s ease-in-out infinite; }
+@keyframes compile-progress { from { transform: translateX(-100%); } to { transform: translateX(334%); } }
+@media (prefers-reduced-motion: reduce) { .compile-progress span { animation: none; margin-inline: auto; } }
 .inline-equation-draft { display: block; position: relative; padding-block: 8px; min-height: 48px; }
 .inline-equation-draft.is-inline { display: inline-flex; align-items: baseline; }
 .inline-equation-tools { display: flex; gap: 2px; margin-bottom: 4px; }

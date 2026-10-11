@@ -1175,6 +1175,10 @@
 			{#if !compiling && compileNoticeState?.[1] === 'Compilation completed'}
 				 · {pdfDisplayFailed ? t('PDF 無法顯示，請查看錯誤訊息。', 'PDF could not be displayed. Review the error message.') : pdfRendered ? t('PDF 已更新', 'PDF updated') : t('正在顯示 PDF…', 'Displaying PDF…')}
 			{/if}
+			{#if compiling || compileNoticeState?.[1] === 'Compilation completed' && !pdfRendered && !pdfDisplayFailed}
+				<div class="compile-progress" role="progressbar" aria-label={t('編譯進度', 'Compilation progress')}
+					aria-valuetext={compiling ? compileCancellationRequestedFor === compileTicket ? t('正在取消編譯', 'Cancelling compilation') : t('編譯中', 'Compiling') : t('正在顯示 PDF', 'Displaying PDF')}><span></span></div>
+			{/if}
 		</div>
 	{/if}
 	{#if route === 'home'}{#key homeLoadKey}{#await import('./pages/Home.svelte')}<main class="empty-state" role="status"><p>{t('正在開啟首頁…', 'Loading home…')}</p></main>{:then { default: Home }}<Home locale={preferences.language} desktop={!!desktop} busy={opening || saving || compiling || desktopLoading} currentName={sourceName} {dirty} {recent} {recentNotice} onRecent={openRecent} onRemoveRecent={removeRecent} onOpen={openFromHome} onCreate={newDocument} />{:catch}<main class="empty-state" role="alert"><p>{t('無法載入首頁，文件內容已保留。', 'Home could not be loaded. Your document is preserved.')}</p><button onclick={() => homeLoadKey++}>{t('重試', 'Retry')}</button></main>{/await}{/key}{/if}
