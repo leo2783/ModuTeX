@@ -1,4 +1,4 @@
-// Original ModuTeX implementation. License pending provenance review.
+// SPDX-License-Identifier: Apache-2.0
 export type LineEnding = '\n' | '\r\n' | '\r';
 
 export interface SourceProfile {

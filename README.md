@@ -89,4 +89,4 @@ Draw.io, Mermaid, visual section folding, and signed installers are outside the 
 
 ## License
 
-ModuTeX is derived from Texpile and licensed under [AGPL-3.0-only](LICENSE). The original utilities explicitly listed in [LICENSING.md](LICENSING.md) use Apache-2.0. Third-party components retain their respective licenses and notices.
+ModuTeX is derived from Texpile and licensed under [AGPL-3.0-only](LICENSE). The original frontend packages and utilities explicitly listed in [LICENSING.md](LICENSING.md) use Apache-2.0. Third-party components retain their respective licenses and notices.

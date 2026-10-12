@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
-	"license": "UNLICENSED",
+	"license": "Apache-2.0",
 	"scripts": {
 		"build:shared": "npm run build --workspace=@modutex/document-core && npm run build --workspace=@modutex/frontend-contracts",
 		"predev": "npm run build:shared",

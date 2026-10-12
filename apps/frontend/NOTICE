@@ -1,0 +1,13 @@
+ModuTeX original frontend components
+Copyright 2026 ModuTeX contributors
+
+The original code in this package, including owner-authored matrix functionality,
+is licensed under Apache-2.0 by the project owner on 2026-10-12.
+
+Third-party dependencies, bundled license documents and generated third-party
+runtimes retain their respective licenses. The generated MathLive input-only
+runtime is a derivative of MIT MathLive; its fonts retain their separate OFL
+licenses. See THIRD_PARTY_NOTICES.md when distributing the frontend bundle.
+
+This notice does not relicense the existing Electron host, legacy frontends
+or previously released AGPL application. See the repository LICENSING.md.

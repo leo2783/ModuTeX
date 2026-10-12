@@ -1,4 +1,4 @@
-// Original ModuTeX implementation. License pending provenance review.
+// SPDX-License-Identifier: Apache-2.0
 import { mount } from 'svelte';
 import App from './App.svelte';
 import './styles/base.css';

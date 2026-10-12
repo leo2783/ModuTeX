@@ -8,6 +8,7 @@ const languagePackages = ['angular', 'cpp', 'css', 'go', 'html', 'java', 'javasc
 export default defineConfig({ optimizeDeps: { include: ['@codemirror/language', '@codemirror/state', '@codemirror/view', '@lezer/highlight', 'prosemirror-model', 'prosemirror-state', 'prosemirror-view'], exclude: ['mathlive', '@codemirror/language-data', '@codemirror/legacy-modes', ...languagePackages] }, ssr: { optimizeDeps: { exclude: ['svelte', 'svelte/server', 'svelte/internal/server'] } }, plugins: [mathLiveInputOnlyPlugin(), svelte(), {
 	name: 'frontend-notices',
 	async generateBundle() {
+		for (const fileName of ['LICENSE', 'NOTICE']) this.emitFile({ type: 'asset', fileName, source: await readFile(new URL('./' + fileName, import.meta.url), 'utf8') });
 		this.emitFile({ type: 'asset', fileName: 'THIRD_PARTY_NOTICES.md',
 			source: await readFile(new URL('./THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8') });
 	}

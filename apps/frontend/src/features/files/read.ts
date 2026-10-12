@@ -1,4 +1,4 @@
-// Original ModuTeX implementation. License pending provenance review.
+// SPDX-License-Identifier: Apache-2.0
 import { SourceDocument } from '@modutex/document-core';
 
 export const sourceLimit = 5 * 1024 * 1024;

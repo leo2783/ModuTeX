@@ -1,4 +1,4 @@
-// Original ModuTeX implementation. License pending provenance review.
+// SPDX-License-Identifier: Apache-2.0
 import { byteBoundary, profile, segment, SourceError } from './utf8.ts';
 import type { Segment, SourceProfile } from './utf8.ts';
 import type { SourceChange, SourcePatch } from './changes.ts';

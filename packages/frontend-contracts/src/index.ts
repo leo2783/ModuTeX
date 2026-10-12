@@ -1,4 +1,4 @@
-// Original ModuTeX implementation. License pending provenance review.
+// SPDX-License-Identifier: Apache-2.0
 export type * from './types.ts';
 export { IMAGE_BYTES_LIMIT, imageType, validateImageFile } from './images.ts';
 export {

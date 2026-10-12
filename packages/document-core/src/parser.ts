@@ -1,4 +1,4 @@
-// Original ModuTeX implementation. License pending provenance review.
+// SPDX-License-Identifier: Apache-2.0
 // A conservative source projection, not a TeX interpreter. Every byte stays in SourceDocument.
 import type { SourceSpan } from './changes.ts';
 import { SourceDocument } from './source.ts';

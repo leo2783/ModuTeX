@@ -1,4 +1,4 @@
-// Original ModuTeX implementation. License pending provenance review.
+// SPDX-License-Identifier: Apache-2.0
 export { SourceDocument } from './source.ts';
 export type { SourceTransaction, SourceUpdate } from './source.ts';
 export { mapPosition, remapSpan } from './changes.ts';

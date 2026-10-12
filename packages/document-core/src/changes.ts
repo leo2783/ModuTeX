@@ -1,4 +1,4 @@
-// Original ModuTeX implementation. License pending provenance review.
+// SPDX-License-Identifier: Apache-2.0
 import { SourceError } from './utf8.ts';
 
 export interface SourcePatch {
