@@ -195,9 +195,6 @@
 	}
 	function handleClose() {
 		disposeMatrixPreview();
-		if (typeof window !== 'undefined' && window.mathVirtualKeyboard) {
-			window.mathVirtualKeyboard.hide();
-		}
 		onClose();
 	}
 </script>
@@ -246,7 +243,6 @@
 	.preview-title { font-size: 13px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 6px; }
 	.matrix-preview-host { min-height: 48px; display: flex; align-items: center; justify-content: center; overflow-x: auto; }
 	.matrix-preview-host :global(math-field) { border: none; background: transparent; color: var(--ink); font-size: 16px; }
-	.matrix-preview-host :global(math-field::part(virtual-keyboard-toggle)),
 	.matrix-preview-host :global(math-field::part(menu-toggle)) { display: none !important; }
 	.panel-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 	.panel-error { color: var(--error); line-height: 1.5; }

@@ -1,5 +1,7 @@
 # Third-party notices
 
+MathLive 0.110.0 is shipped as a ModuTeX input-only derivative: eight virtual-keyboard modules and their mounting UI are omitted at build time. The pinned transformation is in `scripts/mathlive-input-only.mjs`; physical keyboard input remains. The full MIT text below and separate font licenses continue to apply.
+
 
 ### MathLive bundled KaTeX fonts
 

@@ -120,7 +120,14 @@
 	<div class="header"><h2>{t('表格', 'Table')}</h2><button class="text-button" onclick={close}>{t('關閉', 'Close')}</button></div>
 	<fieldset disabled={!active || locked}>
 	<div class="options">
-		<label>{t('樣式', 'Style')}<select value={table.style} onchange={(event) => { const style = event.currentTarget.value as TableDraft['style']; table = { ...table, style, rules: style === 'three-line' ? table.rules : 'hline' }; }}><option value="three-line">{t('三線表', 'Three-line')}</option><option value="full">{t('全框線', 'All borders')}</option><option value="horizontal">{t('僅橫線', 'Horizontal lines only')}</option></select></label>
+		<div class="style-choices" role="group" aria-label={t('樣式', 'Style')}>
+			{#each [['three-line', '三線表', 'Three-line'], ['full', '全框線', 'All borders'], ['horizontal', '僅橫線', 'Horizontal lines']] as const as entry}
+				<button type="button" data-style={entry[0]} aria-pressed={table.style === entry[0]} onclick={() => { table = { ...table, style: entry[0], rules: entry[0] === 'three-line' ? table.rules : 'hline' }; }}>
+					<svg width="28" height="22" viewBox="0 0 28 22" fill="none" stroke="currentColor" aria-hidden="true"><path d={entry[0] === 'three-line' ? 'M2 3h24M2 8h24M2 19h24' : entry[0] === 'full' ? 'M2 3h24v16H2zM2 8h24M2 13h24M10 3v16M18 3v16' : 'M2 3h24M2 8h24M2 13h24M2 19h24'} /></svg>
+					{t(entry[1], entry[2])}
+				</button>
+			{/each}
+		</div>
 		<label><input type="checkbox" checked={table.header} onchange={(event) => { table = { ...table, header: event.currentTarget.checked }; }} />{t('首列為表頭', 'First row is header')}</label>
 		<label>{t('寬度 (%)', 'Width (%)')}<input type="number" min="1" max="100" value={table.width} onchange={(event) => { const value = event.currentTarget.valueAsNumber; if (Number.isFinite(value) && value >= 1 && value <= 100) { table = { ...table, width: value }; error = null; } else error = 'width'; event.currentTarget.value = String(table.width); }} /></label>
 	</div>
@@ -135,8 +142,17 @@
 	<details class="advanced">
 		<summary>{t('線條、說明與欄寬', 'Rules, caption and column widths')}</summary>
 		<div class="options">
-			{#if table.style === 'three-line'}<label>{t('線條', 'Rules')}<select aria-label={t('線條', 'Rules')} value={table.rules ?? 'hline'} onchange={(event) => { table = { ...table, rules: event.currentTarget.value as TableDraft['rules'] }; }}><option value="hline">{t('等粗線（不加套件）', 'Equal-weight rules (no package)')}</option><option value="booktabs">Booktabs</option></select></label>{/if}
-			<label>{t('說明', 'Caption')}<select aria-label={t('說明', 'Caption')} value={table.caption.position} onchange={(event) => { table = { ...table, caption: { ...table.caption, position: event.currentTarget.value as TableDraft['caption']['position'] } }; }}><option value="none">{t('無', 'None')}</option><option value="above">{t('置上', 'Above')}</option><option value="below">{t('置下', 'Below')}</option></select></label>
+			{#if table.style === 'three-line'}<div class="choice-group" role="group" aria-label={t('線條', 'Rules')}>
+				<span>{t('線條', 'Rules')}</span>
+				<button type="button" data-rule="hline" aria-pressed={(table.rules ?? 'hline') === 'hline'} onclick={() => { table = { ...table, rules: 'hline' }; }}>{t('等粗線（不加套件）', 'Equal-weight rules (no package)')}</button>
+				<button type="button" data-rule="booktabs" aria-pressed={table.rules === 'booktabs'} onclick={() => { table = { ...table, rules: 'booktabs' }; }}>Booktabs</button>
+			</div>{/if}
+			<div class="choice-group" role="group" aria-label={t('說明', 'Caption')}>
+				<span>{t('說明', 'Caption')}</span>
+				{#each [['none', '無', 'None'], ['above', '置上', 'Above'], ['below', '置下', 'Below']] as const as entry}
+					<button type="button" data-caption={entry[0]} aria-pressed={table.caption.position === entry[0]} onclick={() => { table = { ...table, caption: { ...table.caption, position: entry[0] } }; }}>{t(entry[1], entry[2])}</button>
+				{/each}
+			</div>
 		</div>
 		<div class="widths">{#each table.weights as value, index}<label>{t('第 ' + (index + 1) + ' 列', 'Column ' + (index + 1))}<input type="number" min="0.01" max="1000" step="0.1" value={value} onchange={(event) => { weight(index, event.currentTarget.valueAsNumber); event.currentTarget.value = String(table.weights[index]); }} /><span>{percentages[index]!.toFixed(1)}%</span></label>{/each}</div>
 	</details>
@@ -160,16 +176,22 @@
 </section>
 
 <style>
+	.style-choices, .choice-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+	.style-choices button { display: flex; align-items: center; gap: 6px; }
+	.style-choices button, .choice-group button { padding: 6px 8px; min-height: 34px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 4px; }
+	button[aria-pressed="true"] { background: var(--selection); color: var(--accent); border-color: var(--accent); }
+	button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 	.table-panel { white-space: normal; font-size: 14px; line-height: 1.4; padding: 12px 16px; background: var(--canvas); border-bottom: 1px solid var(--line); max-height: 60dvh; overflow: auto; }
 	fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 	.header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 	h2 { margin: 0; font-size: 16px; font-weight: 600; }
-	.options, .row-tools, .widths { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-block: 8px; }
-	.row-tools .text-button { padding: 5px 8px; }
-	.advanced { margin-block: 8px; }
+	.options, .row-tools, .widths { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-block: 4px; }
+	.row-tools { gap: 4px; }
+	.row-tools .text-button { padding: 4px; }
+	.advanced { margin-block: 4px; }
 	summary { cursor: pointer; color: var(--accent); padding-block: 6px; min-height: 32px; }
 	label { display: flex; align-items: center; gap: 6px; }
-	input, select { color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 6px; }
+	input { color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 6px; }
 	input[type='number'] { width: 64px; }
 	.widths label { font-size: 13px; }
 	.table-scroll { overflow-x: auto; }

@@ -5,7 +5,7 @@ import { insertionTransaction, rangeInsertionTarget, sourceState, visualInsertio
 
 export interface PackagePlan { readonly span: SourceSpan; readonly insert: string }
 /** Apply a required package in the same source history entry as the content. */
-export function withPackage(state: EditorState, transaction: Transaction, name: 'amsmath' | 'listings' | readonly ('amsmath' | 'amssymb')[]): Transaction {
+export function withPackage(state: EditorState, transaction: Transaction, name: 'amsmath' | 'listings' | 'graphicx' | readonly ('amsmath' | 'amssymb')[]): Transaction {
 	if (!transaction.docChanged) return transaction;
 	const source = state.field(sourceState).projection.document;
 	const parsed = parseSource(source);
@@ -22,7 +22,7 @@ export function withPackage(state: EditorState, transaction: Transaction, name: 
 export function booktabsPlan(source: SourceDocument, parsed: SourceProjection): PackagePlan | null {
 	return packagePlan(source, parsed, 'booktabs');
 }
-export function packagePlan(source: SourceDocument, parsed: SourceProjection, name: 'booktabs' | 'xcolor' | 'amsmath' | 'amssymb' | 'listings'): PackagePlan | null {
+export function packagePlan(source: SourceDocument, parsed: SourceProjection, name: 'booktabs' | 'xcolor' | 'amsmath' | 'amssymb' | 'listings' | 'graphicx'): PackagePlan | null {
 	if (!projectionIsCurrent(source, parsed)) throw new Error('STALE_PREAMBLE');
 	const documents = parsed.nodes.filter(node => node.kind === 'environment' && node.name === 'document');
 	const body = documents[0];

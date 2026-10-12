@@ -34,6 +34,7 @@ export interface WriteReceipt extends FileRef {
 	readonly documentVersion: number;
 }
 export interface SaveAsRequest {
+	readonly images?: readonly { readonly path: string; readonly bytes: Uint8Array }[];
 	readonly workspaceId: string | null;
 	readonly bytes: Uint8Array;
 	readonly documentId: string;

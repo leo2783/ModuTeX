@@ -14,6 +14,7 @@ import type {
 } from './types.ts';
 import type { SaveAsRequest, SaveAsReceipt } from './types.ts';
 import type { RecentDocument } from './types.ts';
+import { validateImageFile, IMAGE_BYTES_LIMIT } from './images.ts';
 
 export class ContractError extends Error {
 	readonly field: string;
@@ -222,10 +223,24 @@ export function parseWriteReceipt(value: unknown, expected: WriteRequest): Write
 }
 
 export function parseSaveAsRequest(value: unknown, maximum: number): SaveAsRequest {
-	const input = record(value, ['workspaceId', 'bytes', 'documentId', 'documentVersion']);
+	const hasImages = typeof value === 'object' && value !== null && Object.hasOwn(value, 'images');
+	const input = record(value, hasImages ? ['workspaceId', 'bytes', 'documentId', 'documentVersion', 'images'] : ['workspaceId', 'bytes', 'documentId', 'documentVersion']);
+	let images: SaveAsRequest['images'];
+	if (hasImages) {
+		const payload = dataArray(input.images, 4096, 'images');
+		let total = 0; const names = new Set<string>();
+		images = Object.freeze(payload.map(value => {
+			const image = record(value, ['path', 'bytes'], 'image');
+			const path = relativePath(image.path), bytes = copyBytes(image.bytes, IMAGE_BYTES_LIMIT, 'image.bytes');
+			if (!/^modutex-image-[\da-f-]+\.(?:png|jpe?g)$/i.test(path) || names.has(path.toLowerCase())) throw new ContractError('images', 'Invalid or repeated managed image name');
+			names.add(path.toLowerCase()); total += bytes.byteLength;
+			if (total > 32 * 1024 * 1024) throw new ContractError('images', 'Image batch exceeds 32 MiB');
+			validateImageFile(path, bytes); return Object.freeze({ path, bytes });
+		}));
+	}
 	return Object.freeze({ workspaceId: input.workspaceId === null ? null : id(input.workspaceId, 'workspaceId'),
 		bytes: copyBytes(input.bytes, maximum, 'bytes'), documentId: id(input.documentId, 'documentId'),
-		documentVersion: integer(input.documentVersion, 'documentVersion', 0) });
+		documentVersion: integer(input.documentVersion, 'documentVersion', 0), ...(images ? { images } : {}) });
 }
 export function parseSaveAsReceipt(value: unknown, expected: SaveAsRequest): SaveAsReceipt | null {
 	if (value === null) return null;

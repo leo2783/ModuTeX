@@ -8,11 +8,10 @@
 	import { helpTopic, type HelpTopic } from './features/help/route.ts';
 	import { DEFAULT_PREFERENCES, readPreferences, savePreference, restorePreferences, subscribePreferences, decodePreference, effectiveAppearance, type Preferences } from './state/preferences.ts';
 	import type { WorkspaceInfo, FileEntry, FileEvent, CompileHandle, CompileIdentity, Diagnostic } from '@modutex/frontend-contracts';
-	import { diagnosticSpan } from './features/compile/diagnostic-span.ts';
 	import type { DiagnosticNavigationRequest } from './features/source-editor/diagnostics.ts';
 	import type { FileDesktopPort } from './features/files/desktop.ts';
 	import type { RecentDocument } from './features/files/recent.ts';
-	import { readSource, readSourceBytes, readPdf } from './features/files/read.ts';
+	import { readSource, readSourceBytes } from './features/files/read.ts';
 	import type { TemplateId } from './features/files/templates.ts';
 	let workbenchPane = $state<'document' | 'pdf'>('document');
 	let workbenchSplitRatio = $state(0.5);
@@ -176,21 +175,22 @@
 	let sourceTicket = 0;
 	let pdfTicket = 0;
 	const messages: Record<string, [string, string]> = {
-		FILE_TYPE: ['請選擇 TeX 或 PDF 文件。', 'Please choose a TeX or PDF document.'],
-		SOURCE_TOO_LARGE: ['文件超過 5 MiB，無法開啟；請選擇較小的文件。', 'Document exceeds 5 MiB limit. Choose a smaller file.'],
-		PDF_TOO_LARGE: ['PDF 超過 32 MB 上限。', 'PDF exceeds 32 MB limit.'],
-		PDF_HEADER: ['檔案不是有效的 PDF。', 'The file is not a valid PDF.'],
-		PDF_LOAD: ['無法讀取 PDF。請確認檔案未損壞。', 'Unable to read PDF. Verify the file is not corrupted.'],
-		PDF_RENDER: ['無法顯示此 PDF 頁面。', 'Unable to display this PDF page.'],
-		STALE_WORKSPACE: ['工作區已關閉，請重新開啟文件。', 'Workspace has been closed. Please reopen the document.'],
-		LINK_NOT_ALLOWED: ['此檔案包含連結路徑，請直接開啟實際文件。', 'This file contains link paths. Please open the actual document directly.'],
-		FILE_CHANGED: ['檔案在讀取時已變更，請重新開啟。', 'The file changed while being read. Please reopen it.'],
-		FILE_CONFLICT: ['磁碟文件已變更，未覆寫。請先保留編輯內容，再重新開啟文件。', 'Disk file changed externally; not overwritten. Keep your edits and reopen.'],
-		ENGINE_UNAVAILABLE: ['無法啟動內建編譯引擎，請確認桌面程式的引擎檔案完整。', 'Unable to start built-in compile engine. Verify application files are complete.'],
-		BUSY: ['上一個操作尚未結束，請稍後再試。', 'Previous operation is still running. Please try again shortly.'],
-		FILE_TOO_LARGE: ['檔案過大，無法開啟；TeX 上限 5 MB，PDF 上限 32 MB。', 'File too large to open; TeX limit is 5 MB, PDF limit is 32 MB.'],
-		TREE_TOO_LARGE: ['工作區檔案過多，請開啟較小的資料夾或直接選擇 TeX 文件。', 'Too many files in workspace. Open a smaller folder or choose a TeX file directly.'],
-		TREE_TOO_DEEP: ['資料夾層級過深，請直接開啟需要的子資料夾。', 'Folder depth too deep. Please open the required subfolder directly.']
+		FILE_TYPE: ['格式不支援或檔案損壞。', 'Unsupported or damaged file.'],
+		SOURCE_TOO_LARGE: ['文件超過 5 MiB，請使用較小檔案。', 'Use a document under 5 MiB.'],
+		PDF_TOO_LARGE: ['PDF 超過 32 MiB。', 'PDF exceeds 32 MiB.'],
+		PDF_HEADER: ['檔案不是有效的 PDF。', 'Invalid PDF.'],
+		PDF_LOAD: ['無法讀取 PDF，請檢查檔案。', 'Cannot read PDF. Check the file.'],
+		PDF_RENDER: ['無法顯示此 PDF 頁面。', 'Cannot display this PDF page.'],
+		STALE_WORKSPACE: ['工作區已關閉，請重新開啟。', 'Workspace closed. Reopen it.'],
+		LINK_NOT_ALLOWED: ['路徑包含連結，請直接開啟檔案。', 'Linked path. Open the file directly.'],
+		FILE_CHANGED: ['讀取時檔案已變更，請重開。', 'File changed. Reopen it.'],
+		FILE_CONFLICT: ['磁碟文件已變更，未覆寫。請先保留編輯內容，再重新開啟文件。', 'Disk file changed; not overwritten. Keep your edits and reopen.'],
+		ENGINE_UNAVAILABLE: ['內建引擎無法啟動，請檢查程式檔案。', 'Compiler unavailable. Check app files.'],
+		BUSY: ['操作進行中，請稍後重試。', 'Busy. Try again shortly.'],
+		FILE_TOO_LARGE: ['檔案過大：TeX／圖片 5 MiB，PDF 32 MiB。', 'Too large: TeX/images 5 MiB; PDF 32 MiB.'],
+		IMAGE_TOO_LARGE: ['圖片過大：單張 5 MiB，另存總量 32 MiB。', 'Images: 5 MiB each; 32 MiB per save-as.'],
+		TREE_TOO_LARGE: ['檔案過多，請開啟較小資料夾。', 'Too many files. Open a smaller folder.'],
+		TREE_TOO_DEEP: ['層級過深，請直接開啟子資料夾。', 'Open a shallower folder.']
 	};
 	function fileErrorDescriptor(value: unknown): [string, string] {
 		const code = value instanceof Error ? value.message : '';
@@ -812,8 +812,9 @@
 		const snapshot = source, owner = workspace;
 		saving = true; errorState = null;
 		try {
+			const images = snapshot.read().includes('modutex-image-') ? await (await import('./features/images/store.ts')).saveAsImages({ desktop, workspaceId: owner?.id ?? null, path: sourceName, documentId: snapshot.documentId, documentVersion: snapshot.version }, snapshot) : [];
 			const result = await desktop.saveAs({ workspaceId: owner?.id ?? null, bytes: snapshot.toBytes(),
-				documentId: snapshot.documentId, documentVersion: snapshot.version });
+				documentId: snapshot.documentId, documentVersion: snapshot.version, ...(images.length ? { images } : {}) });
 			if (!result) return;
 			if (lifetime.signal.aborted || workspace !== owner || source !== snapshot) {
 				if (activeWorkspaceWatch?.owner === owner) stopWorkspaceWatch(activeWorkspaceWatch);
@@ -996,9 +997,12 @@
 		compileCancellationFailedFor = ticket;
 		errorState = ['無法取消編譯。請等待目前執行完成。', 'Unable to cancel compilation. Wait for the current run to finish.'];
 	}
-	function goToDiagnostic(diagnostic: Diagnostic) {
+	async function goToDiagnostic(diagnostic: Diagnostic) {
 		if (!source || !diagnosticIdentity || saving || opening) return;
-		const span = diagnosticSpan(source, sourceName, diagnosticIdentity, diagnostic);
+		const owner = source, identity = diagnosticIdentity, path = sourceName, sequence = ++navigationSequence;
+		const helper = await import('./features/compile/diagnostic-span.ts').catch(() => null);
+		if (source !== owner || diagnosticIdentity !== identity || sourceName !== path || saving || opening || sequence !== navigationSequence) return;
+		const span = helper?.diagnosticSpan(owner, path, identity, diagnostic);
 		if (span) { route = 'workbench'; workbenchPane = 'document'; window.location.hash = '#/workbench'; navigation = { span, sequence: ++navigationSequence, sourceOnly: true }; }
 		else errorState = ['錯誤位置已無法對應此文件，請查看編譯記錄。', 'Error location can no longer be mapped to this document. See compilation log.'];
 	}
@@ -1127,7 +1131,7 @@
 		const ticket = ++pdfTicket;
 		errorState = null;
 		try {
-			const bytes = await readPdf(file);
+			const bytes = await (await import('./features/files/pdf-read.ts')).readPdf(file);
 			if (!lifetime.signal.aborted && ticket === pdfTicket) {
 				pdfBytes = bytes;
 				pdfIdentity = null;
@@ -1272,13 +1276,19 @@
 								<SourceView document={source} label={sourceName} saving={saving || opening} {savedVersion} active={route === 'workbench' && active}
 									fontSize={preferences.sourceFontSize} showLineNumbers={preferences.showLineNumbers} wrapLines={preferences.wrapLines}
 									locale={preferences.language}
+									imageContext={async writing => {
+										const owner = source;
+										if (writing && desktop && !workspace) await saveSourceAs();
+										if (!source || source !== owner || desktop && !workspace) throw new Error('IMAGE_OWNER');
+										return { desktop, workspaceId: workspace?.id ?? null, path: sourceName, documentId: source.documentId, documentVersion: source.version };
+									}}
 									diagnosticNavigation={diagnosticNavigation?.documentId === source.documentId && diagnosticNavigation?.documentVersion === source.version ? diagnosticNavigation : null}
 									navigation={navigation?.span.documentId === source.documentId ? navigation : null}
 									onChange={(document, changed) => { source = document; dirty = changed || !hasDiskCheckpoint; if (projection && !projectionIsCurrent(document, projection)) projection = null; }}
 								onProjection={(parsed) => { if (source && projectionIsCurrent(source, parsed)) { projection = parsed; outline = sourceOutline(source, parsed); outlineOwner = source.documentId; outlineFailed = false; } }}
 								onParserFailure={() => { projection = null; outlineFailed = true; }}
-								onVisualRejected={() => { errorState = ['這項修改無法套用。請切換至原始碼模式；內容已保留。', 'This edit could not be applied. Switch to source mode; your content is preserved.']; }}
-								onRejected={(reason) => { errorState = reason === 'SOURCE_TOO_LARGE' ? ['修改後文件將超過 5 MiB，內容已保留。請減少插入內容。', 'The document would exceed 5 MiB after this edit. Content is preserved. Reduce the inserted text.'] : ['無法套用此修改，文件內容已保留。請重新選取完整字元。', 'Could not apply this edit. Content is preserved. Select complete characters and try again.']; }} />
+								onVisualRejected={() => { errorState = ['這次編輯未套用，請重新選取內容後再試。', 'This edit was not applied. Select the content again and retry.']; }}
+								onRejected={(reason) => { errorState = reason === 'SOURCE_TOO_LARGE' ? ['修改將超過 5 MiB，請減少插入內容。', 'Edit exceeds 5 MiB. Reduce the inserted text.'] : ['這次編輯未套用，請重新選取內容後再試。', 'Edit not applied. Reselect the content and retry.']; }} />
 							{:catch}
 								<div class="empty-state" role="alert"><p>{t('無法載入編輯器。文件內容已保留。', 'The editor could not be loaded. Your document is preserved.')}</p><button onclick={() => editorLoadKey++}>{t('重試', 'Retry')}</button></div>
 							{/await}

@@ -7,6 +7,8 @@ import type { EquationDraft } from '../math/source.ts';
 import { parseCodeContent, codeLanguage } from '../code/source.ts';
 import { cellDragHandle, disposeCellDragHandle } from './cell-drag.ts';
 import { highlightCode } from '../code/highlight.ts';
+import { imagePath } from '../images/store.ts';
+import { imageCell, clipboardImage } from '../images/view.ts';
 import { formatShortcut, type TextFormat } from '../source-editor/format.ts';
 import { advanceVisual, prepareVisualEdit, projectVisual, visualCaretAnchor, visualSchema, visualMarkName, createVisualMark, supportedVisualMark, type VisualProjection } from './schema.ts';
 import { text, type Language } from '../../i18n/text.ts';
@@ -25,6 +27,8 @@ interface VisualOptions {
 	rejected(): void;
 	status(value: 'ready' | 'updating'): void;
 	locale?(): Language;
+	image?(path: string): Promise<Blob>;
+	pasteImage?(image: Blob): void;
 	table?(draft: TableDraft, span: SourceSpan): void;
 	equation?(draft: EquationDraft, span: SourceSpan): void;
 	format?(format: TextFormat): void;
@@ -68,6 +72,7 @@ export class VisualEditor {
 	private selectedCellIndex: number | null = null;
 	private cellOriginal: string | null = null;
 	private readonly tableButtons = new Set<HTMLButtonElement>();
+	private readonly imageCopies = new Map<() => number | undefined, (event: ClipboardEvent) => boolean>();
 	private readonly equationButtons = new Set<HTMLButtonElement>();
 	private readonly rawButtons = new Set<HTMLButtonElement>();
 	private readonly inserterButtons = new Set<HTMLButtonElement>();
@@ -185,7 +190,13 @@ export class VisualEditor {
 	closeEquation(): void {
 		const session = this.equationDraft; if (!session) return;
 		this.equationDraft = null; session.dispose?.();
-		if (!this.disposed) this.view.updateState(this.view.state.apply(this.view.state.tr));
+		if (!this.disposed) {
+			const node = this.view.state.doc.nodeAt(session.from);
+			const transaction = this.view.state.tr;
+			if (session.to > session.from && node?.isAtom) transaction.setSelection(NodeSelection.create(this.view.state.doc, session.from));
+			this.view.updateState(this.view.state.apply(transaction));
+			if (session.to > session.from && node?.isAtom) this.selectCell(this.view.state.doc.resolve(session.from).index(0));
+		}
 	}
 
 	private selectCell(index: number | null): void {
@@ -546,6 +557,7 @@ export class VisualEditor {
 		} } });
 		this.view = new EditorView(target, { state: EditorState.create({ schema: visualSchema, plugins: [notebookPlugin, equationPlugin] }),
 			handleDOMEvents: {
+				copy: (view, event) => { if (!(view.state.selection instanceof NodeSelection)) return false; for (const [position, copy] of this.imageCopies) if (position() === view.state.selection.from) return copy(event as ClipboardEvent); return false; },
 				click: (view, event) => { this.clickCell(view, event as MouseEvent); return false; },
 				mousedown: (view, event) => {
 					const target = event.target as HTMLElement | null;
@@ -560,6 +572,16 @@ export class VisualEditor {
 				return { ...rendered, update: next => next.type === initial.type &&
 					next.attrs.role === initial.attrs.role && next.attrs.name === initial.attrs.name && next.attrs.level === initial.attrs.level };
 			}, raw_block: (initial, _view, getPos) => {
+				if (imagePath(String(initial.attrs.source)) && this.options.image) {
+					let node = initial;
+					const dom = target.ownerDocument.createElement('figure'); dom.contentEditable = 'false';
+					const content = imageCell(dom, String(node.attrs.source), this.options.image, () => {
+						const position = getPos(); if (typeof position !== 'number' || this.disposed) return;
+						this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, position))); this.selectCell(this.view.state.doc.resolve(position).index(0));
+					}, (zh, en) => this.text(zh, en));
+					this.imageCopies.set(getPos, content.copy);
+					return { dom, stopEvent: () => true, ignoreMutation: () => true, update: next => { if (next.type !== node.type || !imagePath(String(next.attrs.source))) return false; node = next; content.update(String(node.attrs.source)); return true; }, destroy: () => { this.imageCopies.delete(getPos); content.dispose(); } };
+				}
 				let node = initial, destroyed = false;
 				const document = target.ownerDocument;
 				const dom = document.createElement('section'); dom.className = 'visual-raw'; dom.contentEditable = 'false';
@@ -595,7 +617,7 @@ export class VisualEditor {
 				let node = initial, destroyed = false;
 				const document = target.ownerDocument;
 				const dom = document.createElement('figure'); dom.className = 'visual-table'; dom.contentEditable = 'false';
-				const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.textContent = this.text('編輯表格', 'Edit table');
+				const button = document.createElement('button'); button.type = 'button'; button.className = 'visual-table-content'; button.setAttribute('aria-label', this.text('編輯表格', 'Edit table'));
 				this.tableButtons.add(button); button.disabled = true;
 				const render = () => {
 					const draft = parseTable(String(node.attrs.source));
@@ -618,7 +640,7 @@ export class VisualEditor {
 						}
 						(draft.header && row === 0 ? head : body).append(line);
 					}
-					if (draft.header) table.append(head); table.append(body); dom.replaceChildren(table, button);
+					if (draft.header) table.append(head); table.append(body); button.replaceChildren(table); dom.replaceChildren(button);
 				};
 				const edit = (event?: Event) => {
 					event?.preventDefault(); event?.stopPropagation();
@@ -627,7 +649,11 @@ export class VisualEditor {
 					const source = this.options.source();
 					if (source.read(anchored.attrs.from, anchored.attrs.to) !== anchored.attrs.source) { this.options.rejected(); return; }
 					const draft = parseTable(String(anchored.attrs.source));
-					if (draft) this.options.table(draft, { documentId: source.documentId, version: source.version, from: anchored.attrs.from, to: anchored.attrs.to });
+					if (draft) {
+						const position = getPos();
+						if (typeof position === 'number') { this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, position))); this.selectCell(this.view.state.doc.resolve(position).index(0)); this.view.focus(); }
+						this.options.table(draft, { documentId: source.documentId, version: source.version, from: anchored.attrs.from, to: anchored.attrs.to });
+					}
 				};
 				button.addEventListener('click', edit); render();
 				dom.addEventListener('mousedown', event => { if (!button.contains(event.target as Node)) event.preventDefault(); });
@@ -689,6 +715,7 @@ export class VisualEditor {
 			} },
 			dispatchTransaction: (transaction) => this.dispatch(transaction),
 			handleKeyDown: (_view, event) => {
+				if (_view.composing || event.isComposing || event.keyCode === 229 || event.key === 'Process') return false;
 				if (event.key === 'Escape' && this.selectedCellIndex !== null) {
 					this.commandMode = true; this.view.focus();
 					return true;
@@ -714,13 +741,17 @@ export class VisualEditor {
 				}
 				if (event.key === 'Enter' && this.editable()) {
 					const selection = this.view.state.selection;
-					if (selection.$from.parent.attrs.role !== 'paragraph' || !selection.$from.sameParent(selection.$to)) { options.rejected(); return true; }
+					if (!['paragraph', 'abstract'].includes(selection.$from.parent.attrs.role) || !selection.$from.sameParent(selection.$to)) { options.rejected(); return true; }
 					this.view.dispatch(this.view.state.tr.insertText('\n\n')); return true;
 				}
 				return false;
 			},
 			handlePaste: (_view, event) => {
 				if (!this.editable()) return true;
+				if (this.options.pasteImage) {
+					try { const image = clipboardImage(event); if (image) { this.options.pasteImage(image); return true; } }
+					catch { this.options.rejected(); return true; }
+				}
 				const text = event.clipboardData?.getData('text/plain');
 				if (text !== undefined) this.view.dispatch(this.view.state.tr.insertText(text.replace(/\r\n|\r/g, '\n')));
 				return true;
@@ -767,7 +798,7 @@ export class VisualEditor {
 		for (const button of this.tableButtons) {
 			const disabled = !editable || !this.options.table;
 			if (button.disabled !== disabled) button.disabled = disabled;
-			if (button.textContent !== tableText) button.textContent = tableText;
+			if (button.getAttribute('aria-label') !== tableText) button.setAttribute('aria-label', tableText);
 		}
 		const equationText = this.text('編輯公式', 'Edit equation');
 		for (const button of this.equationButtons) {
@@ -848,7 +879,7 @@ export class VisualEditor {
 		if (this.disposed) return;
 		if (!transaction.docChanged) {
 			this.view.updateState(this.view.state.apply(transaction));
-			if (transaction.selectionSet && !this.disposed) {
+			if (transaction.selectionSet && !this.disposed && !this.equationDraft) {
 				const resolved = transaction.selection.$from;
 				if (resolved.index(0) < this.view.state.doc.childCount) {
 					const cellIndex = resolved.index(0);

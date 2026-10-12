@@ -1124,7 +1124,7 @@ test('a failed save conflict preserves the draft and prevents compilation from s
 			return strip?.textContent?.trim() || undefined;
 		}, 10_000, workbench.flush);
 
-		assert.match(errorText, /Disk file changed externally|磁碟文件已變更/);
+		assert.match(errorText, /Disk file changed|磁碟文件已變更/);
 		assert.equal(workbench.editorText(), draft, 'A failed optimistic save must preserve the dirty source');
 		assert.equal(workbench.compileStartCount(), 0, 'Compilation must not start after the save conflict');
 		assert.equal(await fs.promises.readFile(workbench.firstPath, 'utf8'), external,
@@ -1360,7 +1360,7 @@ test('an invalid workspace PDF reports its header error without replacing the so
 				.find((candidate) => !candidate.classList.contains('file-change-notice'));
 			return strip?.textContent?.trim() || undefined;
 		}, 10_000, workbench.flush);
-		assert.ok(errorText.includes('not a valid PDF') || errorText.includes('不是有效的 PDF'));
+		assert.ok(errorText.includes('Invalid PDF') || errorText.includes('不是有效的 PDF'));
 		assert.equal(workbench.readCount(), reads + 1);
 		assert.equal(workbench.editorText(), original, 'A rejected PDF must leave the current source untouched');
 		assert.equal(workbench.container.querySelector('.preview-pane .pane-title')?.textContent?.includes('invalid.pdf'), false);

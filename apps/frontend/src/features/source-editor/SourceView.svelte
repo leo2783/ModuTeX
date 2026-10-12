@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
+	import type { ImageContext } from '../images/store.ts';
+	import { clipboardImage } from '../images/view.ts';
 	import { Compartment, EditorState } from '@codemirror/state';
 	import { EditorView, lineNumbers, highlightActiveLineGutter, keymap } from '@codemirror/view';
 	import type { SourceDocument, SourceProjection, SourceSpan, SourcePatch } from '@modutex/document-core';
@@ -25,7 +27,8 @@
 	import { visualInsertionTransaction } from './state.ts';
 	import { booktabsPlan, tableInsertionTransaction, withPackage, type PackagePlan } from '../tables/preamble.ts';
 	import { text, type Language } from '../../i18n/text.ts';
-	let { document, label, saving, savedVersion, active = true, fontSize = 14, showLineNumbers = true, wrapLines = false, navigation = null, diagnosticNavigation = null, locale = 'zh-Hant', onChange, onRejected, onVisualRejected, onProjection, onParserFailure }: { document: SourceDocument; label: string;
+	let { document, label, saving, savedVersion, active = true, fontSize = 14, showLineNumbers = true, wrapLines = false, navigation = null, diagnosticNavigation = null, locale = 'zh-Hant', imageContext = null, onChange, onRejected, onVisualRejected, onProjection, onParserFailure }: { document: SourceDocument; label: string;
+		imageContext?: ((writing: boolean) => Promise<ImageContext>) | null;
 		active?: boolean; fontSize?: number; showLineNumbers?: boolean; wrapLines?: boolean; locale?: Language;
 		navigation?: { readonly span: SourceSpan; readonly sequence: number; readonly sourceOnly?: boolean } | null;
 		diagnosticNavigation?: DiagnosticNavigationRequest | null;
@@ -35,7 +38,7 @@
 	/** Read at call time so callbacks and markup follow the current per-view locale. */
 	const t = (traditionalChinese: string, english: string) => text(locale, traditionalChinese, english);
 	type ToolError = 'raw-stale' | 'raw-apply' | 'preamble' | 'table-apply' | 'format' | 'insert-selection' | 'insert-stale' | 'table-pending' | 'table-cursor'
-		| 'equation-cursor' | 'equation-stale' | 'equation-apply' | 'table-stale' | 'inline-only' | 'insert' | 'navigation' | 'diagnostic';
+		| 'equation-cursor' | 'equation-stale' | 'equation-apply' | 'table-stale' | 'inline-only' | 'insert' | 'navigation' | 'diagnostic' | 'image';
 	function toolMessage(code: ToolError): string {
 		switch (code) {
 			case 'raw-stale': return t('內容已變更，請重新選取區段。', 'The content changed. Select the section again.');
@@ -54,6 +57,7 @@
 			case 'inline-only': return t('標題或格式文字內請選行內公式；表格與獨立公式請插入正文。', 'Use an inline equation inside headings or formatted text. Insert tables and display equations in body text.');
 			case 'insert': return t('無法插入。請確認位置未變更，且文件未超過 5 MiB。', 'Could not insert. Make sure the position is unchanged and the document stays within 5 MiB.');
 			case 'navigation': return t('章節位置已變更。請等待大綱更新後再選取。', 'The section moved. Wait for the outline to update, then select it again.');
+			case 'image': return t('圖片未插入。請確認文件已儲存，並選用 5 MiB 以下的 PNG／JPEG 圖片。', 'Image was not inserted. Save the document and use a PNG/JPEG image under 5 MiB.');
 			case 'diagnostic': return t('錯誤位置無法對應此文件，請查看編譯記錄。', 'Diagnostic location is unavailable in this document. See the compilation log.');
 		}
 	}
@@ -68,8 +72,32 @@
 	let editor = $state.raw<EditorView | null>(null);
 	const permission = new Compartment();
 	const gutter = new Compartment(), wrapping = new Compartment(), labels = new Compartment();
-	let tool = $state<'equation' | 'matrix' | 'table' | 'raw' | 'code' | null>(null);
+	let tool = $state<'equation' | 'matrix' | 'table' | 'raw' | 'code' | 'image' | null>(null);
 	let codePanelHost = $state.raw<HTMLDivElement | null>(null);
+	let imageInput: HTMLInputElement;
+	let imageSequence = 0;
+	async function insertImage(file: Blob) {
+		if (!editor || !imageContext || !active || saving || tool !== null) return;
+		const owner = editor.state.field(sourceState).projection.document;
+		const captured = mode === 'visual' ? visual?.cellInsertionBoundary() : null;
+		const point = captured ?? { ...insertionTarget(editor.state) };
+		const ticket = ++imageSequence;
+		tool = 'image'; toolError = null;
+		try {
+			const { storeImage, imageSource } = await import('../images/store.ts');
+			const context = await imageContext(true);
+			if (ticket !== imageSequence || tool !== 'image' || !editor || editor.state.field(sourceState).projection.document !== owner || !active) return;
+			const path = await storeImage(context, file);
+			if (ticket !== imageSequence || tool !== 'image' || !editor || editor.state.field(sourceState).projection.document !== owner || !active) return;
+			const transaction = visualInsertionTransaction(editor.state, point, imageSource(path), false);
+			editor.dispatch(withPackage(editor.state, transaction, 'graphicx'));
+		} catch { if (ticket === imageSequence) toolError = 'image'; }
+		finally { if (ticket === imageSequence) { if (tool === 'image') tool = null; if (imageInput) imageInput.value = ''; visual?.refresh(); } }
+	}
+	async function loadImage(path: string) {
+		if (!imageContext) throw new Error('IMAGE_UNAVAILABLE');
+		const { readImage } = await import('../images/store.ts'); return readImage(await imageContext(false), path);
+	}
 	let codeDraft = $state.raw<LocatedCode | null>(null), codeKey = $state('insert');
 	function openCode(span?: SourceSpan) {
 		if (!editor || !active || saving) return;
@@ -348,7 +376,7 @@
 			editingTable = true; toolError = null; toolOwner = owner; tool = 'table';
 		} catch { toolError = 'table-stale'; }
 	}
-	function closeTool() { visual?.closeEquation(); tool = null; insertion = null; visualInsertion = null; equation = null; pendingPackage = null; toolError = null; visual?.refresh(); if (!active) return; if (mode === 'source') editor?.focus(); else visual?.focus(); }
+	function closeTool() { if (tool === 'image') imageSequence++; visual?.closeEquation(); tool = null; insertion = null; visualInsertion = null; equation = null; pendingPackage = null; toolError = null; visual?.refresh(); if (!active) return; if (mode === 'source') editor?.focus(); else visual?.focus(); }
 	$effect(() => {
 		if (!active || mode !== 'visual' || tool !== 'equation' || !visual) return;
 		const span = equation?.span ?? visualInsertion?.span;
@@ -555,7 +583,7 @@
 					permission.of(EditorState.readOnly.of(saving || !active)),
 					gutter.of(showLineNumbers ? [lineNumbers(), highlightActiveLineGutter()] : []),
 					wrapping.of(wrapLines ? EditorView.lineWrapping : []),
-					EditorView.domEventHandlers({ keydown: (event) => { const format = formatShortcut(event); if (!format || view.state.readOnly) return false; applyFormat(format); return true; } }),
+					EditorView.domEventHandlers({ keydown: (event) => { const format = formatShortcut(event); if (!format || view.state.readOnly) return false; applyFormat(format); return true; }, paste: event => { if (view.state.readOnly || !imageContext) return false; try { const image = clipboardImage(event); if (image) { void insertImage(image); return true; } } catch { toolError = 'image'; return true; } return false; } }),
 					keymap.of([{ key: 'Mod-z', run: history('undo') }, { key: 'Mod-Shift-z', run: history('redo') },
 						{ key: 'Mod-End', run: documentEdge(true) }, { key: 'Mod-Home', run: documentEdge(false) },
 						{ key: 'Mod-Shift-End', run: documentEdge(true, true) }, { key: 'Mod-Shift-Home', run: documentEdge(false, true) },
@@ -594,7 +622,7 @@
 				return view.state.field(sourceState).projection.document;
 			},
 			history: (direction) => history(direction)(view), readOnly: () => saving || tool !== null || !active,
-			rejected: onVisualRejected, status: (status) => { visualStatus = status; }, table: openTable, equation: openEquation, raw: openRaw,
+			image: loadImage, pasteImage: insertImage, rejected: onVisualRejected, status: (status) => { visualStatus = status; }, table: openTable, equation: openEquation, raw: openRaw,
 			cellToolbar: (toolbar) => cellToolbarTarget?.replaceChildren(...(toolbar ? [toolbar] : [])),
 			format: (format) => { applyFormat(format); },
 			locale: () => locale,
@@ -667,6 +695,8 @@
 				</div>
 			</details>
 			<button class="icon-tool" title={t('表格', 'Table')} aria-label={t('表格', 'Table')} onclick={() => openTool('table')} disabled={!active || saving || tool !== null}><ToolbarIcon kind="table" /></button>
+			<input type="file" accept="image/png,image/jpeg" bind:this={imageInput} hidden aria-label={t('選擇圖片', 'Choose image')} onchange={event => { const file = event.currentTarget.files?.[0]; if (file) void insertImage(file); }} />
+			<button class="icon-tool" title={t('圖片', 'Image')} aria-label={t('圖片', 'Image')} onclick={() => imageInput.click()} disabled={!active || saving || tool !== null || !imageContext}><ToolbarIcon kind="image" /></button>
 			<button class="icon-tool" title={t('程式碼區塊', 'Code block')} aria-label={t('程式碼區塊', 'Code block')} onclick={() => openCode()} disabled={!active || saving || tool !== null}><ToolbarIcon kind="code" /></button>
 		</div>
 	</div>
@@ -696,6 +726,11 @@
 </div>
 
 <style>
+	.visual :global(.visual-image) { margin: 16px 0; }
+	.visual :global(.visual-image-content) { display: block; width: 100%; padding: 0; border: 0; background: transparent; }
+	.visual :global(.visual-image-content img) { display: block; max-width: 80%; max-height: 480px; height: auto; margin: auto; }
+	.visual :global(.visual-table-content) { display: block; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: inherit; cursor: pointer; }
+	.visual :global(.visual-table-content:focus-visible) { outline: 2px solid var(--accent); outline-offset: 4px; }
 	.visual :global(.catalog-search) { position: sticky; top: 0; z-index: 1; box-sizing: border-box; width: 100%; min-height: 34px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); font: inherit; }
 	.visual :global(.inline-equation-catalog-grid .catalog-item-btn) { width: 132px; }
 	.visual :global(.inline-equation-catalog-grid .catalog-item-btn.wide-template) { width: 100%; }
@@ -744,7 +779,7 @@
 	.editor-surfaces { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); }
 	.visual { min-height: 0; overflow: auto; padding: 24px; }
 	.visual :global(.ProseMirror) { position: relative; min-height: 100%; outline: none; font-size: 16px; line-height: 1.7; }
-	.visual :global(.source-block) { display: block; white-space: normal; white-space-collapse: preserve-spaces; }
+	.visual :global(.source-block) { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
 	.visual :global(.raw-latex) { font: 13px/1.6 Consolas, monospace; padding: 8px; border: 1px solid var(--line); background: var(--canvas); white-space: pre-wrap; overflow-wrap: anywhere; }
 	.tool-error { margin: 4px 12px; color: var(--ink); }
 	.raw-panel { padding: 12px; border-bottom: 1px solid var(--line); overflow: auto; max-height: 60%; }

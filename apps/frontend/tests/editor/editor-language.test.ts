@@ -72,7 +72,7 @@ test('locale refresh preserves mounted source-backed node views and shared histo
 		const buttons = getButtons();
 		assert.ok(buttons.raw && buttons.table && buttons.math);
 		assert.equal(buttons.raw.textContent, 'Edit source');
-		assert.equal(buttons.table.textContent, 'Edit table');
+		assert.equal(buttons.table.getAttribute('aria-label'), 'Edit table');
 		assert.equal(buttons.math.getAttribute('aria-label'), 'Edit equation');
 		assert.equal(view.view.dom.getAttribute('aria-label'), 'language.tex visual editor');
 
@@ -97,7 +97,7 @@ test('locale refresh preserves mounted source-backed node views and shared histo
 			assert.strictEqual(mounted.table, buttons.table);
 			assert.strictEqual(mounted.math, buttons.math);
 			assert.equal(buttons.raw.textContent, names[0]);
-			assert.equal(buttons.table.textContent, names[1]);
+			assert.equal(buttons.table.getAttribute('aria-label'), names[1]);
 			assert.equal(buttons.math.getAttribute('aria-label'), names[2]);
 		};
 		locale = 'zh-Hant';

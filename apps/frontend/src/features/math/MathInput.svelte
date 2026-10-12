@@ -78,7 +78,6 @@
 	.items { display: flex; gap: 4px; flex-wrap: wrap; }
 	.field-host :global(math-field) { display: block; font-size: 22px; width: 100%; min-height: 64px; padding: 8px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; --caret-color: var(--accent); --selection-background-color: var(--selection); }
 	.field-host :global(math-field:focus-within) { outline: 2px solid var(--accent); outline-offset: 2px; }
-	.field-host :global(math-field::part(virtual-keyboard-toggle)),
 	.field-host :global(math-field::part(menu-toggle)) { display: none !important; }
 	p { font-size: 14px; line-height: 1.5; }
 	.input-error { color: var(--error); }

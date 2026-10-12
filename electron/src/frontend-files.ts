@@ -245,7 +245,17 @@ export class FrontendFiles {
 			try { expectedRevision = (await target.read({ workspaceId: info.id, path: name })).revision; }
 			catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
 			assertActive();
-			const write = await target.writeGuarded({ ...request, workspaceId: info.id, path: name, expectedRevision }, assertActive);
+			for (const image of request.images ?? []) {
+				assertActive();
+				try {
+					const existing = await target.read({ workspaceId: info.id, path: image.path });
+					if (existing.bytes.length !== image.bytes.length || !existing.bytes.every((value, index) => value === image.bytes[index])) throw new Error('FILE_CONFLICT');
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+					await target.writeGuarded({ workspaceId: info.id, path: image.path, bytes: image.bytes, documentId: request.documentId, documentVersion: request.documentVersion, expectedRevision: null }, assertActive);
+				}
+			}
+			const write = await target.writeGuarded({ workspaceId: info.id, path: name, bytes: request.bytes, documentId: request.documentId, documentVersion: request.documentVersion, expectedRevision }, assertActive);
 			assertActive();
 			const workspace = Object.freeze({ ...info, entryPath: name });
 			this.authority = {};
@@ -264,7 +274,7 @@ export class FrontendFiles {
 		const session = this.session(ref.workspaceId);
 		const real = await this.resolve(session, ref.path);
 		const extension = path.extname(real).toLowerCase();
-		if (extension !== '.tex' && extension !== '.pdf') throw new Error('FILE_TYPE');
+		if (!['.tex', '.pdf', '.png', '.jpg', '.jpeg'].includes(extension)) throw new Error('FILE_TYPE');
 		const limit = extension === '.pdf' ? PDF_BYTES_LIMIT : SOURCE_BYTES_LIMIT;
 		const handle = await fs.open(real, 'r');
 		try {
@@ -284,6 +294,7 @@ export class FrontendFiles {
 				disk.dev !== after.dev || disk.ino !== after.ino || disk.size !== after.size || disk.mtimeNs !== after.mtimeNs) {
 				throw new Error('FILE_CHANGED');
 			}
+			if (['.png', '.jpg', '.jpeg'].includes(extension)) (await import('@modutex/frontend-contracts')).validateImageFile(ref.path, data);
 			this.assertCurrent(session);
 			return { workspaceId: session.info.id, path: ref.path, bytes: data,
 				revision: 'sha256:' + createHash('sha256').update(data).digest('hex') };
@@ -300,7 +311,11 @@ export class FrontendFiles {
 	private async writeGuarded(value: unknown, assertOwner: () => void): Promise<WriteReceipt> {
 		const request = (await import('@modutex/frontend-contracts')).parseWriteRequest(value, SOURCE_BYTES_LIMIT);
 		const session = this.session(request.workspaceId);
-		if (path.extname(request.path).toLowerCase() !== '.tex') throw new Error('FILE_TYPE');
+		const extension = path.extname(request.path).toLowerCase();
+		if (extension !== '.tex') {
+			if (!['.png', '.jpg', '.jpeg'].includes(extension)) throw new Error('FILE_TYPE');
+			(await import('@modutex/frontend-contracts')).validateImageFile(request.path, request.bytes);
+		}
 		if (this.writing) throw new Error('BUSY');
 		this.writing = true;
 		let temporary: TemporaryCleanupAuthority | null = null;

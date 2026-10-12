@@ -730,12 +730,9 @@ test('re-editing existing full border table updates weights and caption position
 	});
 
 	try {
-		const captionSelect = Array.from(harness.container.querySelectorAll<HTMLSelectElement>('.options select')).find((select) =>
-			Array.from(select.options).some((opt) => opt.value === 'above' || opt.value === 'below')
-		);
-		assert.ok(captionSelect, 'Caption select must exist');
-		captionSelect.value = 'below';
-		captionSelect.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+		const captionButton = harness.container.querySelector<HTMLButtonElement>('[data-caption="below"]');
+		assert.ok(captionButton, 'Caption choice must exist');
+		captionButton.click();
 		harness.flushSync();
 
 		const weightInputs = Array.from(harness.container.querySelectorAll<HTMLInputElement>('.widths input'));

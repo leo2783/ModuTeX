@@ -513,7 +513,7 @@ test(
 			assert.deepEqual(parsedSecond.cells, ['new-a', 'new-b', 'new-c', 'new-d', 'local second-session edit', 'new-f']);
 			// With two rows, horizontal and three-line hline source are identical.
 			// Verify the selected control and exact serializer round-trip below.
-			assert.equal(panel.querySelector<HTMLSelectElement>('.options select')?.value, 'horizontal');
+			assert.equal(panel.querySelector('[data-style="horizontal"]')?.getAttribute('aria-pressed'), 'true');
 			assert.equal(parsedSecond.caption.position, 'below');
 			assert.equal(parsedSecond.caption.text, 'Second session');
 			assert.equal(insertions[0]!.source, tableSource(parsedSecond));

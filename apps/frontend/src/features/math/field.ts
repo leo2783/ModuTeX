@@ -14,7 +14,6 @@ if (typeof document !== 'undefined') {
 		const style = document.createElement('style');
 		style.id = STYLE_ID;
 		style.textContent = `
-			math-field::part(virtual-keyboard-toggle),
 			math-field::part(menu-toggle) {
 				display: none !important;
 			}
@@ -38,13 +37,9 @@ export function createMathField(target: HTMLElement): MathfieldElement {
 	const ownerDocument = target.ownerDocument;
 	const Field = ownerDocument.defaultView?.customElements.get('math-field') as typeof MathfieldElement | undefined;
 	if (!Field) throw new Error('MATH_FIELD_NOT_REGISTERED');
-	if (typeof window !== 'undefined' && window.mathVirtualKeyboard) {
-		window.mathVirtualKeyboard.hide();
-	}
 	Field.fontsDirectory = null;
 	Field.soundsDirectory = null;
 	const field = ownerDocument.createElement('math-field') as MathfieldElement;
-	field.mathVirtualKeyboardPolicy = 'manual';
 	// Windows IMEs may report Enter with keyCode 229 and isComposing=false.
 	// Keep candidate navigation native, away from both editor shortcut handlers.
 	const controller = new AbortController();
@@ -55,15 +50,16 @@ export function createMathField(target: HTMLElement): MathfieldElement {
 	field.addEventListener('keydown', event => {
 		if (isMathComposition(field, event)) event.stopImmediatePropagation();
 	}, { capture: true, signal: controller.signal });
+	field.addEventListener('mount', () => {
+		field.menuItems = [];
+		field.macros = { ...field.macros, htmlData: { args: 2, def: '#2' }, href: { args: 2, def: '#2' }, htmlClass: { args: 2, def: '#2' }, htmlId: { args: 2, def: '#2' }, style: { args: 2, def: '#2' } };
+	}, { once: true, signal: controller.signal });
 	target.replaceChildren(field);
-	field.menuItems = [];
-	field.macros = { ...field.macros, htmlData: { args: 2, def: '#2' }, href: { args: 2, def: '#2' }, htmlClass: { args: 2, def: '#2' }, htmlId: { args: 2, def: '#2' }, style: { args: 2, def: '#2' } };
 	return field;
 }
 
 export function disposeMathField(field: MathfieldElement | null): void {
 	if (!field) return;
 	compositions.get(field)?.dispose(); compositions.delete(field);
-	window.mathVirtualKeyboard?.hide();
 	field.remove();
 }

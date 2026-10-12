@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { deflateSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { FrontendFiles } from '../src/frontend-files';
 import { FrontendCompiler } from '../src/frontend-compile';
@@ -45,6 +46,24 @@ async function request(text: string) {
 		savedRevision: read.revision, engine: 'managed' as const };
 }
 describe('actual bundled Tectonic frontend integration (no mock engine or PDF)', () => {
+	it('persists a clipboard image through save-as and reopening, then embeds it in a genuine PDF', async () => {
+		function chunk(name: string, data: Buffer) { const type = Buffer.from(name); let crc = 0xffffffff; for (const byte of Buffer.concat([type, data])) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = crc >>> 1 ^ (crc & 1 ? 0xedb88320 : 0); } const size = Buffer.alloc(4), check = Buffer.alloc(4); size.writeUInt32BE(data.length); check.writeUInt32BE((crc ^ 0xffffffff) >>> 0); return Buffer.concat([size, type, data, check]); }
+		const header = Buffer.alloc(13); header.writeUInt32BE(1, 0); header.writeUInt32BE(1, 4); header[8] = 8; header[9] = 6;
+		const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(Buffer.from([0, 61, 97, 123, 255]))), chunk('IEND', Buffer.alloc(0))]);
+		const picture = 'modutex-image-abcd.png', documentId = 'image-document';
+		const tex = '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\nClipboard image\n\\begin{figure}[htbp]\n\\centering\n\\includegraphics[width=0.8\\linewidth]{' + picture + '}\n\\end{figure}\n\\end{document}\n';
+		const saved = await files.saveAs(path.join(root, 'image.tex'), { workspaceId: null, bytes: Buffer.from(tex), documentId, documentVersion: 0, images: [{ path: picture, bytes: png }] });
+		files.close(saved.workspace.id);
+		const reopened = await files.open(path.join(root, 'image.tex'), 'file');
+		expect(Buffer.from((await files.read({ workspaceId: reopened.id, path: picture })).bytes)).toEqual(png);
+		const source = await files.read({ workspaceId: reopened.id, path: 'image.tex' });
+		const run = await compiler.start({}, 1, { workspaceId: reopened.id, entryPath: 'image.tex', documentId, documentVersion: 0, savedRevision: source.revision, engine: 'managed' });
+		const result = await compiler.result(1, run.runId);
+		expect(result.status, result.log).toBe('success'); if (result.status !== 'success') throw new Error(result.log);
+		expect(Buffer.from(result.pdf).subarray(0, 5).toString()).toBe('%PDF-');
+		expect(Buffer.from(result.pdf).toString('latin1')).toMatch(/\/Subtype\s*\/Image/);
+		await fs.writeFile(path.join(repository, '.verification-artifacts', 'image-compile.pdf'), result.pdf);
+	}, MANAGED_FORMAT_SETUP_TIMEOUT_MS + 15000);
 	it('compiles confirmed booktabs preamble and true three-line tables using the existing warm engine cache', async () => {
 		try {
 			const original = SourceDocument.open(Buffer.from('\uFEFF% keep\r\n\\documentclass{article}\r\n\\begin{document}\r\nBody\n\\end{document}\r'));

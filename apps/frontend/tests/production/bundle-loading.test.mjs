@@ -1,3 +1,4 @@
+import { inputOnlyMathLive } from '../../scripts/mathlive-input-only.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile, stat } from 'node:fs/promises';
@@ -77,9 +78,9 @@ test('real MathLive and its font assets are deferred and shipped locally', async
 	assert.ok(library, 'Actual MathLive dynamic module missing');
 	assert.ok(input.dynamicImports?.includes('src/features/math/field.ts'));
 	const map = JSON.parse(await readFile(new URL(library.file + '.map', dist), 'utf8'));
-	const librarySource = map.sources.findIndex(source => source.endsWith('/mathlive/mathlive.min.mjs'));
+	const librarySource = map.sources.findIndex(source => source.replaceAll('\\', '/').endsWith('/mathlive-input/runtime.mjs'));
 	assert.ok(librarySource >= 0, 'Deferred helper must contain the actual MathLive implementation');
-	assert.equal(map.sourcesContent[librarySource], await readFile(new URL('../../../../node_modules/mathlive/mathlive.min.mjs', import.meta.url), 'utf8'));
+	assert.equal(map.sourcesContent[librarySource], inputOnlyMathLive(await readFile(new URL('../../../../node_modules/mathlive/mathlive.mjs', import.meta.url), 'utf8')));
 	assert.equal(initial.has(library.file), false);
 	assert.ok((await stat(new URL(library.file, dist))).size > 0);
 	const cssFiles = library.css ?? [];

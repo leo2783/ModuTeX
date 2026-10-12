@@ -109,6 +109,6 @@ test('real Svelte SSR exposes explicit hline and booktabs choices without preten
 	try {
 		const module = await server.ssrLoadModule('/src/features/tables/TablePanel.svelte'), { render } = await server.ssrLoadModule('svelte/server');
 		const dom = new JSDOM(render(module.default, { props: { active: true, onInsert: () => assert.fail('SSR must not insert'), onClose: () => {} } }).body);
-		try { assert.equal(dom.window.document.querySelector('option[value="booktabs"]')?.textContent, 'Booktabs'); assert.match(dom.window.document.querySelector('option[value="hline"]')?.textContent ?? '', /不加套件/); assert.equal(dom.window.document.querySelectorAll('script').length, 0); } finally { dom.window.close(); }
+		try { assert.equal(dom.window.document.querySelector('button[data-rule="booktabs"]')?.textContent, 'Booktabs'); assert.match(dom.window.document.querySelector('button[data-rule="hline"]')?.textContent ?? '', /不加套件/); assert.equal(dom.window.document.querySelectorAll('script').length, 0); } finally { dom.window.close(); }
 	} finally { await server.close(); }
 });

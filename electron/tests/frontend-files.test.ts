@@ -16,6 +16,20 @@ describe('real frontend workspace filesystem', () => {
 		if (!path.basename(directory).startsWith('modutex-frontend-files-') || path.dirname(directory) !== os.tmpdir()) throw new Error('Unsafe cleanup');
 		await fs.rm(directory, { recursive: true, force: true });
 	});
+	it('stores PNG bytes beside the document with revisions and refuses spoofed or escaping images', async () => {
+		const workspace = await files.open(directory, 'folder');
+		const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII=', 'base64');
+		const request = { workspaceId: workspace.id, path: 'picture.png', bytes: png, expectedRevision: null, documentId: 'image-document', documentVersion: 1 };
+		const receipt = await files.write(request);
+		expect((await files.read({ workspaceId: workspace.id, path: 'picture.png' })).bytes).toEqual(new Uint8Array(png));
+		await expect(files.write(request)).rejects.toThrow();
+		expect(await fs.readFile(path.join(directory, 'picture.png'))).toEqual(png);
+		await expect(files.write({ ...request, path: 'fake.png', bytes: Buffer.from('not an image') })).rejects.toThrow('FILE_TYPE');
+		await expect(files.write({ ...request, path: 'wrong.jpg' })).rejects.toThrow('FILE_TYPE');
+		await expect(files.write({ ...request, path: '../outside.png' })).rejects.toThrow();
+		await files.write({ ...request, expectedRevision: receipt.revision, documentVersion: 2 });
+		expect((await files.read({ workspaceId: workspace.id, path: 'picture.png' })).bytes).toEqual(new Uint8Array(png));
+	});
 	it('reads real UTF-8 BOM and mixed EOL bytes without normalization', async () => {
 		const original = Buffer.from('\uFEFF% note\r\n雪\nlast\r');
 		await fs.writeFile(path.join(directory, 'main.tex'), original);
@@ -24,6 +38,23 @@ describe('real frontend workspace filesystem', () => {
 		const result = await files.read({ workspaceId: workspace.id, path: 'main.tex' });
 		expect(Buffer.from(result.bytes)).toEqual(original);
 		expect(result.revision).toMatch(/^sha256:[a-f0-9]{64}$/);
+	});
+	it('save-as copies managed images before publishing and never overwrites conflicting image bytes', async () => {
+		const workspace = await files.open(directory, 'folder');
+		const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII=', 'base64');
+		const image = { path: 'modutex-image-abcd.png', bytes: png };
+		await fs.mkdir(path.join(directory, 'target'));
+		const request = { workspaceId: workspace.id, bytes: Buffer.from('\\includegraphics{' + image.path + '}'), documentId: 'image-document', documentVersion: 3, images: [image] };
+		const saved = await files.saveAs(path.join(directory, 'target', 'saved.tex'), request);
+		expect(await fs.readFile(path.join(directory, 'target', image.path))).toEqual(png);
+		expect(await fs.readFile(path.join(directory, 'target', 'saved.tex'))).toEqual(request.bytes);
+		const current = await files.saveAs(path.join(directory, 'target', 'again.tex'), { ...request, workspaceId: saved.workspace.id });
+		await fs.mkdir(path.join(directory, 'conflict'));
+		const changed = Buffer.from(png); changed[20] ^= 1;
+		await fs.writeFile(path.join(directory, 'conflict', image.path), changed);
+		await expect(files.saveAs(path.join(directory, 'conflict', 'blocked.tex'), { ...request, workspaceId: current.workspace.id })).rejects.toThrow('FILE_CONFLICT');
+		expect(await fs.readFile(path.join(directory, 'conflict', image.path))).toEqual(changed);
+		await expect(fs.stat(path.join(directory, 'conflict', 'blocked.tex'))).rejects.toThrow();
 	});
 	it('creates complete new bytes exclusively and never overwrites an existing destination', async () => {
 		const workspace = await files.open(directory, 'folder');

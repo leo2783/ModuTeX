@@ -85,6 +85,8 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.waitForFunction(() => document.querySelector('.inline-equation-draft math-field')?.value.includes('x'));
 			assert.equal(await page.locator('.inline-equation-draft').getByRole('button', { name: '數學鍵盤', exact: true }).count(), 0);
 			assert.equal(await page.evaluate(() => window.mathVirtualKeyboard?.visible ?? false), false);
+			assert.equal(await page.evaluate(() => typeof window.mathVirtualKeyboard), 'undefined', 'virtual keyboard has no global runtime');
+			assert.equal(await mathField.evaluate(field => field.shadowRoot.querySelector('[part="virtual-keyboard-toggle"]') === null), true);
 			assert.equal(await mathField.evaluate(field => !!field.closest('.ProseMirror')), true);
 			await page.getByRole('button', { name: '取消公式', exact: true }).click();
 			assert.equal(await page.locator('.inline-equation-draft').count(), 0);
@@ -237,8 +239,13 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.locator('.insert-bar').getByRole('button', { name: '表格', exact: true }).click();
 			const panel = page.locator('.table-panel');
 			const panelBox = await panel.boundingBox();
+			await page.screenshot({ path: screenshotRoot + 'table-panel-choices-inspection.png' });
 			assert.ok(panelBox.height < 420, `compact 3×3 table panel height: ${panelBox.height}`);
 			assert.equal(await panel.evaluate(el => getComputedStyle(el).whiteSpace), 'normal');
+			assert.equal(await panel.locator('select').count(), 0);
+			await panel.getByRole('button', { name: '全框線', exact: true }).click();
+			assert.equal(await panel.locator('table.full').count(), 1);
+			await panel.getByRole('button', { name: '三線表', exact: true }).click();
 			await page.screenshot({ path: screenshotRoot + 'table-panel-compact-dark-20261012.png' });
 			await page.emulateMedia({ colorScheme: 'light' });
 			await page.screenshot({ path: screenshotRoot + 'table-panel-compact-light-20261012.png' });
@@ -253,6 +260,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			const table = page.locator('.visual-table').last();
 			await table.getByRole('columnheader', { name: 'Notebook table', exact: true }).waitFor({ state: 'visible' });
 			await table.getByRole('columnheader', { name: 'Notebook table', exact: true }).click();
+			await page.locator('.table-panel').getByRole('button', { name: '取消', exact: true }).click();
 			const cellIndex = () => table.getAttribute('data-cell-index').then(Number);
 			const indexBefore = await cellIndex();
 			await page.locator('.visual-cell-toolbar').getByRole('button', { name: '上移儲存格', exact: true }).click();
@@ -270,11 +278,9 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.locator('.table-panel td input').first().fill('Discard this draft');
 			await page.locator('.table-panel').getByRole('button', { name: '取消', exact: true }).click();
 			assert.equal(await table.getByRole('columnheader', { name: 'Notebook table', exact: true }).count(), 1);
-			await table.getByRole('columnheader', { name: 'Notebook table', exact: true }).click();
 			page.once('dialog', dialog => dialog.dismiss());
 			await page.locator('.visual-cell-toolbar').getByRole('button', { name: '刪除此儲存格', exact: true }).click();
 			assert.equal(await table.count(), 1);
-			await table.getByRole('columnheader', { name: 'Notebook table', exact: true }).click();
 			page.once('dialog', dialog => dialog.accept());
 			await page.locator('.visual-cell-toolbar').getByRole('button', { name: '刪除此儲存格', exact: true }).click();
 			await table.waitFor({ state: 'detached' });
@@ -284,7 +290,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.locator('.table-panel td input').first().fill('Revised notebook table');
 			await page.locator('.table-panel').getByRole('button', { name: '套用', exact: true }).click();
 			await table.getByRole('columnheader', { name: 'Revised notebook table', exact: true }).waitFor({ state: 'visible' });
-			await table.getByRole('columnheader', { name: 'Revised notebook table', exact: true }).click();
+			await page.locator('.source-block').filter({ hasText: 'Beta paragraph.' }).click();
 			await page.keyboard.press('Control+z');
 			await table.getByRole('columnheader', { name: 'Notebook table', exact: true }).waitFor({ state: 'visible' });
 			await page.screenshot({ path: screenshotRoot + 'workbench-blocks-dark-20261011.png' });
@@ -294,7 +300,8 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 		});
 		await t.test('math catalog supports inline Greek, limits and calculus without a keyboard', async () => {
 			const paragraph = page.locator('.source-block').filter({ hasText: 'Beta paragraph.' }).first();
-			await paragraph.click(); await page.keyboard.press('End');
+			const textEnd = await paragraph.evaluate(node => { const range = document.createRange(); range.selectNodeContents(node); const rect = [...range.getClientRects()].filter(rect => rect.width > 1).at(-1); return { x: rect.right - 2, y: rect.top + rect.height / 2 }; });
+			await page.mouse.click(textEnd.x, textEnd.y); await page.keyboard.press('End');
 			await page.locator('summary[aria-label="數學"]').click();
 			await page.getByRole('button', { name: '行內公式', exact: true }).click();
 			await page.locator('.inline-equation-draft math-field').waitFor({ state: 'visible' });
@@ -419,6 +426,85 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.mouse.move(retry.x + retry.width / 2, retry.y + retry.height / 2); await page.mouse.down(); await page.mouse.move(target.x + 30, target.y + 1, { steps: 12 });
 			assert.equal(await page.locator('.is-drop-target').count(), 1); await page.mouse.up();
 			await page.waitForFunction(() => document.querySelector('.notebook-cell')?.textContent.trim() === 'Third');
+		});
+		await t.test('Chinese composition, Enter and font-dependent wrapping preserve notebook text', async () => {
+			await page.getByRole('button', { name: '原始碼', exact: true }).click(); await sourceEditor.click(); await page.keyboard.press('Control+A');
+			await page.keyboard.insertText('\\documentclass{article}\n\\begin{document}\n起始文字\n\\end{document}\n');
+			await page.getByRole('button', { name: '視覺化', exact: true }).click();
+			const paragraph = page.locator('.source-block').filter({ hasText: '起始文字' });
+			await paragraph.click(); await page.keyboard.press('End');
+			const session = await page.context().newCDPSession(page);
+			try {
+				await session.send('Input.imeSetComposition', { text: '我', selectionStart: 1, selectionEnd: 1 });
+				await session.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 229 });
+				await session.send('Input.insertText', { text: '我' });
+				await session.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 229 });
+			} finally { await session.detach(); }
+			await page.keyboard.press('Enter'); await page.keyboard.insertText('下一行');
+			await page.waitForFunction(() => document.querySelector('.ProseMirror')?.textContent.includes('下一行'));
+			assert.equal(await page.getByText('這次編輯未套用，請重新選取內容後再試。', { exact: true }).count(), 0);
+			assert.match(await sourceEditor.evaluate(node => [...node.querySelectorAll('.cm-line')].map(line => line.textContent).join('\n')), /起始文字我\s*\n\s*下一行/);
+			await page.keyboard.press('Enter');
+			const long = '中文 English 123 '.repeat(60) + 'LongUnbrokenIdentifier'.repeat(20);
+			await page.keyboard.insertText(long);
+			const wrapped = page.locator('.source-block').filter({ hasText: 'LongUnbrokenIdentifier' });
+			const heights = [];
+			for (const width of [1280, 820]) {
+				await page.setViewportSize({ width, height: 850 });
+				if (width < 960) await page.locator('#workbench-tab-document').click();
+				await wrapped.waitFor({ state: 'visible' });
+				for (const font of [16, 24]) {
+					const measured = await wrapped.evaluate((node, font) => { node.style.fontSize = font + 'px'; return { width: node.clientWidth, scroll: node.scrollWidth, height: node.getBoundingClientRect().height }; }, font);
+					assert.ok(measured.scroll <= measured.width + 1, 'text stays inside its cell'); heights.push(measured.height);
+				}
+			}
+			assert.ok(heights[1] > heights[0]); assert.ok(heights[3] > heights[2]);
+			await wrapped.evaluate(node => node.style.removeProperty('font-size')); await page.setViewportSize({ width: 1280, height: 850 });
+		});
+		await t.test('images insert, copy, paste, survive reload and share document undo', async () => {
+			await page.getByRole('button', { name: '原始碼', exact: true }).click(); await sourceEditor.click(); await page.keyboard.press('Control+A');
+			await page.keyboard.insertText('\\documentclass{article}\n\\begin{document}\nImage document\n\\end{document}\n');
+			await page.getByRole('button', { name: '視覺化', exact: true }).click();
+			const png = await page.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = 120; canvas.height = 80; const context = canvas.getContext('2d'); context.fillStyle = '#3d617b'; context.fillRect(0, 0, 120, 80); return canvas.toDataURL('image/png').split(',')[1]; });
+			await page.getByLabel('選擇圖片', { exact: true }).setInputFiles({ name: 'test.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+			await page.waitForFunction(() => document.querySelector('.visual-image img')?.naturalWidth === 120);
+			assert.match(await sourceEditor.innerText(), /\\usepackage\{graphicx\}/);
+			const button = page.locator('.visual-image-content').first(); await button.click();
+			const copied = await button.evaluate(node => { const data = new DataTransfer(); node.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true })); return data.getData('application/x-modutex-image'); });
+			assert.equal(copied, png, 'copy retains the original image bytes');
+			await page.locator('.source-block').filter({ hasText: 'Image document' }).click();
+			await page.locator('.ProseMirror').evaluate((node, copied) => { const data = new DataTransfer(); data.setData('application/x-modutex-image', copied); node.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true })); }, copied);
+			await page.waitForFunction(() => document.querySelectorAll('.visual-image img').length === 2 && [...document.querySelectorAll('.visual-image img')].every(image => image.naturalWidth === 120));
+			const jpeg = await page.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = 120; canvas.height = 80; canvas.getContext('2d').fillRect(0, 0, 120, 80); return canvas.toDataURL('image/jpeg').split(',')[1]; });
+			await page.getByLabel('選擇圖片', { exact: true }).setInputFiles({ name: 'test.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpeg, 'base64') });
+			await page.waitForFunction(() => document.querySelectorAll('.visual-image img').length === 3 && [...document.querySelectorAll('.visual-image img')].every(image => image.naturalWidth === 120));
+			const jpegButton = page.locator('.visual-image-content').filter({ has: page.locator('img[alt$=".jpg"]') });
+			assert.equal(await jpegButton.evaluate(node => { const data = new DataTransfer(); node.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true })); return data.getData('application/x-modutex-image'); }), jpeg);
+			await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+			await page.evaluate(() => navigator.clipboard.writeText(''));
+			await jpegButton.click(); await page.keyboard.press('Control+c');
+			await page.waitForFunction(async () => (await navigator.clipboard.read()).some(item => item.types.includes('image/png')));
+			await page.locator('.source-block').filter({ hasText: 'Image document' }).click(); await page.keyboard.press('Control+v');
+			await page.waitForFunction(() => document.querySelectorAll('.visual-image img').length === 4 && [...document.querySelectorAll('.visual-image img')].every(image => image.naturalWidth === 120));
+			await page.locator('.source-block').filter({ hasText: 'Image document' }).click(); await page.keyboard.press('Control+z');
+			await page.waitForFunction(() => document.querySelectorAll('.visual-image').length === 3);
+			await page.locator('.source-block').filter({ hasText: 'Image document' }).click(); await page.keyboard.press('Control+z');
+			await page.waitForFunction(() => document.querySelectorAll('.visual-image').length === 2);
+			const source = await sourceEditor.evaluate(node => [...node.querySelectorAll('.cm-line')].map(line => line.textContent).join('\n'));
+			await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+			await page.evaluate(() => navigator.clipboard.writeText(''));
+			await button.click(); await page.keyboard.press('Control+c');
+			await page.waitForFunction(async () => (await navigator.clipboard.read()).some(item => item.types.includes('image/png')));
+			await page.locator('.source-block').filter({ hasText: 'Image document' }).click(); await page.keyboard.press('Control+v');
+			await page.waitForFunction(() => document.querySelectorAll('.visual-image img').length === 3 && [...document.querySelectorAll('.visual-image img')].every(image => image.naturalWidth === 120));
+			await page.locator('.source-block').filter({ hasText: 'Image document' }).click(); await page.keyboard.press('Control+z');
+			await page.waitForFunction(() => document.querySelectorAll('.visual-image').length === 2);
+			await page.locator('.source-block').filter({ hasText: 'Image document' }).click(); await page.keyboard.press('Control+z');
+			await page.waitForFunction(() => document.querySelectorAll('.visual-image').length === 1);
+			page.once('dialog', dialog => dialog.accept()); await page.reload(); await page.getByRole('button', { name: '新文件', exact: true }).click();
+			await page.getByRole('button', { name: '原始碼', exact: true }).click(); await sourceEditor.click(); await page.keyboard.press('Control+A'); await page.keyboard.insertText(source);
+			await page.getByRole('button', { name: '視覺化', exact: true }).click();
+			await page.waitForFunction(() => document.querySelectorAll('.visual-image img').length === 2 && [...document.querySelectorAll('.visual-image img')].every(image => image.naturalWidth === 120));
 		});
 		await t.test('text cells switch title, abstract and heading levels without losing content', async () => {
 			await page.getByRole('button', { name: '原始碼', exact: true }).click();

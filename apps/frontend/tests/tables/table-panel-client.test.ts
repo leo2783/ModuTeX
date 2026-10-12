@@ -380,18 +380,10 @@ test(
 				assertLocalized(locale);
 			}
 
-			const optionSelects = (): HTMLSelectElement[] =>
-				Array.from(panel.querySelectorAll<HTMLSelectElement>('.options select'));
-			function selectValue(select: HTMLSelectElement, value: string): void {
-				assert.ok(Array.from(select.options).some((option) => option.value === value), `Expected option ${value}`);
-				select.value = value;
-				select.dispatchEvent(new win.Event('change', { bubbles: true }));
-				api.flushSync();
-			}
-			function captionSelect(): HTMLSelectElement {
-				const select = optionSelects().at(-1);
-				assert.ok(select, 'The caption position control must be rendered');
-				return select;
+			function choose(kind: string, value: string): void {
+				const button = panel.querySelector<HTMLButtonElement>('[data-' + kind + '="' + value + '"]');
+				assert.ok(button, 'Choice must be rendered: ' + kind + '/' + value);
+				button.click(); api.flushSync();
 			}
 			function setCaption(value: string): void {
 				const input = panel.querySelector<HTMLInputElement>('.caption input');
@@ -431,7 +423,7 @@ test(
 			assert.ok(!none.emitted.source.includes(String.raw`\caption{`));
 
 			// Above and below captions are entered through the actual input event and retain literal text.
-			selectValue(captionSelect(), 'above');
+			choose('caption', 'above');
 			setCaption('Above & title');
 			insertCurrent();
 			const above = inspectEmission(1);
@@ -444,7 +436,7 @@ test(
 					above.emitted.source.indexOf(String.raw`\begin{tabular}`)
 			);
 
-			selectValue(captionSelect(), 'below');
+			choose('caption', 'below');
 			setCaption('Below _ caption');
 			insertCurrent();
 			const below = inspectEmission(2);
@@ -456,37 +448,28 @@ test(
 					below.emitted.source.indexOf(String.raw`\end{tabular}`)
 			);
 
-			selectValue(captionSelect(), 'none');
+			choose('caption', 'none');
 			insertCurrent();
 			const noCaptionAgain = inspectEmission(3);
 			assert.equal(noCaptionAgain.parsed.caption.position, 'none');
 			assert.ok(!noCaptionAgain.emitted.source.includes(String.raw`\caption{`));
 
-			// Exercise all supported visual styles through the rendered select controls.
-			const styleSelect = (): HTMLSelectElement => {
-				const select = optionSelects()[0];
-				assert.ok(select, 'The style control must be rendered');
-				return select;
-			};
-			selectValue(styleSelect(), 'full');
+			// Exercise all supported styles through rendered graphical choices.
+			choose('style', 'full');
 			insertCurrent();
 			const full = inspectEmission(4);
 			assert.equal(full.parsed.style, 'full');
 			assert.equal(full.emitted.booktabs, false);
 			assert.ok(full.emitted.source.includes(String.raw`\begin{tabular}{|`));
 
-			selectValue(styleSelect(), 'horizontal');
+			choose('style', 'horizontal');
 			insertCurrent();
 			const horizontal = inspectEmission(5);
 			assert.equal(horizontal.parsed.style, 'horizontal');
 			assert.equal(horizontal.emitted.booktabs, false);
 
-			selectValue(styleSelect(), 'three-line');
-			const rulesSelect = optionSelects().find((select) =>
-				Array.from(select.options).some((option) => option.value === 'booktabs')
-			);
-			assert.ok(rulesSelect, 'The three-line rules control must be rendered');
-			selectValue(rulesSelect, 'booktabs');
+			choose('style', 'three-line');
+			choose('rule', 'booktabs');
 			insertCurrent();
 			const booktabs = inspectEmission(6);
 			assert.equal(booktabs.parsed.style, 'three-line');

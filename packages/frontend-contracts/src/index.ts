@@ -1,5 +1,6 @@
 // Original ModuTeX implementation. License pending provenance review.
 export type * from './types.ts';
+export { IMAGE_BYTES_LIMIT, imageType, validateImageFile } from './images.ts';
 export {
 	ContractError,
 	parseRecentDocuments,
