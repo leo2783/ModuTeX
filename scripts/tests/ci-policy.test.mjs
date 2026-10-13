@@ -226,6 +226,10 @@ function windowsContract(value) {
 	const job = value.jobs['verify-and-package'];
 	assert.equal(job['runs-on'], 'windows-2025');
 	const steps = job.steps;
+	const tempSetup = steps.findIndex((step) => step.run === 'node scripts/prepare-windows-test-temp.mjs');
+	assert.ok(tempSetup >= 0 && tempSetup < steps.findIndex((step) => step.run === 'npm ci --ignore-scripts'));
+	assert.equal(steps[tempSetup].if, undefined);
+	assert.equal(steps[tempSetup]['continue-on-error'], undefined);
 	commandsInOrder(steps, [
 		'npm ci --ignore-scripts',
 		'npm run verify:install-policy',

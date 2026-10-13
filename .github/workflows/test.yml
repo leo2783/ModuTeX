@@ -104,6 +104,8 @@ jobs:
         run: |
           if ((node --version) -ne 'v24.19.0') { throw 'Node.js version mismatch' }
           if ((npm --version) -ne '11.17.0') { throw 'npm version mismatch' }
+      - name: Configure canonical Windows test TEMP
+        run: node scripts/prepare-windows-test-temp.mjs
       - run: npm ci --ignore-scripts
       - run: npm run verify:install-policy
       - run: npm ci
