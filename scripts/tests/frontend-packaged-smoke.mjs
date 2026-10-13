@@ -25,9 +25,11 @@ const port = server.address().port;
 await new Promise(r => server.close(r));
 const args = ['--disable-gpu', `--remote-debugging-port=${port}`];
 const tarball = target.endsWith('.tgz');
+// A fresh cache proves the downloaded archive works without warmed repo dependencies.
+const npmCache = join(fixture, 'npm-cache');
 const npxCli = process.env.MODUTEX_TEST_NPX_CLI ?? (process.env.npm_execpath ? join(dirname(process.env.npm_execpath),'npx-cli.js') : undefined);
 assert.ok(!tarball || npxCli, 'Set MODUTEX_TEST_NPX_CLI to the pinned npm npx-cli.js');
-const child = spawn(tarball ? process.execPath : target, tarball ? [npxCli, '--offline','--yes','--ignore-scripts','--package',target,'--','modutex',...args] : args, {
+const child = spawn(tarball ? process.execPath : target, tarball ? [npxCli, '--offline','--yes','--ignore-scripts','--cache',npmCache,'--loglevel','verbose','--package',target,'--','modutex',...args] : args, {
  cwd:tarball ? fixture : process.cwd(),
  windowsHide:true, env:{...process.env,TEXPILE_USER_DATA:fixture}, stdio:['ignore','pipe','pipe']
 });
