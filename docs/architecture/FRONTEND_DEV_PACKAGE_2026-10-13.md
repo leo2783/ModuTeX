@@ -18,4 +18,6 @@ EXE 與下載資料夾的離線 npx 真實驗證已通過。npx 首次展開約 
 
 前端型別檢查為 0 errors、2 個既有 layout reactivity warnings。依賴修正與剩餘通報見 [依賴更新](../security/DEV_PACKAGE_DEPENDENCIES_2026-10-13.md)。最終 npx、inventory、audit、signature 與來源 SHA 收據隨本次 release 證據保存。
 
+GitHub 乾淨 CI 曾在 Electron 型別檢查找不到兩個共享套件；已將共享建置納入 Electron dev／prod 指令、整體驗證與兩平台 workflow。移除本機兩個 generated dist 後重建通過，驗證 runner 4 項與 CI 政策 10 項通過。
+
 執行方式見 [安裝說明](../user/INSTALLATION.md)。首次缺少快取的 TeX 編譯需要網路；啟動包不需要 Vite。檔案是未簽章開發版，Windows x64 以外平台未列入驗證。

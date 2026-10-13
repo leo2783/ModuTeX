@@ -561,8 +561,13 @@ test('Electron security gate remains real in the aggregate, manifest and Linux w
 	assert.doesNotMatch(config, /exclude|passWithNoTests|testNamePattern/);
 	const gate = modutexChecks.findIndex(([, args]) => args.join(' ') === 'run test:electron');
 	const typecheck = modutexChecks.findIndex(([, args]) => args.join(' ') === 'exec --no -- tsc -p electron --noEmit');
+	const shared = modutexChecks.findIndex(([, args]) => args.join(' ') === 'run build:shared --workspace=modutex-frontend');
+	assert.ok(shared >= 0 && shared < typecheck, 'a clean checkout must build shared packages before Electron typecheck');
+	for (const script of ['electron:build', 'electron:build:prod']) {
+		assert.ok(manifest.scripts[script].startsWith('npm run build:shared --workspace=modutex-frontend && '));
+	}
 	assert.ok(gate > typecheck && typecheck >= 0);
-	const required = ['npm exec --no -- tsc -p electron --noEmit', 'npm run test:electron'];
+	const required = ['npm run build:shared --workspace=modutex-frontend', 'npm exec --no -- tsc -p electron --noEmit', 'npm run test:electron'];
 	const original = (await workflow('test.yml')).jobs.test.steps;
 	commandsInOrder(original, required);
 	for (const mutate of [
