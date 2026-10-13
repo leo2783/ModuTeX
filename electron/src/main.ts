@@ -21,6 +21,17 @@ import { renderDiagramSvgToPdf } from './diagram-pdf';
 import { diagramCpu } from './diagram-cpu';
 import { createManagedCompileService } from './managed-compile';
 import {
+	frontendDevelopment,
+	frontendBuilt,
+	FRONTEND_DEVELOPMENT_URL,
+	FRONTEND_BUILT_URL,
+	matchesFrontendHostURL
+} from './frontend-development';
+import { FrontendFiles } from './frontend-files';
+import { FrontendWatch } from './frontend-watch';
+import { FrontendRecent } from './frontend-recent';
+import { FrontendCompiler } from './frontend-compile';
+import {
 	DRAWIO_PRIVILEGES,
 	createDrawioHandler,
 	drawioVendorRoot,
@@ -30,6 +41,9 @@ import {
 } from './drawio-protocol';
 
 const isDev = !app.isPackaged;
+const isFrontendDev = frontendDevelopment(app.isPackaged, process.env.MODUTEX_RENDERER);
+const isFrontendBuilt = frontendBuilt(app.isPackaged, process.env.MODUTEX_RENDERER);
+const useOriginalFrontend = isFrontendDev || isFrontendBuilt;
 
 // display name for menus/notifications and the Linux WM_CLASS (GNOME matches it against the
 // .desktop file's StartupWMClass=ModuTeX; without this the dock shows "modutex-desktop").
@@ -43,6 +57,13 @@ app.setPath('userData', path.join(app.getPath('appData'), dataDirName));
 app.setPath('sessionData', path.join(app.getPath('appData'), dataDirName));
 app.setName(devChannel ? 'ModuTeX Dev' : 'ModuTeX');
 
+// Keep the rewrite's development session separate from the published app.
+if (useOriginalFrontend) {
+	const frontendData = path.join(app.getPath('appData'), 'modutex-frontend-development');
+	app.setPath('userData', frontendData);
+	app.setPath('sessionData', frontendData);
+}
+
 // dev/test hook: userData scopes settings, caches, and the single-instance lock,
 // so without this a dev run can't start while an installed ModuTeX is open.
 // TEXPILE_USER_DATA is a non-user-visible compatibility hook retained for existing test tooling.
@@ -55,15 +76,42 @@ if (isDev && process.env.TEXPILE_USER_DATA) {
 // what each window has open, keyed by webContents id; null = start screen
 type WindowRoot = { raw: string; norm: string };
 const windowRoots = new Map<number, WindowRoot | null>();
+const frontendFiles = new Map<number, FrontendFiles>();
+const frontendWatches = new Map<number, Map<string, { workspaceId: string; watcher: FrontendWatch }>>();
+let frontendRecent: FrontendRecent | undefined;
+function recentFiles(): FrontendRecent {
+	return frontendRecent ??= new FrontendRecent(path.join(app.getPath('userData'), 'frontend-recent-v1.json'));
+}
+const frontendPickers = new Set<number>();
 const diagramGenerations = new Map<number, number>();
 let diagramNative: ReturnType<typeof registerDiagramNativeIpc> | undefined;
 let managedCompile: ReturnType<typeof createManagedCompileService> | undefined;
+let frontendCompiler: FrontendCompiler | undefined;
+function stopFrontendWatches(id: number, notify = false): void {
+	const watches = frontendWatches.get(id);
+	if (!watches) return;
+	frontendWatches.delete(id);
+	const win = notify ? windowFor(id) : null;
+	for (const [subscriptionId, subscription] of watches) {
+		if (win && !win.webContents.isDestroyed()) {
+			win.webContents.send('frontend:watch:error', { subscriptionId, error: 'STALE_WORKSPACE' });
+		}
+		subscription.watcher.stop();
+	}
+}
 function invalidateDiagramOwner(id: number): void {
+	frontendCompiler?.cancelOwner(id);
+	stopFrontendWatches(id);
+	frontendFiles.get(id)?.close();
+	frontendFiles.delete(id);
 	managedCompile?.cancelOwner(id);
 	diagramGenerations.set(id, (diagramGenerations.get(id) ?? 0) + 1);
 	diagramNative?.invalidate(id);
 }
-function isDiagramHost(event: Electron.IpcMainInvokeEvent): boolean {
+function isAuthorizedSender(
+	event: Electron.IpcMainInvokeEvent,
+	matcher: (actual: string, expected: string) => boolean
+): boolean {
 	const win = windowFor(event.sender.id);
 	const expected = hostURLs.get(event.sender.id);
 	return (
@@ -72,9 +120,15 @@ function isDiagramHost(event: Electron.IpcMainInvokeEvent): boolean {
 		win.webContents === event.sender &&
 		event.senderFrame === event.sender.mainFrame &&
 		!!expected &&
-		matchesDiagramHostURL(event.sender.getURL(), expected) &&
-		matchesDiagramHostURL(event.senderFrame.url, expected)
+		matcher(event.sender.getURL(), expected) &&
+		matcher(event.senderFrame.url, expected)
 	);
+}
+function isDiagramHost(event: Electron.IpcMainInvokeEvent): boolean {
+	return !useOriginalFrontend && isAuthorizedSender(event, matchesDiagramHostURL);
+}
+function isFrontendHost(event: Electron.IpcMainInvokeEvent): boolean {
+	return useOriginalFrontend && isAuthorizedSender(event, matchesFrontendHostURL);
 }
 // a file/folder a freshly-created window should open once its renderer loads
 type PendingOpen = { kind: 'file' | 'folder'; path: string };
@@ -187,6 +241,10 @@ function bundleDir(): string {
 	return path.join(process.resourcesPath, 'app-dist');
 }
 
+function frontendDistDir(): string {
+	return path.join(app.getAppPath(), 'apps', 'frontend', 'dist');
+}
+
 // Draft-mode engine .lua files. Shipped outside the asar via extraResources (see
 // electron-builder.yml). In dev, __dirname is electron/dist, so the repo's electron/lua
 // is one level up.
@@ -215,6 +273,23 @@ const RENDERER_CSP = [
 	// plane rejects websocket handshakes from any other origin. Still a separate origin from
 	// app://bundle, so the framed page cannot reach this window's bridges.
 	'frame-src drawio://bundle http://127.0.0.1:*',
+	"frame-ancestors 'none'",
+	"form-action 'self'"
+].join('; ');
+
+const FRONTEND_CSP = [
+	"default-src 'none'",
+	"script-src 'self' 'wasm-unsafe-eval'",
+	"style-src 'self' 'unsafe-inline'",
+	"img-src 'self' blob: data:",
+	"font-src 'self' data:",
+	"connect-src 'self' blob: data:",
+	"worker-src 'self' blob:",
+	"child-src 'self' blob:",
+	"media-src 'self' blob: data:",
+	"object-src 'none'",
+	"base-uri 'self'",
+	"frame-src 'none'",
 	"frame-ancestors 'none'",
 	"form-action 'self'"
 ].join('; ');
@@ -260,10 +335,37 @@ function registerProtocolHandlers(): void {
 		])
 	);
 	protocol.handle('app', async (request) => {
-		const url = new URL(request.url);
-		let rel = decodeURIComponent(url.pathname);
+		let url: URL;
+		try {
+			url = new URL(request.url);
+		} catch {
+			return new Response('Bad request', { status: 400 });
+		}
+		let root: string;
+		let csp: string;
+		if (url.host === 'bundle' && !url.port && !url.username && !url.password) {
+			root = bundleDir();
+			csp = RENDERER_CSP;
+		} else if (
+			url.host === 'frontend' &&
+			!url.port &&
+			!url.username &&
+			!url.password &&
+			!app.isPackaged &&
+			useOriginalFrontend
+		) {
+			root = frontendDistDir();
+			csp = FRONTEND_CSP;
+		} else {
+			return new Response('Forbidden', { status: 403 });
+		}
+		let rel: string;
+		try {
+			rel = decodeURIComponent(url.pathname);
+		} catch {
+			return new Response('Bad request', { status: 400 });
+		}
 		if (rel === '/' || rel === '') rel = '/index.html';
-		const root = bundleDir();
 		const file = path.normalize(path.join(root, rel));
 		// path traversal guard: resolved file must stay inside the bundle
 		if (!file.startsWith(root + path.sep) && file !== root) {
@@ -272,7 +374,9 @@ function registerProtocolHandlers(): void {
 		try {
 			const st = await fs.promises.stat(file);
 			if (!st.isFile()) return new Response('Not found', { status: 404 });
-			const mime = BUNDLE_MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
+			const mime = BUNDLE_MIME[path.extname(file).toLowerCase()] ??
+				(url.host === 'bundle' ? 'application/octet-stream' : undefined);
+			if (!mime) return new Response('Forbidden', { status: 403 });
 			const headers: Record<string, string> = { 'Content-Type': mime, 'Content-Length': String(st.size) };
 			// vite content-hashes everything under assets/ (name-XXXXXXXX.ext), so those bytes can
 			// never change under their URL: cache forever. index.html & co keep stable names and
@@ -284,7 +388,7 @@ function registerProtocolHandlers(): void {
 				headers['Last-Modified'] = st.mtime.toUTCString();
 			}
 			// CSP is a document-level directive; attach it to the served HTML (ignored on subresources)
-			if (mime === 'text/html') headers['Content-Security-Policy'] = RENDERER_CSP;
+			if (mime === 'text/html') headers['Content-Security-Policy'] = csp;
 			// big files (wasm, fonts) stream; small ones stay buffered, one readFile is cheaper
 			if (st.size > 1_000_000) return new Response(fileStream(file), { headers });
 			const data = await fs.promises.readFile(file);
@@ -391,7 +495,7 @@ function createWindow(url: string, pending?: PendingOpen): BrowserWindow {
 		// localStorage, which only the renderer can read - and Chromium paints the overlay before any
 		// HTML exists, so without a remembered value the buttons spend the load in a pale strip on a
 		// blank window. The light defaults are the genuine first run only.
-		...(process.platform === 'darwin'
+		...(useOriginalFrontend ? { frame: true } : process.platform === 'darwin'
 			? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 12, y: 10 } }
 			: {
 					// BOTH, and the pair is load-bearing. `frame: false` alone removes the standard
@@ -425,7 +529,7 @@ function createWindow(url: string, pending?: PendingOpen): BrowserWindow {
 	if (pending) pendingOpens.set(wcId, pending);
 	hostURLs.set(wcId, url);
 	win.webContents.on('did-start-navigation', (details) => {
-		if (!details.isMainFrame) return;
+		if (!details.isMainFrame || details.isSameDocument) return;
 		invalidateDiagramOwner(wcId);
 		windowRoots.set(wcId, null);
 		stopWorkspaceWatch(String(wcId));
@@ -434,7 +538,7 @@ function createWindow(url: string, pending?: PendingOpen): BrowserWindow {
 		invalidateDiagramOwner(wcId);
 		diagramGenerations.delete(wcId);
 	});
-	win.webContents.on('render-process-gone', () => managedCompile?.cancelOwner(wcId));
+	win.webContents.on('render-process-gone', () => { frontendCompiler?.cancelOwner(wcId); managedCompile?.cancelOwner(wcId); });
 	installDrawioNavigationGuard(win.webContents, () => drawioWindowContext(wcId)!);
 	win.loadURL(url);
 	win.webContents.on('did-finish-load', () => {
@@ -479,6 +583,8 @@ function createWindow(url: string, pending?: PendingOpen): BrowserWindow {
 		});
 	});
 	win.on('closed', () => {
+		frontendFiles.delete(wcId);
+		frontendPickers.delete(wcId);
 		invalidateDiagramOwner(wcId);
 		diagramGenerations.delete(wcId);
 		hostURLs.delete(wcId);
@@ -504,9 +610,221 @@ function createWindow(url: string, pending?: PendingOpen): BrowserWindow {
 }
 
 function startUrl(): string {
+	if (isFrontendDev) return FRONTEND_DEVELOPMENT_URL;
+	if (isFrontendBuilt) {
+		const distIndex = path.join(frontendDistDir(), 'index.html');
+		if (!fs.existsSync(distIndex)) {
+			throw new Error(`Built frontend index not found at ${distIndex}. Run "npm run frontend:build" before launching.`);
+		}
+		return FRONTEND_BUILT_URL;
+	}
 	if (isDev) return process.env.ELECTRON_START_URL || 'http://127.0.0.1:5173';
 	return 'app://bundle/index.html';
 }
+
+// Narrow original-renderer bridge. Each verb rechecks the owner after asynchronous work.
+const frontendErrors = new Set(['BAD_SELECTION', 'BAD_FILE', 'STALE_WORKSPACE', 'LINK_NOT_ALLOWED', 'OUTSIDE_WORKSPACE',
+	'FILE_TYPE', 'FILE_TOO_LARGE', 'FILE_CHANGED', 'FILE_CONFLICT', 'ENGINE_UNAVAILABLE', 'TREE_TOO_DEEP', 'TREE_TOO_LARGE', 'BUSY', 'FORBIDDEN', 'RECENT_CORRUPT', 'RECENT_NOT_FOUND']);
+function handleFrontendFiles(channel: string, action: (event: Electron.IpcMainInvokeEvent, args: unknown[]) => Promise<unknown>) {
+	ipcMain.handle(channel, async (event, ...args: unknown[]) => {
+		try {
+			if (!isFrontendHost(event)) throw new Error('FORBIDDEN');
+			const value = await action(event, args);
+			if (!isFrontendHost(event)) throw new Error('FORBIDDEN');
+			return { ok: true, value };
+		} catch (error) {
+			const code = error instanceof Error ? error.message : '';
+			return { ok: false, error: frontendErrors.has(code) ? code : 'FILE_OPERATION_FAILED' };
+		}
+	});
+}
+function filesFor(id: number): FrontendFiles {
+	let files = frontendFiles.get(id);
+	if (!files) { files = new FrontendFiles(); frontendFiles.set(id, files); }
+	return files;
+}
+function frontendWatchSubscriptionId(value: unknown): string {
+	if (typeof value !== 'string' || value.length > 128 || !/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('BAD_FILE');
+	return value;
+}
+function frontendWatchRequest(value: unknown): { workspaceId: string; subscriptionId: string } {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('BAD_FILE');
+	const descriptors = Object.getOwnPropertyDescriptors(value);
+	if (Reflect.ownKeys(value).length !== 2 ||
+		!('value' in (descriptors.workspaceId ?? {})) ||
+		!('value' in (descriptors.subscriptionId ?? {}))) throw new Error('BAD_FILE');
+	const workspaceId = descriptors.workspaceId!.value;
+	if (typeof workspaceId !== 'string' || !workspaceId || workspaceId.length > 128) throw new Error('BAD_FILE');
+	return { workspaceId, subscriptionId: frontendWatchSubscriptionId(descriptors.subscriptionId!.value) };
+}
+function forgetFrontendWatch(id: number, subscriptionId: string, watcher: FrontendWatch): boolean {
+	const watches = frontendWatches.get(id);
+	if (watches?.get(subscriptionId)?.watcher !== watcher) return false;
+	watches.delete(subscriptionId);
+	if (!watches.size) frontendWatches.delete(id);
+	return true;
+}
+handleFrontendFiles('frontend:open', async (event, args) => {
+	if (args.length !== 1 || (args[0] !== 'file' && args[0] !== 'folder')) throw new Error('BAD_SELECTION');
+	const id = event.sender.id;
+	if (frontendPickers.has(id)) throw new Error('BUSY');
+	frontendPickers.add(id);
+	const files = filesFor(id);
+	try {
+		const result = await dialog.showOpenDialog(windowFor(id)!, {
+			title: args[0] === 'file' ? '開啟 TeX 文件' : '開啟工作區',
+			properties: args[0] === 'file' ? ['openFile'] : ['openDirectory'],
+			...(args[0] === 'file' ? { filters: [{ name: 'LaTeX', extensions: ['tex'] }] } : {})
+		});
+		if (!isFrontendHost(event) || frontendFiles.get(id) !== files) throw new Error('STALE_WORKSPACE');
+		if (result.canceled || !result.filePaths[0]) return null;
+		stopFrontendWatches(id, true);
+		frontendCompiler?.cancelOwner(id);
+		const info = await files.open(result.filePaths[0], args[0]);
+		if (!isFrontendHost(event) || frontendFiles.get(id) !== files) { files.close(); throw new Error('STALE_WORKSPACE'); }
+		// A history write failure must not turn successful native open into failure.
+		await recentFiles().remember(result.filePaths[0], args[0]).catch(() => {});
+		return info;
+	} finally { frontendPickers.delete(id); }
+});
+handleFrontendFiles('frontend:recent:list', async (_event, args) => {
+	if (args.length !== 1 || args[0] !== null) throw new Error('BAD_FILE');
+	return recentFiles().list();
+});
+handleFrontendFiles('frontend:recent:remove', async (_event, args) => {
+	if (args.length !== 1 || typeof args[0] !== 'string') throw new Error('RECENT_NOT_FOUND');
+	await recentFiles().remove(args[0]);
+});
+handleFrontendFiles('frontend:recent:open', async (event, args) => {
+	if (args.length !== 1 || typeof args[0] !== 'string') throw new Error('RECENT_NOT_FOUND');
+	const id = event.sender.id;
+	if (frontendPickers.has(id)) throw new Error('BUSY');
+	frontendPickers.add(id);
+	const files = filesFor(id);
+	try {
+		const selected = await recentFiles().resolve(args[0]);
+		if (!isFrontendHost(event) || frontendFiles.get(id) !== files) throw new Error('STALE_WORKSPACE');
+		stopFrontendWatches(id, true);
+		frontendCompiler?.cancelOwner(id);
+		const info = await files.open(selected.selected, selected.kind);
+		if (!isFrontendHost(event) || frontendFiles.get(id) !== files) { files.close(); throw new Error('STALE_WORKSPACE'); }
+		await recentFiles().remember(selected.selected, selected.kind).catch(() => {});
+		return info;
+	} finally { frontendPickers.delete(id); }
+});
+handleFrontendFiles('frontend:list', (event, args) => {
+	if (args.length !== 1) throw new Error('BAD_FILE');
+	return filesFor(event.sender.id).list(args[0]);
+});
+handleFrontendFiles('frontend:read', (event, args) => {
+	if (args.length !== 1) throw new Error('BAD_FILE');
+	return filesFor(event.sender.id).read(args[0]);
+});
+handleFrontendFiles('frontend:write', (event, args) => {
+	if (args.length !== 1) throw new Error('BAD_FILE');
+	frontendCompiler?.cancelOwner(event.sender.id);
+	return filesFor(event.sender.id).write(args[0]);
+});
+handleFrontendFiles('frontend:close', async (event, args) => {
+	if (args.length !== 1 || typeof args[0] !== 'string') throw new Error('BAD_FILE');
+	frontendCompiler?.cancelOwner(event.sender.id);
+	stopFrontendWatches(event.sender.id);
+	filesFor(event.sender.id).close(args[0]);
+});
+
+handleFrontendFiles('frontend:watch:start', async (event, args) => {
+	if (args.length !== 1) throw new Error('BAD_FILE');
+	const { workspaceId, subscriptionId } = frontendWatchRequest(args[0]);
+	const id = event.sender.id;
+	let subscriptions = frontendWatches.get(id);
+	if (subscriptions?.size) throw new Error('BUSY');
+	const files = filesFor(id);
+	const assertWorkspace = files.saveAsOwner(workspaceId);
+	const owner = files.compileOwner();
+	subscriptions ??= new Map<string, { workspaceId: string; watcher: FrontendWatch }>();
+	frontendWatches.set(id, subscriptions);
+	let watcher!: FrontendWatch;
+	const assertWatchOwner = () => {
+		if (!isFrontendHost(event) || frontendFiles.get(id) !== files ||
+			frontendWatches.get(id) !== subscriptions ||
+			subscriptions.get(subscriptionId)?.watcher !== watcher) throw new Error('STALE_WORKSPACE');
+		assertWorkspace();
+		owner.assertCurrent();
+	};
+	watcher = new FrontendWatch({
+		root: owner.root,
+		workspaceId,
+		assertCurrent: assertWatchOwner,
+		emit(fileEvent) {
+			assertWatchOwner();
+			if (event.sender.isDestroyed()) throw new Error('STALE_WORKSPACE');
+			event.sender.send('frontend:watch:event', { subscriptionId, event: fileEvent });
+		},
+		onError(error) {
+			if (!forgetFrontendWatch(id, subscriptionId, watcher)) return;
+			if (isFrontendHost(event) && !event.sender.isDestroyed()) {
+				event.sender.send('frontend:watch:error', { subscriptionId, error });
+			}
+		}
+	});
+	subscriptions.set(subscriptionId, { workspaceId, watcher });
+	try {
+		await watcher.start();
+		assertWatchOwner();
+		return null;
+	} catch (error) {
+		forgetFrontendWatch(id, subscriptionId, watcher);
+		watcher.stop();
+		throw error;
+	}
+});
+
+handleFrontendFiles('frontend:watch:stop', async (event, args) => {
+	if (args.length !== 1) throw new Error('BAD_FILE');
+	const subscriptionId = frontendWatchSubscriptionId(args[0]);
+	const watcher = frontendWatches.get(event.sender.id)?.get(subscriptionId)?.watcher;
+	if (watcher) {
+		forgetFrontendWatch(event.sender.id, subscriptionId, watcher);
+		watcher.stop();
+	}
+	return null;
+});
+
+handleFrontendFiles('frontend:save-as', async (event, args) => {
+	if (args.length !== 1) throw new Error('BAD_FILE');
+	const request = (await import('@modutex/frontend-contracts')).parseSaveAsRequest(args[0], 5 * 1024 * 1024);
+	const id = event.sender.id;
+	if (frontendPickers.has(id)) throw new Error('BUSY');
+	frontendPickers.add(id);
+	try {
+		const files = filesFor(id);
+		const assertOwner = files.saveAsOwner(request.workspaceId);
+		assertOwner();
+		const result = await dialog.showSaveDialog(windowFor(id)!, { title: '另存 TeX 文件', defaultPath: 'document.tex',
+			filters: [{ name: 'LaTeX', extensions: ['tex'] }], properties: ['showOverwriteConfirmation'] });
+		if (!isFrontendHost(event) || frontendFiles.get(id) !== files) throw new Error('STALE_WORKSPACE');
+		assertOwner();
+		if (result.canceled || !result.filePath) return null;
+		frontendCompiler?.cancelOwner(id);
+		stopFrontendWatches(id, true);
+		const receipt = await files.saveAs(result.filePath, request, assertOwner);
+		await recentFiles().remember(result.filePath, 'file').catch(() => {});
+		return receipt;
+	} finally { frontendPickers.delete(id); }
+});
+
+handleFrontendFiles('frontend:compile:start', (event, args) => {
+	if (args.length !== 1 || !frontendCompiler) throw new Error('ENGINE_UNAVAILABLE');
+	return frontendCompiler.start(event, event.sender.id, args[0]);
+});
+handleFrontendFiles('frontend:compile:result', (event, args) => {
+	if (args.length !== 1 || !frontendCompiler) throw new Error('BAD_FILE');
+	return frontendCompiler.result(event.sender.id, args[0]);
+});
+handleFrontendFiles('frontend:compile:cancel', async (event, args) => {
+	if (args.length !== 1 || !frontendCompiler) throw new Error('BAD_FILE');
+	await frontendCompiler.cancel(event.sender.id, args[0]);
+});
 
 ipcMain.handle('dialog:openFolder', async (e) => {
 	const res = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender) ?? undefined!, {
@@ -883,7 +1201,8 @@ function drawioWindowContext(id: number) {
 	return {
 		mainURL,
 		previewURL: preparedPages.has(id) && pageServerPort ? `http://127.0.0.1:${pageServerPort}/${id}` : undefined,
-		dataPlaneOrigin: preparedDataPlanes.get(id)
+		dataPlaneOrigin: preparedDataPlanes.get(id),
+		matchesHostURL: useOriginalFrontend ? matchesFrontendHostURL : matchesDiagramHostURL
 	};
 }
 let pageServer: import('node:http').Server | null = null;
@@ -1306,6 +1625,14 @@ app.whenReady().then(() => {
 		},
 		authorize(rawEvent) {
 			const event = rawEvent as Electron.IpcMainInvokeEvent;
+			if (useOriginalFrontend) {
+				if (!isFrontendHost(event)) throw new Error('UNTRUSTED_SENDER');
+				const owner = filesFor(event.sender.id).compileOwner();
+				return { root: owner.root, assertCurrent() {
+					if (!isFrontendHost(event)) throw new Error('UNTRUSTED_SENDER');
+					owner.assertCurrent();
+				} };
+			}
 			if (!isDiagramHost(event)) throw new Error('UNTRUSTED_SENDER');
 			const id = event.sender.id,
 				root = windowRoots.get(id)?.raw,
@@ -1320,6 +1647,7 @@ app.whenReady().then(() => {
 			};
 		}
 	});
+	frontendCompiler = new FrontendCompiler(managedCompile, filesFor);
 	ipcMain.handle('compile:run', (event, request: unknown) => managedCompile!.run(event, event.sender.id, request));
 	ipcMain.handle('compile:cancel', (event, ...args: unknown[]) => {
 		if (args.length) return { ok: false };

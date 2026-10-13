@@ -43,7 +43,13 @@
 		"electron:build:prod": "tsc -p electron --noEmit && node scripts/build-electron.mjs",
 		"dist": "npm run app:build && electron-builder --publish never",
 		"dist:dir": "npm run app:build && electron-builder --dir",
-		"format": "prettier --write ."
+		"format": "prettier --write .",
+		"frontend:check": "npm run check --workspace=modutex-frontend",
+		"frontend:build": "npm run build --workspace=modutex-frontend",
+		"frontend:test": "npm run test --workspace=modutex-frontend",
+		"frontend:test:runtime": "vitest run --config electron/vitest.frontend-runtime.config.ts",
+		"electron:dev:frontend": "concurrently -k -n frontend,electron \"npm run dev --workspace=modutex-frontend\" \"npm run electron:build && wait-on -t 180000 http-get://127.0.0.1:5174 && cross-env MODUTEX_RENDERER=frontend electron .\"",
+		"electron:frontend": "npm run frontend:build && npm run electron:build && cross-env MODUTEX_RENDERER=frontend-built electron ."
 	},
 	"dependencies": {
 		"node-pty": "1.1.0"
