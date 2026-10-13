@@ -79,8 +79,8 @@
 	async function insertImage(file: Blob) {
 		if (!editor || !imageContext || !active || saving || tool !== null) return;
 		const owner = editor.state.field(sourceState).projection.document;
-		const captured = mode === 'visual' ? visual?.cellInsertionBoundary() : null;
-		const point = captured ?? { ...insertionTarget(editor.state) };
+		const captured = mode === 'visual' ? visual?.toolInsertionSelection() : null;
+		const point = captured?.span ?? { ...insertionTarget(editor.state) };
 		const ticket = ++imageSequence;
 		tool = 'image'; toolError = null;
 		try {
@@ -89,7 +89,7 @@
 			if (ticket !== imageSequence || tool !== 'image' || !editor || editor.state.field(sourceState).projection.document !== owner || !active) return;
 			const path = await storeImage(context, file);
 			if (ticket !== imageSequence || tool !== 'image' || !editor || editor.state.field(sourceState).projection.document !== owner || !active) return;
-			const transaction = visualInsertionTransaction(editor.state, point, imageSource(path), false);
+			const transaction = visualInsertionTransaction(editor.state, point, imageSource(path), captured?.inlineOnly ?? false);
 			editor.dispatch(withPackage(editor.state, transaction, 'graphicx'));
 		} catch { if (ticket === imageSequence) toolError = 'image'; }
 		finally { if (ticket === imageSequence) { if (tool === 'image') tool = null; if (imageInput) imageInput.value = ''; visual?.refresh(); } }
@@ -103,10 +103,11 @@
 		if (!editor || !active || saving) return;
 		if (tool !== null) closeTool();
 		try {
-			const boundary = span ?? (mode === 'visual' ? visual?.cellInsertionBoundary() : null);
+			const captured = !span && mode === 'visual' ? visual?.toolInsertionSelection() : null;
+			const boundary = span ?? captured?.span;
 			if (mode === 'visual' && !boundary) throw new Error('INSERTION_RANGE');
 			insertion = boundary ? rangeInsertionTarget(editor.state, boundary) : insertionTarget(editor.state);
-			visualInsertion = boundary ? { span: boundary, inlineOnly: false } : null;
+			visualInsertion = captured ?? (boundary ? { span: boundary, inlineOnly: false } : null);
 			codeDraft = null; codeKey = `insert:${++draftSequence}`;
 			toolOwner = mode === 'visual' ? 'visual' : 'source'; toolError = null; tool = 'code';
 		} catch { toolError = 'insert-stale'; }
@@ -144,7 +145,7 @@
 	}
 	$effect(() => { if (active && tool === 'raw') rawInput?.focus(); });
 	let insertion: InsertionTarget | null = null;
-	let visualInsertion: { span: SourceSpan; inlineOnly: boolean } | null = null;
+	let visualInsertion: { span: SourceSpan; inlineOnly: boolean; atCaret?: boolean } | null = null;
 	let toolOwner: 'source' | 'visual' = 'source';
 	let mathPanelHost = $state.raw<HTMLDivElement | null>(null), tablePanelHost = $state.raw<HTMLDivElement | null>(null);
 	let pendingPackage = $state.raw<{ source: string; plan: PackagePlan } | null>(null);
@@ -295,8 +296,8 @@
 		if (tool !== null) closeTool();
 		const useVisual = mode === 'visual';
 		if (useVisual) {
-			const boundary = visual?.cellInsertionBoundary();
-			if (boundary) openToolAtBoundary(kind, boundary); else toolError = 'insert-selection';
+			const captured = visual?.toolInsertionSelection();
+			if (captured) openToolAtBoundary(kind, captured.span, captured.inlineOnly, captured.atCaret); else toolError = 'insert-selection';
 			return;
 		}
 		const captured = useVisual ? visual?.insertionSelection() ?? null : null;
@@ -348,7 +349,7 @@
 		insertMatrix = false;
 		if (mathMenu) mathMenu.open = false;
 		try {
-			const captured = mode === 'visual' ? visual?.insertionSelection() : null;
+			const captured = mode === 'visual' ? visual?.toolInsertionSelection(true) : null;
 			if (mode === 'visual' && !captured) { toolError = 'insert-selection'; return; }
 			insertion = captured ? rangeInsertionTarget(editor.state, captured.span) : insertionTarget(editor.state);
 			visualInsertion = captured ? { ...captured, inlineOnly: true } : null;
@@ -382,7 +383,7 @@
 		const span = equation?.span ?? visualInsertion?.span;
 		if (!span) return;
 		const current = visual;
-		if (!current.startEquation(equation?.draft ?? { latex: insertMatrix ? matrixSource({ rows: 3, columns: 3, cells: Array(9).fill('\\placeholder{}') }, 'parentheses') : '', inline: insertInline }, span, applyEquation, closeTool)) toolError = 'equation-stale';
+		if (!current.startEquation(equation?.draft ?? { latex: insertMatrix ? matrixSource({ rows: 3, columns: 3, cells: Array(9).fill('\\placeholder{}') }, 'parentheses') : '', inline: insertInline }, span, applyEquation, closeTool, visualInsertion?.atCaret ?? false)) toolError = 'equation-stale';
 		return () => current.closeEquation();
 	});
 	$effect(() => {
@@ -391,17 +392,17 @@
 		const span = equation?.span ?? visualInsertion?.span ?? (insertion ? { documentId: insertion.documentId, version: insertion.version, from: insertion.from, to: insertion.to } : null);
 		if (!panel || !span) return;
 		const current = visual;
-		if (!current.startCellPanel(span, panel)) toolError = 'insert-stale';
+		if (!current.startCellPanel(span, panel, visualInsertion?.atCaret ?? false)) toolError = 'insert-stale';
 		return () => current.closeEquation();
 	});
-	function openToolAtBoundary(kind: 'equation' | 'matrix' | 'table', span: SourceSpan) {
+	function openToolAtBoundary(kind: 'equation' | 'matrix' | 'table', span: SourceSpan, inlineOnly = false, atCaret = false) {
 		if (!editor || saving || !active) return;
 		insertInline = false;
 		if (tool !== null) closeTool();
 		insertMatrix = kind === 'matrix';
 		try {
 			insertion = rangeInsertionTarget(editor.state, span);
-			visualInsertion = { span, inlineOnly: false };
+			visualInsertion = { span, inlineOnly, atCaret };
 			toolOwner = 'visual';
 			toolError = null;
 			editingTable = false;

@@ -152,3 +152,35 @@ test('5 MiB visual tool insertion is atomically rejected by shared UTF-8 filter 
 	assert.deepEqual(transaction.state.field(sourceState).projection.document.toBytes(), source.toBytes());
 	assert.deepEqual(reasons, ['SOURCE_TOO_LARGE']); assert.equal(historyTransaction(transaction.state, 'undo'), null);
 });
+
+
+test('clicked cells retain all text and toolbar insertion captures the active caret, including reverse selections and empty placeholders', () => {
+ const fixture = domFixture();
+ try {
+  for (const text of ['beforeRIGHT', '\\par\n']) {
+   const source = SourceDocument.open(bytes(text));
+   const view = new VisualEditor(fixture.target, 'caret.tex', { source: () => source, apply: () => assert.fail('Capture must not write'), history: () => false, readOnly: () => false, rejected: () => assert.fail('Unexpected rejection'), status: () => {} });
+   try {
+    view.sync(parseSource(source));
+    const position = text === 'beforeRIGHT' ? textPosition(view, 'before') + 6 : 1;
+    view.view.dispatch(view.view.state.tr.setSelection(TextSelection.create(view.view.state.doc, position)));
+    const captured = view.toolInsertionSelection(); assert.ok(captured); assert.equal(captured.atCaret, true);
+    if (text === 'beforeRIGHT') {
+     assert.equal(captured.span.from, 6); assert.equal(captured.span.to, 6);
+     for (const insert of ['\\(x\\)', equationSource('x', false), tableSource(createTable(1, 1)), '\\begin{verbatim}\ncode\n\\end{verbatim}']) {
+      const updated: ReturnType<typeof createSourceState> = visualInsertionTransaction(createSourceState(source), captured.span, insert, captured.inlineOnly).state;
+      const actual = updated.field(sourceState).projection.document.read(); assert.ok(actual.startsWith('before')); assert.ok(actual.endsWith('RIGHT')); assert.ok(actual.indexOf(insert) < actual.indexOf('RIGHT'));
+      assert.deepEqual(historyTransaction(updated, 'undo')!.state.field(sourceState).projection.document.toBytes(), source.toBytes());
+     }
+     view.view.dispatch(view.view.state.tr.setSelection(TextSelection.create(view.view.state.doc, position + 3, position - 2)));
+     const reverse = view.toolInsertionSelection(true); assert.ok(reverse); assert.equal(reverse.span.from, 4); assert.equal(reverse.span.to, 4);
+    } else {
+     assert.equal(source.read(captured.span.from, captured.span.to).trim(), '\\par');
+     const updated: ReturnType<typeof createSourceState> = visualInsertionTransaction(createSourceState(source), captured.span, equationSource('x', false)).state;
+     const actual = updated.field(sourceState).projection.document; assert.doesNotMatch(actual.read(), /\\par/);
+     view.sync(parseSource(actual)); assert.equal(view.view.state.doc.childCount, 1);
+    }
+   } finally { view.dispose(); }
+  }
+ } finally { fixture.restore(); }
+});

@@ -10,3 +10,5 @@ export { projectionIsCurrent } from './projection.ts';
 export type { SyntaxNode, SyntaxKind, SourceProjection, ParseIssue, ParseLimits } from './parser.ts';
 export { EditorProjection } from './editor-projection.ts';
 export type { EditorPatch } from './editor-projection.ts';
+
+export { pdfWrappedText } from './pdf-wrap.ts';

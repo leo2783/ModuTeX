@@ -6,6 +6,10 @@
 	"licenseDecision": "Project owner explicitly authorized Apache-2.0 for original frontend, document core, contracts and owner-authored matrix code on 2026-10-12; third-party licenses and existing AGPL host remain separate; independent provenance review is not implied",
 	"references": [
 		{
+			"id": "frontend-caret-wrap-20261013",
+			"path": "docs/architecture/FRONTEND_CARET_PDF_WRAP_2026-10-13.md"
+		},
+		{
 			"id": "frontend-apache-20261012",
 			"path": "docs/licensing/FRONTEND_APACHE_SCOPE_2026-10-12.md"
 		},
@@ -75,6 +79,30 @@
 		}
 	],
 	"files": [
+		{
+			"path": "packages/document-core/tests/pdf-wrap.test.ts",
+			"origin": "Original implementation of owner-requested language selection or typesetting validation; no legacy renderer source copied",
+			"reviewStatus": "Root reviewed with actual browser or Tectonic/PDF.js verification; independent provenance review not implied",
+			"referenceIds": [
+				"frontend-caret-wrap-20261013"
+			]
+		},
+		{
+			"path": "apps/frontend/src/components/LanguageMenu.svelte",
+			"origin": "Original implementation of owner-requested language selection or typesetting validation; no legacy renderer source copied",
+			"reviewStatus": "Root reviewed with actual browser or Tectonic/PDF.js verification; independent provenance review not implied",
+			"referenceIds": [
+				"frontend-caret-wrap-20261013"
+			]
+		},
+		{
+			"path": "packages/document-core/src/pdf-wrap.ts",
+			"origin": "Original AST-bounded typesetting-only transform from owner-requested PDF wrapping behavior; no legacy renderer implementation copied",
+			"reviewStatus": "Root reviewed and actual Tectonic/PDF.js verified; independent provenance review not implied",
+			"referenceIds": [
+				"frontend-caret-wrap-20261013"
+			]
+		},
 		{
 			"path": "apps/frontend/scripts/mathlive-input-only.mjs",
 			"origin": "Original adaptation of pinned MIT MathLive input core; no legacy frontend glue copied",

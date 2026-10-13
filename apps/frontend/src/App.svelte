@@ -195,7 +195,7 @@
 	function fileErrorDescriptor(value: unknown): [string, string] {
 		const code = value instanceof Error ? value.message : '';
 		const entry = messages[code];
-		return entry ?? ['無法開啟文件，請確認檔案仍存在且可讀取。', 'Unable to open document. Make sure the file exists and is readable.'];
+		return entry ?? ['無法開啟文件，請檢查檔案與讀取權限。', 'Unable to open document. Check the file and access.'];
 	}
 	function fileError(value: unknown): string {
 		const entry = fileErrorDescriptor(value);
@@ -205,9 +205,9 @@
 		const code = value instanceof Error ? value.message : '';
 		switch (code) {
 			case 'ENGINE_UNAVAILABLE':
-				return ['無法啟動內建編譯引擎。請確認桌面程式檔案完整，然後重試。', 'Unable to start the built-in compile engine. Verify the application files are complete, then try again.'];
+				return messages.ENGINE_UNAVAILABLE!;
 			case 'BUSY':
-				return ['另一個操作尚未結束，無法開始編譯。請稍後再試。', 'Another operation is still running, so compilation did not start. Try again shortly.'];
+				return ['操作未結束，請稍後編譯。', 'Busy. Retry.'];
 			case 'FILE_CONFLICT':
 				return ['磁碟文件已變更，未啟動編譯。請同步文件或保留草稿後再試。', 'The disk file changed, so compilation did not start. Reconcile the file or keep your draft, then try again.'];
 			case 'FILE_CHANGED':
@@ -1161,6 +1161,7 @@
 			<a href="#/settings" aria-current={route === 'settings' ? 'page' : undefined}>{t('設定', 'Settings')}</a>
 			<a href="#/release-notes" aria-current={route === 'release-notes' ? 'page' : undefined}>{t('版本紀錄', 'Release notes')}</a>
 			<a href="#/help" aria-current={route === 'help' ? 'page' : undefined}>{t('說明', 'Help')}</a>
+			{#await import('./components/LanguageMenu.svelte') then { default: LanguageMenu }}<LanguageMenu locale={preferences.language} onChange={language => changePreference('language', language)} />{/await}
 		</nav>
 		<div class="global-actions" hidden={route !== 'workbench'} inert={desktopLoading}>
 			{#if route === 'workbench'}

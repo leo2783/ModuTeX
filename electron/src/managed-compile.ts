@@ -1,7 +1,9 @@
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { lstat, realpath, mkdir, mkdtemp, open, rename, copyFile, rm, writeFile, readdir } from 'node:fs/promises';
+import { randomUUID, createHash } from 'node:crypto';
+import type { CompileInputManifest } from './frontend-compile-inputs';
+import { lstat, realpath, mkdir, mkdtemp, open, rename, copyFile, rm, writeFile, readFile, readdir } from 'node:fs/promises';
 import * as path from 'node:path';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import type { ManagedCompileRequest, ManagedCompileResult, ManagedCompileError } from 'modutex-contracts';
 import { prepareTectonicRuntime, type TectonicRuntimeContext } from './tectonic-runtime';
 
@@ -211,13 +213,17 @@ export function createManagedCompileService(host: ManagedCompileHost) {
 		event: unknown,
 		senderId: number,
 		payload: unknown,
-		validateBeforePublish?: () => void | Promise<void>
+		validateBeforePublish?: () => void | Promise<void>,
+		preparedMain?: Uint8Array,
+		compileInputs?: CompileInputManifest
 	): Promise<ManagedCompileResult> => {
 		let stage: string | undefined;
 		let output = '';
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		let operation: Operation | undefined;
 		try {
+			if (preparedMain && (!(preparedMain instanceof Uint8Array) || preparedMain.length > 10 * 1024 * 1024)) throw new CompileError('INVALID_REQUEST');
+			const prepared = preparedMain ? new Uint8Array(preparedMain) : null;
 			const request = validateManagedCompileRequest(payload);
 			const owner = host.authorize(event);
 			if (operations.has(senderId)) throw new CompileError('BUSY');
@@ -265,17 +271,50 @@ export function createManagedCompileService(host: ManagedCompileHost) {
 			// Tectonic reuses its persistent cache and fetches missing resources from this
 			// fixed official bundle. No config file or renderer can choose the source.
 			const bundle = 'https://relay.fullyjustified.net/default_bundle_v33.tar';
-			const args = ['-X', 'compile', '--untrusted', '--keep-logs', '--synctex', '--bundle', bundle, '--outdir', stage, '--', main];
+			let compileMain = main, compileRoot = root;
+			if (prepared) {
+				if (!compileInputs) throw new CompileError('INVALID_REQUEST');
+				const input = path.join(stage, 'input'); await mkdir(input); current();
+				for (const entry of compileInputs.entries) {
+					const source = path.join(root, entry.path), target = path.join(input, entry.path);
+					if (path.relative(input, target).startsWith('..') || path.isAbsolute(path.relative(input, target))) throw new CompileError('INVALID_PATH');
+					await checkedCompilePath(source, false); current();
+					const handle = await open(source, 'r');
+					let bytes: Buffer;
+					try {
+						const before = await handle.stat({ bigint: true });
+						if (before.dev !== entry.dev || before.ino !== entry.ino || before.size !== entry.size) throw new CompileError('INVALID_PATH');
+						await checkedCompilePath(source, false); current(); bytes = await handle.readFile();
+						const after = await handle.stat({ bigint: true });
+						if (after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs || 'sha256:' + createHash('sha256').update(bytes).digest('hex') !== entry.hash) throw new CompileError('INVALID_PATH');
+					} finally { await handle.close(); }
+					await mkdir(path.dirname(target), { recursive: true }); await checkedCompilePath(path.dirname(target), true); current();
+					await writeFile(target, entry.path === request.mainFile ? prepared : bytes!, { flag: 'wx' });
+				}
+				compileMain = path.join(input, request.mainFile); compileRoot = input;
+				await checkedCompilePath(compileMain, false); current();
+				await validateBeforePublish?.(); current();
+			}
+			const args = ['-X', 'compile', '--untrusted', '--keep-logs', '--synctex', '--bundle', bundle, '--outdir', stage, '--', compileMain];
 			current();
-			const result = await runEngine(runtime.executable, args, root, runtime.env, op);
-			output = result.output;
+			const result = await runEngine(runtime.executable, args, compileRoot, runtime.env, op);
+			const sourceLog = (log: string) => prepared ? log.replaceAll(compileMain, request.mainFile).replaceAll(compileMain.replaceAll('\\', '/'), request.mainFile) : log;
+			output = sourceLog(result.output);
 			current();
-			const diskLog = await boundedLog(path.join(stage, `${stem}.log`));
+			const diskLog = sourceLog(await boundedLog(path.join(stage, `${stem}.log`)));
 			const log = diskLog || output;
 			if (diskLog && diskLog !== output) output = sanitizeCompileLog(`${output}\n${diskLog}`);
 			current();
 			if (result.code !== 0) throw new CompileError('COMPILE_FAILED');
 			await validatePdf(path.join(stage, `${stem}.pdf`));
+			if (prepared) {
+				const sync = await checkedCompilePath(path.join(stage, `${stem}.synctex.gz`), false);
+				if ((await lstat(sync)).size > PDF_LIMIT) throw new CompileError('INVALID_PDF');
+				const text = gunzipSync(await readFile(sync), { maxOutputLength: PDF_LIMIT }).toString('utf8')
+					.replaceAll(compileRoot, root).replaceAll(compileRoot.replaceAll('\\', '/'), root.replaceAll('\\', '/'));
+				current(); await writeFile(sync, gzipSync(text));
+			}
+
 			current();
 			const files = [`${stem}.log`, `${stem}.synctex.gz`, `${stem}.pdf`];
 			await writeFile(path.join(stage, `${stem}.log`), log, 'utf8');

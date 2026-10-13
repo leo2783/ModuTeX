@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { deflateSync } from 'node:zlib';
+import { deflateSync, gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { FrontendFiles } from '../src/frontend-files';
 import { FrontendCompiler } from '../src/frontend-compile';
@@ -46,12 +46,36 @@ async function request(text: string) {
 		savedRevision: read.revision, engine: 'managed' as const };
 }
 describe('actual bundled Tectonic frontend integration (no mock engine or PDF)', () => {
+	it('wraps long body identifiers in a genuine PDF without modifying saved source', async () => {
+		const run = '1234567890'.repeat(100), text = '\\documentclass{article}\n\\begin{document}\n' + run + '\n\\end{document}\n';
+		const payload = await request(text), original = await fs.readFile(path.join(root, 'main.tex'));
+		const identity = await compiler.start({}, 1, payload), result = await compiler.result(1, identity.runId);
+		expect(result.status).toBe('success'); if (result.status !== 'success') throw new Error(result.log);
+		const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+		const loading = getDocument({ data: new Uint8Array(result.pdf), disableFontFace: true, useSystemFonts: true });
+		try { const pdf = await loading.promise, page = await pdf.getPage(1), viewport = page.getViewport({ scale: 1 }), content = await page.getTextContent();
+			const items = content.items.filter((item): item is typeof item & { str: string; transform: number[]; width: number } => 'str' in item && /^\d+$/.test(item.str));
+			expect(new Set(items.map(item => Math.round(item.transform[5]!))).size).toBeGreaterThan(2);
+			expect(items.every(item => item.transform[4]! + item.width <= viewport.width - 30)).toBe(true);
+			expect(items.map(item => item.str).join('')).toContain(run);
+		} finally { await loading.destroy(); }
+		expect(await fs.readFile(path.join(root, 'main.tex'))).toEqual(original);
+		const sync = gunzipSync(await fs.readFile(path.join(root, 'output/main.synctex.gz'))).toString('utf8');
+		expect(sync).not.toContain('.modutex-compile-');
+		expect(sync.replaceAll('\\', '/')).toContain(root.replaceAll('\\', '/'));
+	});
+	it('maps syntax errors in wrapped main text back to the original source line', async () => {
+		const text = '\\documentclass{article}\n\\begin{document}\n' + '1234567890'.repeat(50) + '\n\\undefinedModutexCommand\n\\end{document}\n';
+		const payload = await request(text), identity = await compiler.start({}, 1, payload), result = await compiler.result(1, identity.runId);
+		expect(result.status).toBe('failure'); expect(result.diagnostics.some(diagnostic => diagnostic.path === 'main.tex' && diagnostic.line === 4)).toBe(true);
+		expect(await fs.readFile(path.join(root, 'main.tex'), 'utf8')).toBe(text);
+	});
 	it('persists a clipboard image through save-as and reopening, then embeds it in a genuine PDF', async () => {
 		function chunk(name: string, data: Buffer) { const type = Buffer.from(name); let crc = 0xffffffff; for (const byte of Buffer.concat([type, data])) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = crc >>> 1 ^ (crc & 1 ? 0xedb88320 : 0); } const size = Buffer.alloc(4), check = Buffer.alloc(4); size.writeUInt32BE(data.length); check.writeUInt32BE((crc ^ 0xffffffff) >>> 0); return Buffer.concat([size, type, data, check]); }
 		const header = Buffer.alloc(13); header.writeUInt32BE(1, 0); header.writeUInt32BE(1, 4); header[8] = 8; header[9] = 6;
 		const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(Buffer.from([0, 61, 97, 123, 255]))), chunk('IEND', Buffer.alloc(0))]);
 		const picture = 'modutex-image-abcd.png', documentId = 'image-document';
-		const tex = '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\nClipboard image\n\\begin{figure}[htbp]\n\\centering\n\\includegraphics[width=0.8\\linewidth]{' + picture + '}\n\\end{figure}\n\\end{document}\n';
+		const tex = '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\nClipboard 123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890 image\n\\begin{figure}[htbp]\n\\centering\n\\includegraphics[width=0.8\\linewidth]{' + picture + '}\n\\end{figure}\n\\end{document}\n';
 		const saved = await files.saveAs(path.join(root, 'image.tex'), { workspaceId: null, bytes: Buffer.from(tex), documentId, documentVersion: 0, images: [{ path: picture, bytes: png }] });
 		files.close(saved.workspace.id);
 		const reopened = await files.open(path.join(root, 'image.tex'), 'file');

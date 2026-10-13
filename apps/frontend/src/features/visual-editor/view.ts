@@ -164,9 +164,9 @@ export class VisualEditor {
 		return true;
 	}
 	/** Isolated draft; the caller keeps source authority and the shared undo history. */
-	startEquation(draft: EquationDraft, span: SourceSpan, commit: (draft: EquationDraft) => void, cancel: () => void): boolean {
+	startEquation(draft: EquationDraft, span: SourceSpan, commit: (draft: EquationDraft) => void, cancel: () => void, atCaret = false): boolean {
 		const dom = this.view.dom.ownerDocument.createElement('span'); dom.className = `inline-equation-draft${draft.inline ? ' is-inline' : ''}`; dom.contentEditable = 'false';
-		if (!this.placeDraft(span, dom, draft.inline)) return false;
+		if (!this.placeDraft(span, dom, draft.inline || atCaret)) return false;
 		const session = this.equationDraft!;
 		void import('../math/inline.ts').then(({ editInlineEquation }) => {
 			if (this.disposed || this.equationDraft !== session) return;
@@ -178,11 +178,11 @@ export class VisualEditor {
 		});
 		return true;
 	}
-	startCellPanel(span: SourceSpan, panel: HTMLElement): boolean {
+	startCellPanel(span: SourceSpan, panel: HTMLElement, atCaret = false): boolean {
 		const parent = panel.parentNode, next = panel.nextSibling;
 		if (!parent) return false;
 		const dom = panel.ownerDocument.createElement('div'); dom.className = 'cell-panel-draft'; dom.contentEditable = 'false';
-		if (!this.placeDraft(span, dom)) return false;
+		if (!this.placeDraft(span, dom, atCaret)) return false;
 		dom.append(panel);
 		this.equationDraft!.dispose = () => parent.insertBefore(panel, next?.parentNode === parent ? next : null);
 		return true;
@@ -1002,6 +1002,19 @@ export class VisualEditor {
 		this.focus(); return true;
 	}
 	dispose(): void { if (this.disposed) return; this.dragCleanup?.(); this.closeEquation(); this.disposed = true; this.projection = null; this.cellOriginal = null; this.cachedDecorations = null; this.inserterButtons.clear(); this.cellActionButtons.clear(); this.view.destroy(); }
+	/** Toolbar insertion retains clicked text and the active caret; explicit boundary actions stay separate. */
+	toolInsertionSelection(inline = false): { span: SourceSpan; inlineOnly: boolean; atCaret: boolean } | null {
+		const captured = this.insertionSelection();
+		if (this.selectedCellIndex !== null && captured) {
+			const span = this.cellSpan(this.selectedCellIndex), node = this.view.state.doc.child(this.selectedCellIndex);
+			if (!inline && span && node.attrs.role === 'paragraph' && /^\s*(?:\\par)?\s*$/.test(this.options.source().read(span.from, span.to))) return { span, inlineOnly: false, atCaret: true };
+			const point = this.view.state.selection.head === this.view.state.selection.from ? captured.span.from : captured.span.to;
+			return { ...captured, span: { ...captured.span, from: point, to: point }, atCaret: true };
+		}
+		if (inline) return captured ? { ...captured, atCaret: true } : null;
+		const boundary = this.cellInsertionBoundary();
+		return boundary ? { span: boundary, inlineOnly: false, atCaret: false } : null;
+	}
 	cellInsertionBoundary(): SourceSpan | null {
 		const index = this.selectedCellIndex ?? Math.min(this.view.state.selection.$from.index(0), this.view.state.doc.childCount - 1);
 		return this.boundarySpan(index + 1);

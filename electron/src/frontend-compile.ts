@@ -68,6 +68,8 @@ export class FrontendCompiler {
 			const confirmed = await files.read(ref);
 			if (confirmed.revision !== request.savedRevision) throw new Error('FILE_CONFLICT');
 			if (this.runs.get(owner) !== active || active.cancelled) throw new Error('STALE_WORKSPACE');
+			const prepared = (await import('@modutex/document-core')).pdfWrappedText(confirmed.bytes);
+			const preparedMain = prepared === confirmed.bytes ? undefined : prepared;
 			const result = (async (): Promise<CompileResult> => {
 				try {
 					const validateBeforePublish = async () => {
@@ -83,13 +85,13 @@ export class FrontendCompiler {
 						event,
 						owner,
 						{ engine: 'tectonic', mainFile: request.entryPath },
-						validateBeforePublish
+						validateBeforePublish, preparedMain, preparedMain ? inputManifest : undefined
 					);
 					if (active.cancelled || active.controller.signal.aborted) {
 						return { status: 'cancelled', identity: active.identity, log: outcome.stdout, diagnostics: [] };
 					}
 					if (!outcome.ok) {
-						const diagnostics = frontendDiagnostics(outcome.stdout, request.entryPath);
+						const diagnostics = frontendDiagnostics(outcome.stdout, request.entryPath).map(diagnostic => preparedMain && diagnostic.path === request.entryPath ? { ...diagnostic, column: null } : diagnostic);
 						return { status: outcome.error === 'CANCELLED' ? 'cancelled' : 'failure',
 						identity: active.identity, log: outcome.stdout, diagnostics: diagnostics.length ? diagnostics : [{ severity: 'error',
 							message: outcome.error === 'TIMEOUT' ? '編譯逾時。請檢查文件內容後再試。' : '編譯失敗。請檢查 TeX 記錄。',

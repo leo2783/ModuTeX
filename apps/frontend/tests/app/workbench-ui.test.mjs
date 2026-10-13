@@ -235,7 +235,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.getByRole('button', { name: '完成公式', exact: true }).click();
 			await page.waitForFunction((before) => document.querySelectorAll('.visual-math').length === before + 1, matrixCount);
 			await page.waitForFunction((before) => document.querySelectorAll('.visual-math-content math-field').length === before + 1, matrixCount);
-			assert.match(await page.locator('.visual-math-content math-field').last().evaluate((field) => field.value), /42/);
+			assert.ok(await page.locator('.visual-math-content math-field').evaluateAll(fields => fields.some(field => field.value.includes('42'))));
 			await page.locator('.insert-bar').getByRole('button', { name: '表格', exact: true }).click();
 			const panel = page.locator('.table-panel');
 			const panelBox = await panel.boundingBox();
@@ -377,7 +377,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 		});
 		await t.test('selected text color projects immediately and includes xcolor', async () => {
 			const paragraph = page.locator('.source-block').filter({ hasText: 'Alpha paragraph.' }).first();
-			await paragraph.click(); await page.keyboard.press('Home'); await page.keyboard.press('Shift+End');
+			await paragraph.scrollIntoViewIfNeeded(); const ink = await paragraph.evaluate(node => { const walk = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let text; while ((text = walk.nextNode()) && !text.textContent.includes('Alpha')) {} const range = document.createRange(), offset = text.textContent.indexOf('Alpha'); range.setStart(text, offset); range.setEnd(text, offset + 1); const box = range.getBoundingClientRect(); return { x: box.left + 2, y: box.top + box.height / 2 }; }); await page.mouse.click(ink.x, ink.y); await page.keyboard.press('Home'); await page.keyboard.press('Shift+End');
 			await page.locator('summary[aria-label="文字顏色"]').click();
 			await page.getByRole('button', { name: '紅色', exact: true }).click();
 			await page.waitForFunction(() => [...document.querySelectorAll('.source-block span')].some(span => span.style.color === 'rgb(180, 35, 24)'));
@@ -506,6 +506,31 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.getByRole('button', { name: '視覺化', exact: true }).click();
 			await page.waitForFunction(() => document.querySelectorAll('.visual-image img').length === 2 && [...document.querySelectorAll('.visual-image img')].every(image => image.naturalWidth === 120));
 		});
+		await t.test('toolbar inserts at the clicked cell caret and retains both sides without a placeholder cell', async () => {
+			for (const kind of ['inline', 'display', 'code', 'table']) for (const offset of [0, 6, 11]) {
+				await page.getByRole('button', { name: '原始碼', exact: true }).click(); await sourceEditor.click(); await page.keyboard.press('Control+A');
+				await page.keyboard.insertText('\\documentclass{article}\n\\begin{document}beforeRIGHT\\end{document}\n');
+				await page.getByRole('button', { name: '視覺化', exact: true }).click();
+				await page.locator('.source-block').filter({ hasText: 'beforeRIGHT' }).click(); await page.keyboard.press('Home'); for (let i = 0; i < offset; i++) await page.keyboard.press('ArrowRight');
+				if (kind === 'inline' || kind === 'display') {
+					await page.locator('summary[aria-label="數學"]').click(); await page.getByRole('button', { name: kind === 'inline' ? '行內公式' : '公式儲存格', exact: true }).click();
+					const field = page.locator('.inline-equation-draft math-field'); await field.waitFor({ state: 'visible' });
+					assert.equal(await page.locator('.inline-equation-draft').evaluate(node => !!node.closest('.source-block')), true);
+					await field.press('x'); assert.equal(await field.evaluate(field => field.value), 'x', 'typed equation is ready before commit'); await page.getByRole('button', { name: '完成公式', exact: true }).click();
+				} else if (kind === 'code') {
+					await page.getByRole('button', { name: '程式碼區塊', exact: true }).click(); await page.locator('.code-panel textarea').fill('caretCode'); await page.locator('.code-panel').getByRole('button', { name: '插入', exact: true }).click();
+				} else {
+					await page.locator('.insert-bar').getByRole('button', { name: '表格', exact: true }).click(); await page.locator('.table-panel td input').first().fill('caretTable'); await page.locator('.table-panel').getByRole('button', { name: '插入', exact: true }).click();
+				}
+				await page.waitForFunction(() => !document.querySelector('.inline-equation-draft, .cell-panel-draft'));
+				const source = await sourceEditor.evaluate(node => [...node.querySelectorAll('.cm-line')].map(line => line.textContent).join('\n'));
+				const token = kind === 'code' ? 'caretCode' : kind === 'table' ? 'caretTable' : 'x';
+				const body = source.slice(source.indexOf('\\begin{document}') + '\\begin{document}'.length, source.indexOf('\\end{document}')).trim(), prefix = 'beforeRIGHT'.slice(0, offset), suffix = 'beforeRIGHT'.slice(offset);
+				assert.ok(body.startsWith(prefix) && body.endsWith(suffix) && body.includes(token), kind + '/' + offset + ' retains text before and after the caret');
+				assert.equal(await page.locator('.source-block').evaluateAll(nodes => nodes.filter(node => !node.textContent.trim()).length), 0);
+				if (kind === 'inline') assert.equal(await page.locator('.source-block').count(), 1);
+			}
+		});
 		await t.test('text cells switch title, abstract and heading levels without losing content', async () => {
 			await page.getByRole('button', { name: '原始碼', exact: true }).click();
 			await sourceEditor.click(); await page.keyboard.press('Control+A');
@@ -527,6 +552,26 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 				assert.equal(await page.locator('.visual-raw').count(), 0, 'generated structure stays visually editable');
 			}
 			await page.screenshot({ path: screenshotRoot + 'text-structure-20261012.png' });
+		});
+		await t.test('visible language switch updates editor tools and settings and persists across reload', async () => {
+			const original = await sourceEditor.innerText();
+			const language = page.locator('summary[aria-label="語言"]'); await language.waitFor({ state: 'visible' }); assert.equal(await language.locator('svg').count(), 1); assert.equal(await language.textContent(), '');
+			await language.click(); assert.equal(await page.locator('.app').getAttribute('lang'), 'zh-Hant'); assert.equal(await page.getByRole('button', { name: '繁體中文', exact: true }).getAttribute('aria-pressed'), 'true');
+			await page.keyboard.press('Escape'); assert.equal(await page.locator('.language-menu').evaluate(menu => menu.open), false); await language.click();
+			await page.screenshot({ path: screenshotRoot + 'language-globe-menu.png' });
+			await page.getByRole('button', { name: 'English', exact: true }).click(); assert.equal(await page.locator('.language-menu').evaluate(menu => menu.open), false);
+			assert.equal(await page.locator('.app').getAttribute('lang'), 'en');
+			assert.equal(await page.getByRole('button', { name: 'Code block', exact: true }).count(), 1);
+			await page.locator('summary[aria-label="Math"]').click(); assert.equal(await page.getByRole('button', { name: 'Inline equation', exact: true }).count(), 1); await page.locator('summary[aria-label="Math"]').click();
+			await page.locator('.insert-bar').getByRole('button', { name: 'Table', exact: true }).click();
+			await page.getByRole('button', { name: 'All borders', exact: true }).waitFor({ state: 'visible' }); await page.locator('.table-panel').getByRole('button', { name: 'Cancel', exact: true }).click();
+			assert.equal(await sourceEditor.innerText(), original, 'locale and canceled English tools preserve source');
+			await page.getByRole('link', { name: 'Settings', exact: true }).click(); await page.locator('#language-value').selectOption('zh-Hant');
+			assert.equal(await page.locator('.app').getAttribute('lang'), 'zh-Hant');
+			await page.locator('summary[aria-label="語言"]').click(); await page.getByRole('button', { name: 'English', exact: true }).click();
+			page.once('dialog', dialog => dialog.accept()); await page.reload();
+			await page.locator('summary[aria-label="Language"]').waitFor({ state: 'visible' }); await page.locator('summary[aria-label="Language"]').click(); assert.equal(await page.locator('.app').getAttribute('lang'), 'en');
+			await page.getByRole('button', { name: '繁體中文', exact: true }).click(); assert.equal(await page.locator('.app').getAttribute('lang'), 'zh-Hant');
 		});
 		await t.test('help topics are readable in both themes at desktop widths', async () => {
 			await page.getByRole('link', { name: '說明', exact: true }).click();
