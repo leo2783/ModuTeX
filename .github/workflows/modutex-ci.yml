@@ -154,3 +154,10 @@ jobs:
           name: ModuTeX-Windows-x64-0.2.0-dev.0
           path: release/artifact
           if-no-files-found: error
+      - name: Upload packaged frontend failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Packaged-Frontend-Failure
+          path: .verification-artifacts/packaged-smoke-failure.png
+          if-no-files-found: warn

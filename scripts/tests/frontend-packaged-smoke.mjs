@@ -98,7 +98,15 @@ try {
  console.log(JSON.stringify({target,origin:'app://frontend/index.html',narrowIPC:true,saveReopen:true,englishMenu:true,compiledPdf:true,closed:true}));
 } catch(error) {
  console.error('Packaged smoke failure:',error,output);
- if(browser) for(const page of browser.contexts()[0]?.pages()??[]) await page.screenshot({path:resolve('.verification-artifacts/packaged-smoke-failure.png')}).catch(()=>{});
+ if(browser) for(const page of browser.contexts()[0]?.pages()??[]) {
+  console.error('Owned fixture window state:',await page.evaluate(()=>({
+   url:location.href,locale:document.documentElement.lang,
+   status:document.querySelector('footer.status-bar')?.textContent,
+   alerts:Array.from(document.querySelectorAll('[role="alert"],.error-strip,.notice-strip')).map(e=>e.textContent?.slice(0,2048)),
+   source:document.querySelector('.source-view .cm-content')?.textContent?.slice(0,512)
+  })).catch(()=>({unavailable:true})), 'owned fixture disk:',readFileSync(file,'utf8'));
+  await page.screenshot({path:resolve('.verification-artifacts/packaged-smoke-failure.png')}).catch(()=>{});
+ }
  throw error;
 } finally {
  if(browser) {for(const page of browser.contexts()[0]?.pages()??[]) await page.close().catch(()=>{}); await browser.close();}
