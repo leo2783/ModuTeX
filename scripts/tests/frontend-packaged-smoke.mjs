@@ -26,7 +26,11 @@ const tarball = target.endsWith('.tgz');
 const npxCli = process.env.MODUTEX_TEST_NPX_CLI;
 assert.ok(!tarball || npxCli, 'Set MODUTEX_TEST_NPX_CLI to the pinned npm npx-cli.js');
 const child = spawn(tarball ? process.execPath : target, tarball ? [npxCli, '--offline','--yes','--ignore-scripts','--package',target,'--','modutex',...args] : args, {
+ cwd:tarball ? fixture : process.cwd(),
  windowsHide:true, env:{...process.env,TEXPILE_USER_DATA:fixture}, stdio:['ignore','pipe','pipe']
+});
+const launched = new Promise((resolveExit,reject) => {
+ child.once('exit',(code)=>resolveExit(code)); child.once('error',reject);
 });
 let output='';
 child.on('error', e => { output += e.message; });
@@ -34,6 +38,15 @@ child.stdout.on('data', b => {output += b.toString();});
 child.stderr.on('data', b => {output += b.toString();});
 let browser;
 try {
+ if(tarball) {
+  console.log('stage: preparing offline npm tarball from a separate download directory');
+  let timer;
+  // Cold extraction of the 226 MB archive takes several minutes on Windows.
+  // This preparation budget does not change the 45-second application startup check below.
+  const code=await Promise.race([launched,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('npm tarball preparation timed out')),300000);})]).finally(()=>clearTimeout(timer));
+  assert.equal(code,0,'npm launcher failed: '+output);
+  console.log('stage: npm package prepared and launcher exited successfully');
+ }
  const deadline=Date.now()+45000;
  let endpoint;
  while(Date.now()<deadline) {

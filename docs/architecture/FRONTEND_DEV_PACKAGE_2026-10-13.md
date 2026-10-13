@@ -12,7 +12,7 @@
 | 完整性 | stage 驗證乾淨來源提交、PE／vendor／asar／原生依賴、檔案 inventory；tarball 另有 SHA-256 並解開重驗 |
 | 真實執行 | frontend-packaged-smoke.mjs 驗證 EXE 及離線 npx：正式 origin、IPC、檔案儲存重開、英文設定、Tectonic PDF／canvas、關閉 |
 
-EXE 真實驗證已通過。完整前端回歸為 345／348；兩個版本頁預期修正後，包含檔案監看案例的 11 項針對性重測通過。整套仍有 Windows 檔案監看時序不穩定的紀錄，不宣稱完整回歸全綠，也不當作穩定版驗收。
+EXE 與下載資料夾的離線 npx 真實驗證已通過。npx 首次展開約 226 MB 套件需要數分鐘，測試將套件準備與 45 秒 App 啟動檢查分開。完整前端回歸為 345／348；兩個版本頁預期修正後，包含檔案監看案例的 11 項針對性重測通過。整套仍有 Windows 檔案監看時序不穩定的紀錄，不宣稱完整回歸全綠，也不當作穩定版驗收。
 
 既有 dev CI 整體驗證通過：Electron 400 項＋身分 7 項、舊編輯器 1,878 項（既有 17 skipped）、Typst 10 項；下載包／CI／安全門檻 31 項與 production 3 項通過。檔案密集測試固定兩個工作者，不放寬 timeout；Vitest 升級後共用既有 Windows WASM helper，圖片測試精確選取 NodeView，避免誤選游標輔助圖。
 
