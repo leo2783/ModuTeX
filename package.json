@@ -26,6 +26,7 @@
 		"verify:npm-desktop": "node scripts/verify-npm-desktop.mjs",
 		"stage:npm-desktop": "node scripts/stage-npm-desktop.mjs",
 		"test:npm-desktop": "node --test scripts/tests/npm-desktop-package.test.mjs",
+		"test:packaged": "node scripts/tests/frontend-packaged-smoke.mjs",
 		"test:verification-runner": "node --test scripts/tests/run-verification.test.mjs",
 		"test:ci-policy": "node --test scripts/tests/ci-policy.test.mjs",
 		"test:electron": "npm exec --no -- vitest run --config electron/vitest.config.ts && node --test electron/tests/runtime-identity.test.mjs",

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -25,7 +25,7 @@ const port = server.address().port;
 await new Promise(r => server.close(r));
 const args = ['--disable-gpu', `--remote-debugging-port=${port}`];
 const tarball = target.endsWith('.tgz');
-const npxCli = process.env.MODUTEX_TEST_NPX_CLI;
+const npxCli = process.env.MODUTEX_TEST_NPX_CLI ?? (process.env.npm_execpath ? join(dirname(process.env.npm_execpath),'npx-cli.js') : undefined);
 assert.ok(!tarball || npxCli, 'Set MODUTEX_TEST_NPX_CLI to the pinned npm npx-cli.js');
 const child = spawn(tarball ? process.execPath : target, tarball ? [npxCli, '--offline','--yes','--ignore-scripts','--package',target,'--','modutex',...args] : args, {
  cwd:tarball ? fixture : process.cwd(),

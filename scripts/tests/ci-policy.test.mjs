@@ -262,8 +262,10 @@ function windowsContract(value) {
 	for (const index of [packaged, npx]) {
 		assert.equal(steps[index].if, undefined);
 		assert.equal(steps[index]['continue-on-error'], undefined);
-		assert.match(steps[index].run, /frontend-packaged-smoke\.mjs/);
 	}
+	assert.match(steps[packaged].run, /frontend-packaged-smoke\.mjs/);
+	assert.match(steps[npx].run, /npm run test:packaged --/);
+	assert.doesNotMatch(steps[npx].run, /npm root --global/);
 	assert.match(steps[packaged].run, /win-unpacked\/ModuTeX\.exe/);
 	assert.match(steps[npx].run, /modutex-desktop-0\.2\.0-dev\.0\.tgz/);
 	for (const index of [pack, checksum, stage, upload]) assert.equal(steps[index].if, undefined);

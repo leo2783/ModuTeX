@@ -119,9 +119,7 @@ jobs:
       - name: Verify actual offline npx launch
         shell: pwsh
         run: |
-          $env:MODUTEX_TEST_NPX_CLI = Join-Path ((npm root --global).Trim()) 'npm/bin/npx-cli.js'
-          if ($LASTEXITCODE -ne 0) { throw 'npm runtime path unavailable' }
-          node scripts/tests/frontend-packaged-smoke.mjs release/modutex-desktop-0.2.0-dev.0.tgz
+          npm run test:packaged -- release/modutex-desktop-0.2.0-dev.0.tgz
           if ($LASTEXITCODE -ne 0) { throw 'Packaged npx launch verification failed' }
       - name: Stage npm tarball and verification evidence
         shell: pwsh
