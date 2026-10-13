@@ -25,6 +25,14 @@ ModuTeX 將文件編輯與 PDF 編譯整合在同一個桌面工作區。可切�
 
 ## 功能
 
+開發版 `0.2.0-dev.0` 從 Git dev 提供 Windows x64 `.tgz`，請下載同一 build 的 SHA-256 核對檔，依 [安裝說明](docs/user/INSTALLATION.md) 驗證後執行：
+
+```powershell
+npx --offline --yes --ignore-scripts --package .\modutex-desktop-0.2.0-dev.0.tgz -- modutex
+```
+
+新版已納入正式 packaged 載入路徑，不需要 Vite。這是 dev 預覽包；[驗證與限制](docs/architecture/FRONTEND_DEV_PACKAGE_2026-10-13.md) 保留 Windows 監看測試不穩定的紀錄。
+
 檔案總管支援右鍵開啟、編譯 PDF 與複製相對路徑。編譯失敗會自動顯示詳細資料，也可從狀態列查看編譯記錄；[故障修正與驗收](docs/architecture/FRONTEND_COMPILE_ERRORS_2026-10-11.md)。
 
 - **視覺與原始碼編輯**：以視覺方式編輯支援的文件結構；自訂指令與版面可直接修改 LaTeX 原始碼。

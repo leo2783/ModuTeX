@@ -624,7 +624,7 @@ Source: node_modules/pdfjs-dist/LICENSE
    END OF TERMS AND CONDITIONS
 ```
 
-## prosemirror-model 1.25.9
+## prosemirror-model 1.25.12
 
 Source: node_modules/prosemirror-model/LICENSE
 
@@ -702,7 +702,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## prosemirror-view 1.41.9
+## prosemirror-view 1.42.6
 
 Source: node_modules/prosemirror-view/LICENSE
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0-dev.0] — 2026-10-13
+
+### Added
+
+- Windows x64 development package opens the new frontend without a Vite server, launched from a downloaded tarball with npx.
+- Globe language menu, caret-preserving insertion and typesetting-only long body-text wrapping.
+- PNG/JPEG clipboard images, save-as resources, source-safe editing and original frontend Apache-2.0 notices.
+
+### Compatibility
+
+- Development preview; the existing Electron desktop host remains AGPL-3.0-only. First uncached compilation can require internet access.
+- Not an npm registry publication or a signed installer. Windows filesystem-watch regressions still have intermittent full-suite timing failures.
+
 ## [0.2.0] — Unreleased
 
 ### Added

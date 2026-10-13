@@ -117,7 +117,7 @@ test('generated launcher resolves beside itself, passes arguments without a shel
 
 test('source offer records a revision without claiming binary provenance', () => {
 	const sourceOffer = createNpmDesktopSourceOffer(SOURCE_COMMIT);
-	assert.match(sourceOffer, new RegExp(`github\\.com/leo2783/latex/tree/${SOURCE_COMMIT}`));
+	assert.match(sourceOffer, new RegExp(`github\\.com/leo2783/ModuTeX/tree/${SOURCE_COMMIT}`));
 	assert.match(sourceOffer, /does not attest that the application payload was built from this revision/);
 	assert.match(sourceOffer, /trusted build record binding the production build and payload hashes/);
 });

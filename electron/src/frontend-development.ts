@@ -1,9 +1,9 @@
-/** Development-only loopback selection. Published application routing remains unchanged. */
+/** Development-only loopback selection. Packaged application never enables the development server. */
 export function frontendDevelopment(packaged: boolean, selection: string | undefined): boolean {
 	return !packaged && selection === 'frontend';
 }
 
-/** Nonpackaged built frontend selection. Published application routing remains unchanged. */
+/** Nonpackaged built frontend selection; main selects the packaged frontend separately. */
 export function frontendBuilt(packaged: boolean, selection: string | undefined): boolean {
 	return !packaged && selection === 'frontend-built';
 }

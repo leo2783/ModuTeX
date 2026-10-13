@@ -1,11 +1,11 @@
 {
 	"name": "modutex-desktop",
-	"version": "0.1.0",
+	"version": "0.2.0-dev.0",
 	"private": true,
 	"description": "ModuTeX desktop LaTeX editor",
 	"author": "ModuTeX contributors",
 	"license": "AGPL-3.0-only",
-	"homepage": "https://github.com/leo2783/latex",
+	"homepage": "https://github.com/leo2783/ModuTeX",
 	"main": "electron/dist/main.js",
 	"packageManager": "npm@11.17.0",
 	"engines": {
@@ -34,7 +34,7 @@
 		"verify:install-policy": "node scripts/verify-install-policy.mjs",
 		"test:install-policy": "node --test scripts/tests/verify-install-policy.test.mjs",
 		"set-version": "node scripts/set-version.mjs",
-		"app:build": "npm run build --workspace=modutex-editor && npm run electron:build:prod",
+		"app:build": "npm run frontend:build && npm run electron:build:prod",
 		"electron": "npm run electron:build && electron .",
 		"electron:build": "tsc -p electron --noEmit && node scripts/build-electron.mjs --dev",
 		"_comment:electron:dev": "--host/--strictPort keep Vite on the IPv4 address wait-on polls.",
@@ -56,20 +56,21 @@
 	},
 	"devDependencies": {
 		"@electron/rebuild": "4.2.0",
-		"@modelcontextprotocol/sdk": "1.30.0",
+		"@modelcontextprotocol/sdk": "1.32.1",
 		"@types/node": "24.13.3",
 		"chokidar": "5.0.0",
-		"concurrently": "9.2.4",
+		"concurrently": "9.2.5",
 		"cross-env": "7.0.3",
 		"electron": "43.5.0",
 		"electron-builder": "27.0.0-alpha.9",
 		"esbuild": "0.28.1",
 		"js-yaml": "4.3.2",
+		"playwright": "1.61.1",
 		"prettier": "3.9.6",
 		"prettier-plugin-svelte": "4.1.1",
 		"prettier-plugin-tailwindcss": "0.8.0",
 		"shelljs": "0.8.5",
-		"simple-git": "3.36.0",
+		"simple-git": "4.0.2",
 		"typescript": "6.0.3",
 		"wait-on": "8.0.5",
 		"zod": "3.25.76"
@@ -87,7 +88,10 @@
 		"undici@^7": "7.29.1",
 		"wait-on@8.0.5": {
 			"axios": "1.20.0"
-		}
+		},
+		"source-map-js": "1.2.2",
+		"proxy-addr": "2.0.8",
+		"vitest": "4.1.11"
 	},
 	"allowScripts": {
 		"esbuild@0.28.1": true,

@@ -1,6 +1,6 @@
 {
 	"name": "modutex-frontend",
-	"version": "0.1.0",
+	"version": "0.2.0-dev.0",
 	"private": true,
 	"type": "module",
 	"license": "Apache-2.0",
@@ -25,9 +25,9 @@
 		"@modutex/frontend-contracts": "0.1.0",
 		"mathlive": "0.110.0",
 		"pdfjs-dist": "6.2.108",
-		"prosemirror-model": "1.25.9",
+		"prosemirror-model": "1.25.12",
 		"prosemirror-state": "1.4.4",
-		"prosemirror-view": "1.41.9",
+		"prosemirror-view": "1.42.6",
 		"svelte": "5.56.9"
 	},
 	"devDependencies": {

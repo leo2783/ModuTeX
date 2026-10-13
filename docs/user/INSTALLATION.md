@@ -1,3 +1,18 @@
+# 開發版 0.2.0-dev.0（Windows x64）
+
+需要 Node.js 24.19 或更新、npm 11.17 或更新。下載同一份 dev build 的 tgz 與 sha256，先確認雜湊，再於下載資料夾執行：
+
+```powershell
+$expected = (Get-Content .\modutex-desktop-0.2.0-dev.0.tgz.sha256).Split(' ')[0].ToLowerInvariant()
+$actual = (Get-FileHash .\modutex-desktop-0.2.0-dev.0.tgz -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw 'Checksum mismatch' }
+npx --offline --yes --ignore-scripts --package .\modutex-desktop-0.2.0-dev.0.tgz -- modutex
+```
+
+這會開啟打包的新前端，不需要 Vite 或完整 TeX 安裝；首次未快取編譯可能需要網路。此版使用獨立 dev 設定資料夾。不是 npm registry 發布、EXE 安裝包或穩定 0.2.0 正式版。
+
+以下保留既有 0.1.0 與原始碼啟動說明。
+
 # 啟動桌面版
 
 ## 本地 0.1.0 套件

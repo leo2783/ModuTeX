@@ -39,7 +39,7 @@ let originalFontsDirectory: string | null | undefined;
 
 let host: HTMLDivElement;
 let panel: Record<string, unknown> | null = null;
-let close: ReturnType<typeof vi.fn>;
+let close: ReturnType<typeof vi.fn<() => void>>;
 
 beforeAll(async () => {
 	vi.stubGlobal('ResizeObserver', TestResizeObserver);

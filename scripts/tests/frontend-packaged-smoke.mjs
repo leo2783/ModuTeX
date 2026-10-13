@@ -1,0 +1,93 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
+import { chromium } from 'playwright';
+
+// Test the real distributable, without Electron development selection or a Vite server.
+const target = resolve(process.argv[2] ?? 'release/win-unpacked/ModuTeX.exe');
+const fixture = mkdtempSync(join(tmpdir(), 'modutex-packaged-'));
+const workspace = join(fixture, 'workspace');
+mkdirSync(workspace);
+const file = join(workspace, 'main.tex');
+const source = '\\documentclass{article}\n\\begin{document}\nPackaged 中文 document.\n\\end{document}\n';
+writeFileSync(file, source);
+writeFileSync(join(fixture, 'frontend-recent-v1.json'), JSON.stringify({version:1,entries:[{id:randomUUID(),selected:file,kind:'file',openedAt:Date.now()}]}));
+const server = createServer();
+await new Promise(r => server.listen(0, '127.0.0.1', r));
+const port = server.address().port;
+await new Promise(r => server.close(r));
+const args = ['--disable-gpu', `--remote-debugging-port=${port}`];
+const tarball = target.endsWith('.tgz');
+const npxCli = process.env.MODUTEX_TEST_NPX_CLI;
+assert.ok(!tarball || npxCli, 'Set MODUTEX_TEST_NPX_CLI to the pinned npm npx-cli.js');
+const child = spawn(tarball ? process.execPath : target, tarball ? [npxCli, '--offline','--yes','--ignore-scripts','--package',target,'--','modutex',...args] : args, {
+ windowsHide:true, env:{...process.env,TEXPILE_USER_DATA:fixture}, stdio:['ignore','pipe','pipe']
+});
+let output='';
+child.on('error', e => { output += e.message; });
+child.stdout.on('data', b => {output += b.toString();});
+child.stderr.on('data', b => {output += b.toString();});
+let browser;
+try {
+ const deadline=Date.now()+45000;
+ let endpoint;
+ while(Date.now()<deadline) {
+  try {const response=await fetch(`http://127.0.0.1:${port}/json/version`); endpoint=(await response.json()).webSocketDebuggerUrl; if(endpoint) break;} catch {}
+  await new Promise(r=>setTimeout(r,250));
+ }
+ assert.ok(endpoint, 'Packaged/npx startup failed: '+output);
+ console.log('stage: packaged CDP ready');
+ browser=await chromium.connectOverCDP(endpoint);
+ const page=browser.contexts()[0].pages()[0];
+ page.setDefaultTimeout(15000);
+ await page.waitForURL('app://frontend/index.html');
+ console.log('stage: packaged frontend origin ready');
+ const errors=[];
+ page.on('pageerror', e => errors.push(e.message));
+ const bridge=await page.evaluate(()=>({files:typeof window.modutexFiles,legacy:['texpile','electronAPI'].filter(k=>k in window)}));
+ assert.equal(bridge.files,'object'); assert.deepEqual(bridge.legacy,[]);
+ await page.getByRole('button',{name:/開啟.*main.tex|Open.*main.tex/}).click();
+ await page.getByRole('button',{name:/^(原始碼|Source)$/}).click();
+ const editor=page.locator('.source-view .cm-content[contenteditable="true"]').first();
+ await editor.click(); await page.keyboard.press('Control+End');
+ await page.keyboard.insertText('% packaged save');
+ await page.getByRole('button',{name:/^(儲存|Save)$/}).click();
+ await page.waitForFunction(()=>!document.querySelector('footer.status-bar')?.textContent.includes('未儲存'));
+ assert.equal(readFileSync(file,'utf8'),source+'% packaged save');
+ console.log('stage: real file saved');
+ // Exercise the lazy language menu from the packaged relative assets.
+ await page.locator('.language-menu summary').click();
+ await page.getByRole('button',{name:'English',exact:true}).click();
+ await page.getByRole('button',{name:'Source',exact:true}).waitFor({state:'visible'});
+ assert.equal(await page.evaluate(()=>document.documentElement.lang),'en');
+ console.log('stage: English menu selected');
+ await page.reload();
+ await page.getByRole('link',{name:'Home',exact:true}).click();
+ await page.getByRole('button',{name:/Open.*main.tex/}).click();
+ await page.getByRole('button',{name:'Source',exact:true}).click();
+ assert.match(await page.locator('.source-view .cm-content').first().textContent(), /% packaged save/);
+ assert.equal(await page.evaluate(()=>document.documentElement.lang),'en');
+ await page.getByRole('button',{name:'Compile PDF',exact:true}).click();
+ await page.waitForFunction(()=>/Compilation completed/.test(document.querySelector('footer.status-bar')?.textContent??''),null,{timeout:180000});
+ assert.equal(readFileSync(join(workspace,'output/main.pdf')).subarray(0,5).toString(),'%PDF-');
+ await page.locator('.preview-pane canvas').first().waitFor({state:'visible'});
+ console.log('stage: packaged PDF compiled and rendered');
+ await page.screenshot({path:resolve('.verification-artifacts/packaged-'+(tarball?'npx':'exe')+'.png')});
+ assert.deepEqual(errors,[]);
+ await page.close();
+ console.log(JSON.stringify({target,origin:'app://frontend/index.html',narrowIPC:true,saveReopen:true,englishMenu:true,compiledPdf:true,closed:true}));
+} catch(error) {
+ console.error('Packaged smoke failure:',error,output);
+ if(browser) for(const page of browser.contexts()[0]?.pages()??[]) await page.screenshot({path:resolve('.verification-artifacts/packaged-smoke-failure.png')}).catch(()=>{});
+ throw error;
+} finally {
+ if(browser) {for(const page of browser.contexts()[0]?.pages()??[]) await page.close().catch(()=>{}); await browser.close();}
+ if(child.exitCode===null) child.kill();
+ // Only this generated fixture is removed; the dev user's real profile is untouched.
+ await rm(fixture,{recursive:true,force:true,maxRetries:10,retryDelay:200}).catch(error=>console.error('Fixture cleanup:',fixture,error.message));
+}

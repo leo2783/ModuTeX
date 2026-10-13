@@ -251,6 +251,17 @@ function windowsContract(value) {
 	const upload = steps.findIndex((step) => step.name === 'Upload the specified Windows x64 artifact');
 	assert.ok(pack > steps.findIndex((step) => step.run === 'npm run dist:dir -- --win --x64 --publish never'));
 	assert.ok(pack < checksum && checksum < stage && stage < upload);
+	const packaged = steps.findIndex((step) => step.name === 'Verify the actual packaged frontend');
+	const npx = steps.findIndex((step) => step.name === 'Verify actual offline npx launch');
+	assert.ok(packaged > steps.findIndex((step) => step.run === 'npm run dist:dir -- --win --x64 --publish never'));
+	assert.ok(packaged < pack && checksum < npx && npx < stage);
+	for (const index of [packaged, npx]) {
+		assert.equal(steps[index].if, undefined);
+		assert.equal(steps[index]['continue-on-error'], undefined);
+		assert.match(steps[index].run, /frontend-packaged-smoke\.mjs/);
+	}
+	assert.match(steps[packaged].run, /win-unpacked\/ModuTeX\.exe/);
+	assert.match(steps[npx].run, /modutex-desktop-0\.2\.0-dev\.0\.tgz/);
 	for (const index of [pack, checksum, stage, upload]) assert.equal(steps[index].if, undefined);
 	for (const command of ['stage-npm-desktop.mjs', 'verify-npm-desktop.mjs --package-dir', 'npm pack', '--ignore-scripts', '--json'])
 		assert.ok(steps[pack].run.includes(command), `missing npm staging gate ${command}`);
@@ -260,7 +271,7 @@ function windowsContract(value) {
 	assert.match(steps[pack].run, /finally \{\s+Pop-Location/);
 	assert.match(steps[pack].run, /if \(\$LASTEXITCODE -ne 0\)/);
 	assert.match(steps[checksum].run, /Get-FileHash.*-Algorithm SHA256/);
-	assert.match(steps[checksum].run, /modutex-desktop-0\.1\.0\.tgz\.sha256/);
+	assert.match(steps[checksum].run, /modutex-desktop-0\.2\.0-dev\.0\.tgz\.sha256/);
 	assert.match(steps[checksum].run, /verify-npm-desktop\.mjs --tarball .*--sha256 \$recordedHash/);
 	assert.match(steps[checksum].run, /tar -xzf \$tarballPath -C release\/tarball-verification/);
 	assert.match(steps[checksum].run, /verify-npm-desktop\.mjs --package-dir release\/tarball-verification\/package/);
@@ -278,11 +289,11 @@ function windowsContract(value) {
 		'SOURCE-OFFER.md',
 		'npm-desktop-inventory.json',
 		'npm-desktop-inventory.sha256',
-		'modutex-desktop-0.1.0.tgz'
+		'modutex-desktop-0.2.0-dev.0.tgz'
 	]) {
 		assert.ok(steps[stage].run.includes(path), `missing artifact evidence ${path}`);
 	}
-	assert.equal(steps[upload].with.name, 'ModuTeX-Windows-x64-0.1.0');
+	assert.equal(steps[upload].with.name, 'ModuTeX-Windows-x64-0.2.0-dev.0');
 	assert.equal(steps[upload].with.path, 'release/artifact');
 	assert.equal(steps[upload].with['if-no-files-found'], 'error');
 }
@@ -617,7 +628,7 @@ test('workflow contract rejects missing gates, swallowed failures and missing ev
 		},
 		(value) => {
 			value.jobs['verify-and-package'].steps.find((step) => step.name === 'Generate SHA-256 and verify npm tarball').run =
-				'Get-FileHash release/modutex-desktop-0.1.0.tgz -Algorithm SHA256';
+				'Get-FileHash release/modutex-desktop-0.2.0-dev.0.tgz -Algorithm SHA256';
 		},
 		(value) => {
 			const step = value.jobs['verify-and-package'].steps.find((step) => step.name === 'Stage npm tarball and verification evidence');

@@ -38,6 +38,14 @@ Right-click files to open, compile to PDF or copy their relative path. Compilati
 
 The desktop build targets Windows x64 and uses the Node.js and npm versions shown above.
 
+The dev branch packages the new frontend as `modutex-desktop-0.2.0-dev.0.tgz` (Windows x64). Download the tarball and matching SHA-256 record, verify it, then run:
+
+```powershell
+npx --offline --yes --ignore-scripts --package .\modutex-desktop-0.2.0-dev.0.tgz -- modutex
+```
+
+This is a development preview, not an npm registry publication or permanent installer. It uses a separate dev settings namespace. First uncached compilation may download TeX resources. The stable 0.1.0 instructions below remain available.
+
 Download `modutex-desktop-0.1.0.tgz` from [GitHub Releases](https://github.com/leo2783/ModuTeX/releases), then run this command from the download folder:
 
 ```powershell

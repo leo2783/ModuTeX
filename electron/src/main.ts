@@ -42,7 +42,7 @@ import {
 
 const isDev = !app.isPackaged;
 const isFrontendDev = frontendDevelopment(app.isPackaged, process.env.MODUTEX_RENDERER);
-const isFrontendBuilt = frontendBuilt(app.isPackaged, process.env.MODUTEX_RENDERER);
+const isFrontendBuilt = app.isPackaged || frontendBuilt(app.isPackaged, process.env.MODUTEX_RENDERER);
 const useOriginalFrontend = isFrontendDev || isFrontendBuilt;
 
 // display name for menus/notifications and the Linux WM_CLASS (GNOME matches it against the
@@ -51,14 +51,14 @@ const useOriginalFrontend = isFrontendDev || isFrontendBuilt;
 // A dev-channel build (productName ending in "Dev", made with --config.productName="ModuTeX Dev")
 // gets its OWN settings dir and instance lock, so a test exe runs beside the installed ModuTeX
 // without touching its settings or fighting its single-instance lock.
-const devChannel = /[ -]dev$/.test(app.getName().toLowerCase());
+const devChannel = /[ -]dev$/.test(app.getName().toLowerCase()) || /-dev(?:\.|$)/.test(app.getVersion());
 const dataDirName = devChannel ? 'modutex-desktop-dev' : 'modutex-desktop';
 app.setPath('userData', path.join(app.getPath('appData'), dataDirName));
 app.setPath('sessionData', path.join(app.getPath('appData'), dataDirName));
 app.setName(devChannel ? 'ModuTeX Dev' : 'ModuTeX');
 
 // Keep the rewrite's development session separate from the published app.
-if (useOriginalFrontend) {
+if (useOriginalFrontend && !app.isPackaged) {
 	const frontendData = path.join(app.getPath('appData'), 'modutex-frontend-development');
 	app.setPath('userData', frontendData);
 	app.setPath('sessionData', frontendData);
@@ -67,7 +67,7 @@ if (useOriginalFrontend) {
 // dev/test hook: userData scopes settings, caches, and the single-instance lock,
 // so without this a dev run can't start while an installed ModuTeX is open.
 // TEXPILE_USER_DATA is a non-user-visible compatibility hook retained for existing test tooling.
-if (isDev && process.env.TEXPILE_USER_DATA) {
+if ((isDev || devChannel) && process.env.TEXPILE_USER_DATA) {
 	app.setPath('userData', process.env.TEXPILE_USER_DATA);
 	app.setPath('sessionData', process.env.TEXPILE_USER_DATA);
 }
@@ -242,7 +242,7 @@ function bundleDir(): string {
 }
 
 function frontendDistDir(): string {
-	return path.join(app.getAppPath(), 'apps', 'frontend', 'dist');
+	return app.isPackaged ? bundleDir() : path.join(app.getAppPath(), 'apps', 'frontend', 'dist');
 }
 
 // Draft-mode engine .lua files. Shipped outside the asar via extraResources (see
@@ -343,7 +343,7 @@ function registerProtocolHandlers(): void {
 		}
 		let root: string;
 		let csp: string;
-		if (url.host === 'bundle' && !url.port && !url.username && !url.password) {
+		if (!useOriginalFrontend && url.host === 'bundle' && !url.port && !url.username && !url.password) {
 			root = bundleDir();
 			csp = RENDERER_CSP;
 		} else if (
@@ -351,7 +351,6 @@ function registerProtocolHandlers(): void {
 			!url.port &&
 			!url.username &&
 			!url.password &&
-			!app.isPackaged &&
 			useOriginalFrontend
 		) {
 			root = frontendDistDir();
