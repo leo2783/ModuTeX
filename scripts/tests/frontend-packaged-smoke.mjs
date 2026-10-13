@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -10,7 +10,9 @@ import { chromium } from 'playwright';
 
 // Test the real distributable, without Electron development selection or a Vite server.
 const target = resolve(process.argv[2] ?? 'release/win-unpacked/ModuTeX.exe');
-const fixture = mkdtempSync(join(tmpdir(), 'modutex-packaged-'));
+// GitHub Windows can put TEMP behind a junction; exercise the canonical path
+// rather than weakening the host's rejection of aliases in document paths.
+const fixture = mkdtempSync(join(realpathSync(tmpdir()), 'modutex-packaged-'));
 const workspace = join(fixture, 'workspace');
 mkdirSync(workspace);
 const file = join(workspace, 'main.tex');
