@@ -12,7 +12,7 @@ import { chromium } from 'playwright';
 const target = resolve(process.argv[2] ?? 'release/win-unpacked/ModuTeX.exe');
 // GitHub Windows can put TEMP behind a junction; exercise the canonical path
 // rather than weakening the host's rejection of aliases in document paths.
-const fixture = mkdtempSync(join(realpathSync(tmpdir()), 'modutex-packaged-'));
+const fixture = mkdtempSync(join(realpathSync.native(tmpdir()), 'modutex-packaged-'));
 const workspace = join(fixture, 'workspace');
 mkdirSync(workspace);
 const file = join(workspace, 'main.tex');

@@ -1,4 +1,5 @@
-import { appendFileSync, realpathSync } from 'node:fs';
+import { appendFileSync } from 'node:fs';
+import { realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute } from 'node:path';
 
@@ -7,6 +8,7 @@ import { isAbsolute } from 'node:path';
 if (process.platform !== 'win32') throw new Error('This setup is for Windows CI only');
 const environmentFile = process.env.GITHUB_ENV;
 if (!environmentFile || !isAbsolute(environmentFile)) throw new Error('GitHub environment file is required');
-const canonicalTemp = realpathSync(tmpdir());
+// The native implementation also expands DOS 8.3 aliases (e.g. RUNNER~1).
+const canonicalTemp = await realpath(tmpdir());
 appendFileSync(environmentFile, `TEMP=${canonicalTemp}\nTMP=${canonicalTemp}\n`, 'utf8');
 console.log('Configured canonical Windows test TEMP');
