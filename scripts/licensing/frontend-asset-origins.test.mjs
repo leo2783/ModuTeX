@@ -877,6 +877,24 @@ test('containment rejects installed font license resource symlink or junction po
   }
 });
 
+for (const location of ['fonts', 'package']) {
+  test(`a directory named OFL.txt at ${location} is not accepted as a license file`, async () => {
+    const { root, installedOflPath, mathliveDir } = await createFixture();
+    try {
+      await rm(installedOflPath);
+      const candidate = location === 'fonts' ? installedOflPath : path.join(mathliveDir, 'OFL.txt');
+      await mkdir(candidate);
+      const result = await collectAssetProvenance(root);
+      assert.equal(result.fonts.length, 20);
+      assert.ok(result.fonts.every(font => font.licenseStatus === 'license-document-missing'));
+      assert.equal(result.fontEmbeddedDeclarations, null);
+      assert.ok(result.unresolved.some(item => item.kind === 'missing-installed-font-license-resource'));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
+
 test('LICENSE.txt containing package MIT text is never accepted as trusted OFL resource', async () => {
   const { root, installedOflPath, mathliveDir } = await createFixture();
   try {

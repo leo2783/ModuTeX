@@ -152,9 +152,9 @@ export async function collectAssetProvenance(rootDirectory, distDirectory = 'app
     try {
       const pkgEntries = await readdir(mathlivePkg.dir, { withFileTypes: true });
       for (const entry of pkgEntries.sort((a, b) => a.name.localeCompare(b.name))) {
-        if (entry.isFile() && /^(?:ofl|sil|fontlog|fonts?-license|license-fonts?)(?:[._-].*)?$/i.test(entry.name)) {
+        if ((entry.isFile() || entry.isSymbolicLink()) && /^(?:ofl|sil|fontlog|fonts?-license|license-fonts?)(?:[._-].*)?$/i.test(entry.name)) {
           const candidatePath = path.join(mathlivePkg.dir, entry.name);
-          await checkedPath(candidatePath);
+          if (!(await stat(candidatePath)).isFile()) continue;
           fontLicenseDocumentPresent = true;
           fontLicenseDocumentName = entry.name;
           fontLicenseDocumentPath = candidatePath;
@@ -169,9 +169,9 @@ export async function collectAssetProvenance(rootDirectory, distDirectory = 'app
       try {
         const fontEntries = await readdir(fontDir, { withFileTypes: true });
         for (const entry of fontEntries.sort((a, b) => a.name.localeCompare(b.name))) {
-          if (entry.isFile() && /^(?:ofl|sil|fontlog|fonts?-license|license-fonts?)(?:[._-].*)?$/i.test(entry.name)) {
+          if ((entry.isFile() || entry.isSymbolicLink()) && /^(?:ofl|sil|fontlog|fonts?-license|license-fonts?)(?:[._-].*)?$/i.test(entry.name)) {
             const candidatePath = path.join(fontDir, entry.name);
-            await checkedPath(candidatePath);
+            if (!(await stat(candidatePath)).isFile()) continue;
             fontLicenseDocumentPresent = true;
             fontLicenseDocumentName = entry.name;
             fontLicenseDocumentPath = candidatePath;
