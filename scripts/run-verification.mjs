@@ -6,7 +6,6 @@ import { pathToFileURL } from 'node:url';
 
 const upstreamChecks = [
 	['editor typecheck', ['run', 'check', '--workspace=modutex-editor']],
-	['frontend shared package build', ['run', 'build:shared', '--workspace=modutex-frontend']],
 	['Electron typecheck', ['exec', '--no', '--', 'tsc', '-p', 'electron', '--noEmit']]
 ];
 

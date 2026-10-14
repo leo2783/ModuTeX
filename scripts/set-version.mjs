@@ -19,7 +19,7 @@ if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(version)) {
 }
 
 // app-version files only; never add the independent libraries here
-const targets = ['package.json', 'apps/frontend/package.json'];
+const targets = ['package.json', 'apps/texpile-editor/package.json'];
 
 let changed = 0;
 for (const rel of targets) {
