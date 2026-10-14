@@ -38,7 +38,11 @@ async function makeTemporaryDirectory() {
 }
 
 afterEach(async () => {
-	for (const directory of temporaryDirectories) await rm(directory, { recursive: true, force: true });
+	for (const directory of temporaryDirectories) {
+		assert.equal(path.dirname(directory), REPOSITORY_ROOT);
+		assert.ok(path.basename(directory).startsWith('.modutex-npm-desktop-test-'));
+		await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+	}
 	temporaryDirectories.clear();
 });
 
@@ -135,7 +139,7 @@ test('real generated launcher spawns the adjacent binary with literal argv, call
 		await writeFile(path.join(bin, 'modutex.cjs'), createNpmDesktopLauncher());
 		const receipt = path.join(root, 'child receipt.json');
 		const stub = path.join(root, 'record child.cjs');
-		await writeFile(stub, `require('node:fs').writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd(), env: Object.fromEntries(['ELECTRON_START_URL', 'NODE_OPTIONS', 'npm_config_userconfig', 'TEXPILE_USER_DATA'].map(key => [key, process.env[key]])) }));`);
+		await writeFile(stub, `require('node:fs').writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({ pid: process.pid, argv: process.argv.slice(2), cwd: process.cwd(), env: Object.fromEntries(['ELECTRON_START_URL', 'NODE_OPTIONS', 'npm_config_userconfig', 'TEXPILE_USER_DATA'].map(key => [key, process.env[key]])) }));`);
 		const bootstrap = path.join(root, 'bootstrap.cjs');
 		await writeFile(bootstrap, `Object.assign(process.env, { ELECTRON_START_URL: 'https://invalid.test', NODE_OPTIONS: '--invalid-option', npm_config_userconfig: 'secret', TEXPILE_USER_DATA: 'preserved' }); require(${JSON.stringify(path.join(bin, 'modutex.cjs'))});`);
 		const args = ['space value', '中文 😀', 'literal & | < > $ ;', '--flag=quoted"value'];
@@ -152,8 +156,23 @@ test('real generated launcher spawns the adjacent binary with literal argv, call
 		assert.deepEqual(received.argv, args); assert.equal(received.cwd, cwd);
 		assert.equal(received.env.TEXPILE_USER_DATA, 'preserved');
 		for (const key of ['ELECTRON_START_URL', 'NODE_OPTIONS', 'npm_config_userconfig']) assert.equal(received.env[key], undefined);
+		assert.ok(Number.isSafeInteger(received.pid) && received.pid > 0);
+		let exited = false;
+		const exitDeadline = Date.now() + 10_000;
+		while (Date.now() < exitDeadline) {
+			try { process.kill(received.pid, 0); }
+			catch (error) { if (error.code === 'ESRCH') { exited = true; break; } throw error; }
+			await new Promise(resolve => setTimeout(resolve, 25));
+		}
+		assert.ok(exited, 'the detached native child must exit before its binary is removed');
 		// Missing adjacent binary must fail instead of falling back to PATH or caller cwd.
-		await rm(path.join(app, 'ModuTeX.exe'));
+		for (let attempt = 0; ; attempt++) {
+			try { await rm(path.join(app, 'ModuTeX.exe')); break; }
+			catch (error) {
+				if (attempt >= 10 || !['EBUSY', 'EPERM'].includes(error.code)) throw error;
+				await new Promise(resolve => setTimeout(resolve, 100));
+			}
+		}
 		const missing = spawnSync(process.execPath, [bootstrap, stub], { cwd, encoding: 'utf8', timeout: 10_000 });
 		assert.equal(missing.status, 1); assert.match(missing.stderr, /Unable to launch/);
 	});
