@@ -1,4 +1,42 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import { isFrontendRendererURL } from './frontend-development';
+
+// No arbitrary channel, absolute path, shell, or raw ipcRenderer crosses this seam.
+const originalRenderer = process.isMainFrame && isFrontendRendererURL(location.href);
+if (originalRenderer) {
+	const call = async (channel: string, argument: unknown): Promise<unknown> => {
+		const result = await ipcRenderer.invoke(channel, argument);
+		if (!result || result.ok !== true) throw new Error(typeof result?.error === 'string' ? result.error : 'FILE_OPERATION_FAILED');
+		return result.value;
+	};
+	contextBridge.exposeInMainWorld('modutexFiles', {
+		openWorkspace: (kind: unknown) => call('frontend:open', kind),
+		listRecent: () => call('frontend:recent:list', null),
+		openRecent: (id: unknown) => call('frontend:recent:open', id),
+		removeRecent: (id: unknown) => call('frontend:recent:remove', id),
+		listFiles: (workspaceId: unknown) => call('frontend:list', workspaceId),
+		readFile: (file: unknown) => call('frontend:read', file),
+		writeFile: (request: unknown) => call('frontend:write', request),
+		saveAs: (request: unknown) => call('frontend:save-as', request),
+		startCompile: (request: unknown) => call('frontend:compile:start', request),
+		compileResult: (id: unknown) => call('frontend:compile:result', id),
+		cancelCompile: (id: unknown) => call('frontend:compile:cancel', id),
+		closeWorkspace: (workspaceId: unknown) => call('frontend:close', workspaceId),
+		startWatch: (workspaceId: unknown, subscriptionId: unknown) =>
+			call('frontend:watch:start', { workspaceId, subscriptionId }),
+		stopWatch: (subscriptionId: unknown) => call('frontend:watch:stop', subscriptionId),
+		onWatchEvent: (callback: (value: unknown) => void) => {
+			const h = (_event: unknown, value: unknown) => callback(value);
+			ipcRenderer.on('frontend:watch:event', h);
+			return () => ipcRenderer.removeListener('frontend:watch:event', h);
+		},
+		onWatchError: (callback: (value: unknown) => void) => {
+			const h = (_event: unknown, value: unknown) => callback(value);
+			ipcRenderer.on('frontend:watch:error', h);
+			return () => ipcRenderer.removeListener('frontend:watch:error', h);
+		}
+	});
+}
 import type {
 	WorkspaceFsChange,
 	ManagedCompileRequest,
@@ -44,7 +82,8 @@ function bufferedChannel<T>(channel: string, map: (...args: unknown[]) => T) {
 const onOpenPathBuffered = bufferedChannel('main:open-path', (p) => String(p));
 const onOpenFolderBuffered = bufferedChannel('main:open-folder', (r) => String(r));
 
-contextBridge.exposeInMainWorld('texpileNative', {
+const isLegacyRenderer = process.isMainFrame && !originalRenderer;
+if (isLegacyRenderer) contextBridge.exposeInMainWorld('texpileNative', {
 	managedCompile: (request: ManagedCompileRequest): Promise<ManagedCompileResult> => ipcRenderer.invoke('compile:run', request),
 	cancelManagedCompile: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('compile:cancel'),
 	/** native folder picker; resolves to the chosen absolute path or null. */
@@ -209,7 +248,7 @@ contextBridge.exposeInMainWorld('texpileNative', {
 // tinymist: compiles Typst documents and serves their language features. The LSP wire format is
 // framed in the main process; what crosses here is bare JSON-RPC strings, which is exactly what
 // @codemirror/lsp-client's Transport speaks.
-contextBridge.exposeInMainWorld('texpileTypst', {
+if (isLegacyRenderer) contextBridge.exposeInMainWorld('texpileTypst', {
 	/** locate tinymist. Resolves null when it isn't installed. */
 	resolve: () => ipcRenderer.invoke('typst:resolve'),
 	/** probe every external program the app shells out to (latexmk, git, synctex, ...). */
@@ -237,7 +276,7 @@ contextBridge.exposeInMainWorld('texpileTypst', {
 });
 
 // terminal bridge to the node-pty shells in the main process, keyed by a string `id`
-contextBridge.exposeInMainWorld('texpileTerminal', {
+if (isLegacyRenderer) contextBridge.exposeInMainWorld('texpileTerminal', {
 	/** whether node-pty loaded (false if it needs `npm run electron:rebuild`). */
 	available: () => ipcRenderer.invoke('terminal:available'),
 	/** spawn (or reuse) a shell for `id` in `cwd`. Resolves { ok, shell?, error? }. */

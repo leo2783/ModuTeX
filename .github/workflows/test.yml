@@ -82,6 +82,7 @@ jobs:
       # committed, and its build script is deliberately named `build:wasm` so the root
       # workspace build does not try to invoke wasm-pack here.
       - run: npm run test --workspace=texpile-typst-syntax-wasm
+      - run: npm run build:shared --workspace=modutex-frontend
       - run: npm exec --no -- tsc -p electron --noEmit
       - run: npm run test:electron
 
@@ -103,6 +104,8 @@ jobs:
         run: |
           if ((node --version) -ne 'v24.19.0') { throw 'Node.js version mismatch' }
           if ((npm --version) -ne '11.17.0') { throw 'npm version mismatch' }
+      - name: Configure canonical Windows test TEMP
+        run: node scripts/prepare-windows-test-temp.mjs
       - run: npm ci --ignore-scripts
       - run: npm run verify:install-policy
       - run: npm ci
@@ -141,5 +144,6 @@ jobs:
       - run: npm run testonce --workspace=modutex-editor
       - run: npm run build --workspace=modutex-landing
       - run: npm run test --workspace=texpile-typst-syntax-wasm
+      - run: npm run build:shared --workspace=modutex-frontend
       - run: npm exec --no -- tsc -p electron --noEmit
       - run: npm run test:electron

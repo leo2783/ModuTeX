@@ -15,6 +15,7 @@ import {
 	installDrawioNetworkGuard,
 	matchesDiagramHostURL
 } from '../src/drawio-protocol';
+import { FRONTEND_BUILT_URL, FRONTEND_DEVELOPMENT_URL, matchesFrontendHostURL } from '../src/frontend-development';
 const DRAWIO_ORIGIN = 'drawio://editor';
 
 const ownedRoots: string[] = [];
@@ -282,5 +283,23 @@ describe('installed-API frame confinement decisions', () => {
 			expect(allowDrawioNavigation(navigation(url, host, drawio, true), context)).toBe(false);
 		}
 		expect(allowDrawioNavigation(navigation(DRAWIO_INDEX, child, null), context)).toBe(false);
+	});
+
+	it.each([FRONTEND_DEVELOPMENT_URL, FRONTEND_BUILT_URL])('preserves frontend authority after opening the workbench at %s', (mainURL) => {
+		const frontendContext = { mainURL, matchesHostURL: matchesFrontendHostURL };
+		const workbench = mainURL + '#/workbench';
+		const host = frame(workbench);
+		const asset = new URL('./assets/editor.js', mainURL).href;
+		expect(allowDrawioNetwork(request(asset, host, 'script'), frontendContext)).toBe(true);
+		expect(allowDrawioNetwork(request(asset, host, 'script'), { mainURL })).toBe(false);
+		expect(allowDrawioNetwork(request('https://example.invalid/script.js', host, 'script'), frontendContext)).toBe(false);
+		for (const child of [frame(DRAWIO_INDEX, host), frame('about:blank', host)]) {
+			expect(allowDrawioNetwork(request(asset, child, 'script'), frontendContext)).toBe(false);
+		}
+		expect(allowDrawioNetwork(request(mainURL, null, 'mainFrame'), frontendContext, true)).toBe(true);
+		expect(allowDrawioNetwork(request(asset, null, 'script'), frontendContext, true)).toBe(false);
+		expect(allowDrawioNavigation({ url: mainURL + '#/settings', frame: host, initiator: host, isMainFrame: true }, frontendContext)).toBe(true);
+		expect(allowDrawioNavigation({ url: 'https://example.invalid/', frame: host, initiator: host, isMainFrame: true }, frontendContext)).toBe(false);
+		expect(allowDrawioNavigation({ url: mainURL + '#/settings', frame: host, initiator: frame(DRAWIO_INDEX, host), isMainFrame: true }, frontendContext)).toBe(false);
 	});
 });
