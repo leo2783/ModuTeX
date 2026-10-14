@@ -116,5 +116,9 @@ win:
 # The artifact name must have no spaces: electron-builder's Trusted Signing signer space-joins
 # its Invoke-TrustedSigning -Files arg without quoting, so a spaced name gets split and signing fails.
 nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
   license: build/license.txt
   artifactName: ${productName}-Setup-${version}.${ext}

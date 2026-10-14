@@ -24,7 +24,7 @@
 	import { foldProjection, sourceFolding } from './folding.ts';
 	import { formatShortcut, formatTransaction, colorTransaction, type TextFormat } from './format.ts';
 	import { rawEditTransaction } from './raw.ts';
-	import { visualInsertionTransaction } from './state.ts';
+	import { visualInsertionTransaction, paragraphInsertionTransaction } from './state.ts';
 	import { booktabsPlan, tableInsertionTransaction, withPackage, type PackagePlan } from '../tables/preamble.ts';
 	import { text, type Language } from '../../i18n/text.ts';
 	let { document, label, saving, savedVersion, active = true, fontSize = 14, showLineNumbers = true, wrapLines = false, navigation = null, diagnosticNavigation = null, locale = 'zh-Hant', imageContext = null, onChange, onRejected, onVisualRejected, onProjection, onParserFailure }: { document: SourceDocument; label: string;
@@ -416,12 +416,10 @@
 		if (!editor || saving || !active) return;
 		if (tool !== null) closeTool();
 		try {
-			const transaction = visualInsertionTransaction(editor.state, span, beforeText ? '\\par\n\\par\n' : '\\par\n', false);
-			if (!transaction.docChanged) throw new Error('INSERTION_REJECTED');
+			const { transaction, paragraph } = paragraphInsertionTransaction(editor.state, span, beforeText);
 			editor.dispatch(transaction);
 			toolError = null;
-			const next = editor.state.field(sourceState).projection.document;
-			pendingParagraph = { documentId: next.documentId, version: next.version, from: next.read().indexOf('\\par', span.from) };
+			pendingParagraph = paragraph;
 			visual?.focus();
 		} catch { toolError = 'insert-stale'; }
 	}

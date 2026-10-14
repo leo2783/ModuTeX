@@ -1,5 +1,26 @@
 import type { SourceSpan } from '@modutex/document-core';
 const releases = new WeakMap<HTMLElement, () => void>();
+type LayoutTask = (cells: ReadonlyMap<HTMLElement, ReadonlyMap<number, HTMLElement>>) => (() => void) | null;
+const layouts = new WeakMap<Document, { tasks: Set<LayoutTask>; frame: number }>();
+function scheduleLayout(doc: Document, task: LayoutTask): () => void {
+	let batch = layouts.get(doc);
+	if (!batch) { batch = { tasks: new Set(), frame: 0 }; layouts.set(doc, batch); }
+	batch.tasks.add(task);
+	const win = doc.defaultView!;
+	if (!batch.frame) batch.frame = win.requestAnimationFrame(() => {
+		batch!.frame = 0;
+		const cells = new Map<HTMLElement, Map<number, HTMLElement>>();
+		for (const node of doc.querySelectorAll<HTMLElement>('.ProseMirror [data-cell-index]')) {
+			const root = node.closest<HTMLElement>('.ProseMirror')!;
+			if (!cells.has(root)) cells.set(root, new Map());
+			cells.get(root)!.set(Number(node.dataset.cellIndex), node);
+		}
+		// Read every rectangle before any style write, avoiding one forced layout per cell.
+		const writes = [...batch!.tasks].map(read => read(cells)); batch!.tasks.clear();
+		for (const write of writes) write?.();
+	});
+	return () => { batch!.tasks.delete(task); if (!batch!.tasks.size && batch!.frame) { win.cancelAnimationFrame(batch!.frame); batch!.frame = 0; } };
+}
 export function disposeCellDragHandle(element: HTMLElement): void { releases.get(element)?.(); releases.delete(element); }
 
 /** Pointer dragging stays separate from text selection and ProseMirror's content drag. */
@@ -34,11 +55,20 @@ export function cellDragHandle(doc: Document, index: number, enabled: boolean, l
 		const tick = () => { if (!session.current()) { cleanup(); return; } if (moved && scroll) { const rect = scroll.getBoundingClientRect(); const speed = y < rect.top + 40 ? -12 : y > rect.bottom - 40 ? 12 : 0; if (speed) { scroll.scrollTop += speed; root.style.setProperty('--cell-drag-y', `${y - event.clientY + scroll.scrollTop - originalScroll}px`); mark(); } } frame = win.requestAnimationFrame(tick); };
 		onCleanup(cleanup); win.addEventListener('pointermove', move, { passive: false }); win.addEventListener('pointerup', up); win.addEventListener('pointercancel', cancel); win.addEventListener('keydown', key, true); win.addEventListener('blur', cancel); frame = win.requestAnimationFrame(tick);
 	});
-	const cell = () => handle.closest('.ProseMirror')?.querySelector<HTMLElement>(`[data-cell-index="${index}"]`);
 	const win = doc.defaultView!;
 	let observer: ResizeObserver | null = null;
-	const layout = () => { const node = cell(); if (!node) return; const rect = node.getBoundingClientRect(), gutter = wrapper.getBoundingClientRect(); handle.style.top = `${rect.top - gutter.top}px`; handle.style.height = `${Math.max(28, rect.height)}px`; };
-	const frame = win.requestAnimationFrame(() => { layout(); const node = cell(); if (node && win.ResizeObserver) { observer = new win.ResizeObserver(layout); observer.observe(node); } });
-	releases.set(wrapper, () => { win.cancelAnimationFrame(frame); observer?.disconnect(); });
+	let cancelLayout: (() => void) | null = null;
+	const layout: LayoutTask = cells => {
+		const root = handle.closest<HTMLElement>('.ProseMirror');
+		const node = root ? cells.get(root)?.get(index) : null;
+		if (!node) return null;
+		const rect = node.getBoundingClientRect(), gutter = wrapper.getBoundingClientRect();
+		if (!observer && win.ResizeObserver) { observer = new win.ResizeObserver(queue); observer.observe(node); }
+		const top = `${rect.top - gutter.top}px`, height = `${Math.max(28, rect.height)}px`;
+		return () => { if (handle.style.top !== top) handle.style.top = top; if (handle.style.height !== height) handle.style.height = height; };
+	};
+	const queue = () => { cancelLayout = scheduleLayout(doc, layout); };
+	queue();
+	releases.set(wrapper, () => { cancelLayout?.(); observer?.disconnect(); });
 	wrapper.append(handle); return wrapper;
 }

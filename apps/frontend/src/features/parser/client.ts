@@ -54,7 +54,7 @@ export class ParserClient {
 		if (this.reset) {
 			this.reset = false; this.queue = []; this.queuedUnits = 0;
 			request = { kind: 'reset', seq: ++this.sequence, documentId: this.latest.documentId, version: this.latest.version,
-				bytes: new Uint8Array(this.latest.toBytes()) };
+				bytes: this.latest.toBytes() };
 		} else if (this.queue.length) {
 			request = this.queue.shift()!;
 			if (request.kind === 'patch') this.queuedUnits -= request.patches.reduce((sum, patch) => sum + patch.insert.length, 0);

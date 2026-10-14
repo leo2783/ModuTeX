@@ -371,7 +371,7 @@ test('compiled Svelte CLIENT Help page: focus targets on click navigation and no
 		harnessApi.setTopic('installation');
 		flushSync();
 		assert.equal(dom.window.document.activeElement, heading, 'Intentional route-prop update moves activeElement to target heading');
-		assert.equal(heading.textContent, '0.1.0 installation guide');
+		assert.equal(heading.textContent, 'Installation guide');
 
 		// 6. Switching locale back to zh-Hant preserves focus and updates heading text to Chinese
 		editorInput.focus();
@@ -379,7 +379,7 @@ test('compiled Svelte CLIENT Help page: focus targets on click navigation and no
 		harnessApi.setLocale('zh-Hant');
 		flushSync();
 		assert.equal(dom.window.document.activeElement, editorInput, 'Locale switch back must preserve focus without stealing');
-		assert.equal(heading.textContent, '0.1.0 安裝指南');
+		assert.equal(heading.textContent, '安裝指南');
 
 		editorInput.remove();
 	} finally {
@@ -440,7 +440,7 @@ test('compiled Svelte CLIENT ReleaseNotes page: focuses actual version section h
 		versionLinks[0]?.click();
 		flushSync();
 		assert.equal(dom.window.document.activeElement, versionHeading, 'Selecting version must focus actual version section heading #version-heading');
-		assert.equal(versionHeading.textContent?.trim(), '0.2.0-dev.0');
+		assert.equal(versionHeading.textContent?.trim(), '0.2.0');
 
 		// 5. Selecting known limitations focuses main heading (via link click and route prop update)
 		const limitationsLink = container.querySelector('aside a[href="#/release-notes/limitations"]') as HTMLAnchorElement;
@@ -457,7 +457,7 @@ test('compiled Svelte CLIENT ReleaseNotes page: focuses actual version section h
 		harnessApi.setLimitations(true);
 		flushSync();
 		assert.equal(dom.window.document.activeElement, mainHeading, 'Route update to limitations must focus #release-heading');
-		assert.equal(mainHeading.textContent, '0.1.0 known limitations');
+		assert.equal(mainHeading.textContent, 'Known limitations');
 
 		// 6. Intentional route-prop update back to version notes focuses actual version section heading
 		externalButton.focus();
@@ -467,7 +467,7 @@ test('compiled Svelte CLIENT ReleaseNotes page: focuses actual version section h
 		const updatedVersionHeading = dom.window.document.querySelector('#version-heading') as HTMLHeadingElement;
 		assert.ok(updatedVersionHeading, 'Version heading must be present in notes view');
 		assert.equal(dom.window.document.activeElement, updatedVersionHeading, 'Route update back to version notes must focus version section heading');
-		assert.equal(updatedVersionHeading.textContent?.trim(), '0.2.0-dev.0');
+		assert.equal(updatedVersionHeading.textContent?.trim(), '0.2.0');
 
 		externalButton.remove();
 	} finally {
@@ -663,7 +663,7 @@ test('compiled Svelte ReleaseNotes page SSR renders version index active semanti
 
 			const activeItem = doc.querySelector('aside [aria-current="page"]');
 			assert.ok(activeItem);
-			assert.equal(activeItem.textContent?.trim(), '0.2.0-dev.0');
+			assert.equal(activeItem.textContent?.trim(), '0.2.0');
 
 			const limitationsLink = doc.querySelector('aside a[href="#/release-notes/limitations"]');
 			assert.ok(limitationsLink);
@@ -681,7 +681,7 @@ test('compiled Svelte ReleaseNotes page SSR renders version index active semanti
 			const heading = doc.querySelector('#release-heading');
 			assert.ok(heading);
 			assert.equal(heading.getAttribute('tabindex'), '-1');
-			assert.equal(heading.textContent, '0.1.0 已知限制');
+			assert.equal(heading.textContent, '已知限制');
 
 			const activeItem = doc.querySelector('aside [aria-current="page"]');
 			assert.ok(activeItem);
@@ -694,7 +694,7 @@ test('compiled Svelte ReleaseNotes page SSR renders version index active semanti
 		const domEnLimits = new JSDOM(enLimitsHtml);
 		try {
 			const heading = domEnLimits.window.document.querySelector('#release-heading');
-			assert.equal(heading?.textContent, '0.1.0 known limitations');
+			assert.equal(heading?.textContent, 'Known limitations');
 		} finally {
 			domEnLimits.window.close();
 		}
@@ -721,7 +721,7 @@ test('public service functions and real document operations satisfy navigation c
 	const rawChangelog = await fs.promises.readFile(new URL('../../../../CHANGELOG.md', import.meta.url), 'utf8');
 	const notes = releaseNotes(rawChangelog);
 	assert.ok(notes.length >= 2);
-	assert.equal(notes[0]?.version, '0.2.0-dev.0');
+	assert.equal(notes[0]?.version, '0.2.0');
 	assert.equal(notes[1]?.version, '0.2.0');
 	assert.equal(notes[2]?.version, '0.1.0');
 });

@@ -8,10 +8,10 @@ import { releaseNotes, contentBlocks, inlineParts } from '../../src/features/rel
 test('actual bundled changelog preserves version/status and all recorded changes', async () => {
 	const text = await readFile(new URL('../../../../CHANGELOG.md', import.meta.url), 'utf8');
 	const records = releaseNotes(text);
-	assert.equal(records.length, 3); assert.deepEqual(records.map((record) => record.version), ['0.2.0-dev.0', '0.2.0', '0.1.0']);
-	assert.equal(records[0]!.status, '2026-10-13'); assert.equal(records[1]!.status, 'Unreleased');
+	assert.equal(records.length, 3); assert.deepEqual(records.map((record) => record.version), ['0.2.0', '0.2.0-dev.0', '0.1.0']);
+	assert.equal(records[0]!.status, '2026-10-14'); assert.equal(records[1]!.status, '2026-10-13');
 	assert.equal(records[2]!.status, '2026-10-06');
-	assert.deepEqual(records[1]!.blocks.filter((block) => block.kind === 'heading').map((block) => block.text), ['Added', 'Changed', 'Compatibility']);
+	assert.deepEqual(records[0]!.blocks.filter((block) => block.kind === 'heading').map((block) => block.text), ['Added', 'Fixed', 'Changed', 'Compatibility']);
 	assert.deepEqual(records[2]!.blocks.filter((block) => block.kind === 'heading').map((block) => block.text), ['Added', 'Fixed', 'Compatibility']);
 	assert.equal(records.flatMap((record) => record.blocks.filter((block) => block.kind === 'list').flatMap((block) => block.items)).length, text.split(/\r?\n/).filter((line) => line.startsWith('- ')).length);
 	assert.deepEqual(releaseNotes(text.replaceAll('\r\n', '\n').replaceAll('\n', '\r\n')), records);
@@ -42,6 +42,6 @@ test('real Svelte/Vite server render reads version documents and renders semanti
 		assert.match(notes, /0\.1\.0/); // Both actual version entries remain in the index.
 		assert.doesNotMatch(notes, /<script[ >]/i);
 		const limits = render(module.default, { props: { showLimitations: true } }).body;
-		assert.match(limits, /0\.1\.0 已知限制/); assert.match(limits, /Managed Tectonic requires internet access/);
+		assert.match(limits, /已知限制/); assert.match(limits, /Managed Tectonic requires internet access/);
 	} finally { await server.close(); }
 });

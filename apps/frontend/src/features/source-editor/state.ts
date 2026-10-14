@@ -141,6 +141,19 @@ export function visualInsertionTransaction(state: EditorState, span: SourceSpan,
 	return insertionTransaction(state, target, insert);
 }
 
+/** Locate only the paragraph marker inserted by this transaction, in source coordinates. */
+export function paragraphInsertionTransaction(state: EditorState, span: SourceSpan, beforeText: boolean) {
+	const before = state.field(sourceState).projection.document;
+	const transaction = visualInsertionTransaction(state, span, beforeText ? '\\par\n\\par\n' : '\\par\n');
+	if (!transaction.docChanged) throw new Error('INSERTION_REJECTED');
+	const next = transaction.state.field(sourceState).projection.document;
+	const insertedLength = next.length - before.length + span.to - span.from;
+	if (insertedLength <= 0) throw new Error('INSERTION_REJECTED');
+	const offset = next.read(span.from, span.from + insertedLength).indexOf('\\par');
+	if (offset < 0) throw new Error('INSERTION_REJECTED');
+	return { transaction, paragraph: { documentId: next.documentId, version: next.version, from: span.from + offset } };
+}
+
 export function sourcePatchTransaction(state: EditorState, identity: { documentId: string; version: number }, patches: readonly SourcePatch[], preserveLineEndings = false) {
 	if (state.readOnly) throw new Error('EDITOR_READ_ONLY');
 	const projection = state.field(sourceState).projection, source = projection.document;

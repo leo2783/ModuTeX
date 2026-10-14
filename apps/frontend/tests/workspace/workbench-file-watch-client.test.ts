@@ -160,9 +160,19 @@ test('mounted App reconciles real host watch events and preserves source ownersh
 		used: boolean;
 	} | null = null;
 	const activeWatches = new Map<string, InstanceType<any>>();
+	const readyWatches = new Set<string>();
+	const startupGate = deferred<void>();
+	let delayFirstStartup = true;
 	const eventListeners = new Set<(value: unknown) => void>();
 	const errorListeners = new Set<(value: unknown) => void>();
 	let emittedCount = 0;
+	let lastEvent: FileEvent | null = null;
+	let holdNativeDelivery = false, pendingLists = 0, pendingReads = 0;
+	const delayedEvents: { subscriptionId: string; event: FileEvent }[] = [];
+	const deliverEvent = (subscriptionId: string, event: FileEvent) => {
+		emittedCount++; lastEvent = event;
+		for (const listener of eventListeners) listener({ subscriptionId, event });
+	};
 	let listCount = 0;
 	let writeCount = 0;
 	let openCount = 0;
@@ -195,6 +205,7 @@ test('mounted App reconciles real host watch events and preserves source ownersh
 		const stopAllNativeWatches = (failure?: FileWatchFailure) => {
 			for (const [subscriptionId, watcher] of [...activeWatches]) {
 				activeWatches.delete(subscriptionId);
+				readyWatches.delete(subscriptionId);
 				watcher.stop();
 				if (failure) pushWatchError(subscriptionId, failure);
 			}
@@ -211,9 +222,12 @@ test('mounted App reconciles real host watch events and preserves source ownersh
 			removeRecent: async () => {},
 			listFiles: async (id) => {
 				listCount++;
-				return files!.list(id);
+				pendingLists++;
+				try { return await files!.list(id); } finally { pendingLists--; }
 			},
 			readFile: async (ref) => {
+				pendingReads++;
+				try {
 				const receipt = await files!.read(ref);
 				const gate = readGate;
 				if (gate && !gate.used && ref.path === gate.path) {
@@ -222,6 +236,7 @@ test('mounted App reconciles real host watch events and preserves source ownersh
 					await gate.release.promise;
 				}
 				return receipt;
+				} finally { pendingReads--; }
 			},
 			writeFile: async (request) => {
 				writeCount++;
@@ -236,6 +251,7 @@ test('mounted App reconciles real host watch events and preserves source ownersh
 				files!.close(id);
 			},
 			startWatch: async (id, subscriptionId) => {
+				if (delayFirstStartup) { delayFirstStartup = false; await startupGate.promise; }
 				const owner = files!.compileOwner();
 				const assertWorkspace = files!.saveAsOwner(id);
 				let watcher!: InstanceType<typeof FrontendWatch>;
@@ -249,20 +265,23 @@ test('mounted App reconciles real host watch events and preserves source ownersh
 					},
 					emit(event: FileEvent) {
 						if (activeWatches.get(subscriptionId) !== watcher) return;
-						emittedCount++;
-						for (const listener of eventListeners) listener({ subscriptionId, event });
+						if (holdNativeDelivery) delayedEvents.push({ subscriptionId, event });
+						else deliverEvent(subscriptionId, event);
 					},
 					onError(failure: FileWatchFailure) {
 						if (activeWatches.get(subscriptionId) !== watcher) return;
 						activeWatches.delete(subscriptionId);
+						readyWatches.delete(subscriptionId);
 						pushWatchError(subscriptionId, failure);
 					}
 				});
 				activeWatches.set(subscriptionId, watcher);
 				try {
 					await watcher.start();
+					readyWatches.add(subscriptionId);
 				} catch (error) {
 					if (activeWatches.get(subscriptionId) === watcher) activeWatches.delete(subscriptionId);
+					readyWatches.delete(subscriptionId);
 					watcher.stop();
 					throw error;
 				}
@@ -271,6 +290,7 @@ test('mounted App reconciles real host watch events and preserves source ownersh
 				const watcher = activeWatches.get(subscriptionId);
 				if (watcher) {
 					activeWatches.delete(subscriptionId);
+					readyWatches.delete(subscriptionId);
 					watcher.stop();
 				}
 			},
@@ -379,7 +399,7 @@ export { mount, unmount, flushSync, tick, App };
 				await flush();
 			}
 			await waitForSource(marker);
-			await waitFor(() => activeWatches.size === 1 ? true : undefined, 10_000, flush);
+			await waitFor(() => readyWatches.size === 1 ? true : undefined, 10_000, flush);
 		};
 		const writeExternalAndWait = async (path: string, contents: string) => {
 			const before = emittedCount;
@@ -389,8 +409,13 @@ export { mount, unmount, flushSync, tick, App };
 		const notice = (kind: 'changed' | 'missing') =>
 			container.querySelector<HTMLElement>(`.file-change-notice[data-kind="${kind}"]`);
 
-		await openFolder('first.tex', 'BASE_FIRST');
 		const firstPath = join(roots[0]!, fileNames[0]!);
+		const firstOpening = openFolder('first.tex', 'BASE_FIRST');
+		await waitForSource('BASE_FIRST');
+		// No host event exists for a change already present in its startup baseline.
+		await writeFile(firstPath, initialTexts[0]!.replace('BASE_FIRST', 'INITIAL_GAP_FIRST'), 'utf8');
+		startupGate.resolve(undefined); await firstOpening;
+		await waitForSource('INITIAL_GAP_FIRST');
 
 		// A clean external update is loaded from disk and replaces only the clean snapshot.
 		await writeExternalAndWait(
@@ -399,6 +424,28 @@ export { mount, unmount, flushSync, tick, App };
 		);
 		await waitForSource('CLEAN_EXTERNAL_FIRST');
 		assert.equal(notice('changed'), null);
+
+		// Controlled native packets isolate renderer batching from filesystem scheduling.
+		// File listing and the active source read still use the real filesystem host.
+		holdNativeDelivery = true;
+		await waitFor(() => pendingLists === 0 && pendingReads === 0 ? true : undefined, 10_000, flush);
+		assert.ok(lastEvent);
+		const packet = lastEvent as FileEvent;
+		const subscriptionId = [...activeWatches.keys()][0]!;
+		const listBaseline = listCount;
+		const burstBaseline = editorText();
+		for (let i = 0; i < 50; i++) {
+			const event = { ...packet, path: i === 49 ? 'first.tex' : `batch-${i}.tex`, kind: 'changed' };
+			for (const listener of eventListeners) listener({ subscriptionId, event });
+		}
+		await waitFor(() => listCount >= listBaseline + 2 ? true : undefined, 10_000, flush);
+		await new Promise(resolve => setTimeout(resolve, 100)); await flush();
+		assert.equal(listCount - listBaseline, 2, '50 synchronous packets require first in-flight listing plus one pending batch');
+		assert.equal(editorText(), burstBaseline); assert.equal(notice('changed'), null);
+		holdNativeDelivery = false;
+		for (const { subscriptionId, event } of delayedEvents.splice(0)) {
+			if (activeWatches.has(subscriptionId)) deliverEvent(subscriptionId, event);
+		}
 
 		// Dirty edits remain untouched through conflict acknowledgement and confirmed reload.
 		pasteIntoSource('LOCAL_DRAFT_KEEP');
@@ -472,6 +519,14 @@ export { mount, unmount, flushSync, tick, App };
 		// receipt into the new document.
 		await openFolder('second.tex', 'BASE_SECOND');
 		const secondPath = join(roots[1]!, fileNames[1]!);
+		const newerGate = { path: fileNames[1]!, entered: deferred<void>(), release: deferred<void>(), used: false };
+		readGate = newerGate;
+		await writeExternalAndWait(secondPath, initialTexts[1]!.replace('BASE_SECOND', 'OLDER_PENDING_SECOND'));
+		await newerGate.entered.promise;
+		await writeExternalAndWait(secondPath, initialTexts[1]!.replace('BASE_SECOND', 'LATEST_PENDING_SECOND'));
+		newerGate.release.resolve(undefined);
+		await waitForSource('LATEST_PENDING_SECOND');
+		assert.equal(editorText().includes('OLDER_PENDING_SECOND'), false, 'newer same-path event must survive an in-flight older receipt');
 		const secondReadGate = {
 			path: fileNames[1]!,
 			entered: deferred<void>(),

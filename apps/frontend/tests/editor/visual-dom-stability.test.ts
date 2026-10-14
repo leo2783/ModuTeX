@@ -30,6 +30,8 @@ test('typing and refresh preserve Raw DOM while source anchors, selection, local
 		const code = target.querySelector('.raw-latex')!;
 		const button = target.querySelector('.visual-raw button') as HTMLButtonElement;
 		const codeText = code.firstChild, buttonText = button.firstChild;
+		const grips = [...target.querySelectorAll('.cell-drag-gutter')];
+		const boundaries = [...target.querySelectorAll('.visual-cell-boundary')];
 		const observer = new dom.window.MutationObserver(() => {});
 		observer.observe(code.parentElement!, { subtree: true, childList: true, attributes: true, characterData: true });
 		const typing = view.view.state.tr.insertText('雪', 2);
@@ -41,6 +43,8 @@ test('typing and refresh preserve Raw DOM while source anchors, selection, local
 		assert.equal(target.querySelector('.visual-raw button'), button);
 		assert.equal(view.view.state.selection.from, expectedSelection);
 		assert.equal(code.firstChild, codeText); assert.equal(button.firstChild, buttonText);
+		[...target.querySelectorAll('.cell-drag-gutter')].forEach((node, i) => assert.equal(node, grips[i]));
+		[...target.querySelectorAll('.visual-cell-boundary')].forEach((node, i) => assert.equal(node, boundaries[i]));
 		assert.deepEqual(editor.field(sourceState).projection.document.toBytes(), new TextEncoder().encode('\uFEFF\\section{A雪}\r\nBody \\opaque{keep}'));
 		button.click(); assert.equal(actions.length, 1);
 		assert.equal(actions[0]!.from, original.read().indexOf('\\opaque') + 1);

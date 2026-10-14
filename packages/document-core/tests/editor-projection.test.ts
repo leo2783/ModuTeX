@@ -4,6 +4,23 @@ import { SourceDocument, EditorProjection } from '../src/index.ts';
 const open = (text: string) => EditorProjection.open(SourceDocument.open(new TextEncoder().encode(text)));
 const normalize = (text: string) => text.replace(/\r\n|\r/g, '\n');
 
+for (const count of [1, 8, 128, 1024]) test(`one transaction joins ${count} CR/LF boundaries with exact coordinates and history`, () => {
+	const text = '\uFEFF' + 'A\rX\nB\r\n'.repeat(count);
+	const initial = open(text).projection;
+	const patches = Array.from({ length: count }, (_, i) => ({ from: i * 6 + 2, to: i * 6 + 3, insert: '' }));
+	const edited = initial.apply(patches, 0);
+	const expected = 'A\r\nB\r\n'.repeat(count);
+	assert.deepEqual(edited.document.toBytes(), new TextEncoder().encode('\uFEFF' + expected));
+	assert.equal(edited.editorCorrections.length, count);
+	const oracle = open(expected).projection;
+	for (let at = 0; at <= oracle.length; at++) assert.equal(edited.toSource(at), oracle.toSource(at));
+	const undone = edited.restore(initial);
+	assert.deepEqual(undone.document.toBytes(), new TextEncoder().encode(text));
+	const redone = undone.restore(edited);
+	assert.deepEqual(redone.document.toBytes(), edited.document.toBytes());
+	assert.deepEqual([edited.document.version, undone.document.version, redone.document.version], [1, 2, 3]);
+});
+
 for (const fixture of ['', 'a\nb\n', 'a\r\nb\r\n', 'a\rb\r', '\uFEFFa\r\n雪\n😀\rfinal', '\r\n\r\n', 'a\r\nb\nc\rd']) {
 	test('editor projection preserves original bytes: ' + JSON.stringify(fixture), () => {
 		const initial = open(fixture);

@@ -3,7 +3,19 @@ import { test } from 'node:test';
 // @ts-expect-error jsdom is an untyped test-only dependency in this workspace.
 import { JSDOM } from 'jsdom';
 import { CODE_LANGUAGES, codeSource, parseCodeContent } from '../../src/features/code/source.ts';
-import { highlightCode } from '../../src/features/code/highlight.ts';
+import { highlightCode, MAX_HIGHLIGHT_UNITS } from '../../src/features/code/highlight.ts';
+
+test('oversized code stays complete literal text without creating token DOM or losing later edits', async () => {
+	const dom = new JSDOM('<pre></pre>'), host = dom.window.document.querySelector('pre')!;
+	try {
+		const code = '<script>literal</script>\n' + 'const x = 1;\n'.repeat(MAX_HIGHLIGHT_UNITS);
+		const cancel = highlightCode(host, code, 'typescript');
+		await new Promise(resolve => setTimeout(resolve, 50));
+		assert.equal(host.textContent, code); assert.equal(host.children.length, 0);
+		cancel(); highlightCode(host, 'next draft', 'text');
+		assert.equal(host.textContent, 'next draft');
+	} finally { dom.window.close(); }
+});
 
 test('the shared language catalogue has unique safe identifiers and literal source round trips', () => {
 	assert.ok(CODE_LANGUAGES.length > 100);

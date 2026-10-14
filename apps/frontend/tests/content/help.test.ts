@@ -32,9 +32,10 @@ test('actual Svelte/Vite Help renders installation commands and unchanged licens
 		const commands = render(module.default, { props: { topic: 'installation' } }).body;
 		const dom = new JSDOM(commands);
 		try {
-			assert.equal(dom.window.document.querySelector('[aria-current="page"]')?.textContent, '0.1.0 安裝指南');
+			assert.equal(dom.window.document.querySelector('[aria-current="page"]')?.textContent, '安裝指南');
 			const code = [...dom.window.document.querySelectorAll('pre code')].map((node) => node.textContent).join('\n');
-			assert.match(code, /Get-FileHash/); assert.match(code, /npm ci\nnpm run electron:dev/);
+			assert.match(code, /Get-FileHash/); assert.match(commands, /ModuTeX-Setup-0\.2\.0\.exe/);
+			assert.match(code, /npx --offline --yes --ignore-scripts --package \.\\modutex-desktop-0\.2\.0\.tgz -- modutex/);
 			assert.equal(dom.window.document.querySelectorAll('script').length, 0);
 		} finally { dom.window.close(); }
 		for (const [topic, path] of [['agpl', '../../../../LICENSE'], ['apache', '../../../../LICENSES/Apache-2.0.txt']] as const) {

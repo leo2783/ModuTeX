@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -13,12 +13,21 @@ const target = resolve(process.argv[2] ?? 'release/win-unpacked/ModuTeX.exe');
 // GitHub Windows can put TEMP behind a junction; exercise the canonical path
 // rather than weakening the host's rejection of aliases in document paths.
 const fixture = mkdtempSync(join(realpathSync.native(tmpdir()), 'modutex-packaged-'));
+const version = JSON.parse(readFileSync(resolve('package.json'), 'utf8')).version;
+const stable = !version.includes('-dev');
+// Stable builds deliberately ignore test profile overrides. Exercise their real
+// default profile only on an ephemeral GitHub runner, never a developer machine.
+assert.ok(!stable || (process.env.GITHUB_ACTIONS === 'true' && process.env.CI === 'true' && process.env.APPDATA),
+ 'Stable packaged acceptance must run on an ephemeral GitHub Actions Windows runner');
+const profile = stable ? join(resolve(process.env.APPDATA), 'modutex-desktop') : fixture;
+assert.ok(!stable || !existsSync(profile), 'Refuse to replace an existing stable user profile');
+if (stable) mkdirSync(profile);
 const workspace = join(fixture, 'workspace');
 mkdirSync(workspace);
 const file = join(workspace, 'main.tex');
 const source = '\\documentclass{article}\n\\begin{document}\nPackaged 中文 document.\n\\end{document}\n';
 writeFileSync(file, source);
-writeFileSync(join(fixture, 'frontend-recent-v1.json'), JSON.stringify({version:1,entries:[{id:randomUUID(),selected:file,kind:'file',openedAt:Date.now()}]}));
+writeFileSync(join(profile, 'frontend-recent-v1.json'), JSON.stringify({version:1,entries:[{id:randomUUID(),selected:file,kind:'file',openedAt:Date.now()}]}));
 const server = createServer();
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const port = server.address().port;
@@ -113,6 +122,10 @@ try {
 } finally {
  if(browser) {for(const page of browser.contexts()[0]?.pages()??[]) await page.close().catch(()=>{}); await browser.close();}
  if(child.exitCode===null) child.kill();
- // Only this generated fixture is removed; the dev user's real profile is untouched.
+ if (stable) {
+  assert.equal(profile, join(resolve(process.env.APPDATA), 'modutex-desktop'));
+  await rm(profile,{recursive:true,force:true,maxRetries:10,retryDelay:200});
+ }
+ // Only generated test-owned paths are removed.
  await rm(fixture,{recursive:true,force:true,maxRetries:10,retryDelay:200}).catch(error=>console.error('Fixture cleanup:',fixture,error.message));
 }
