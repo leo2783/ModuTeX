@@ -40,3 +40,10 @@ node --test scripts/tests/frontend-electron-close.test.mjs
 ```
 
 The UI test uses real Chrome with GPU disabled to verify mode/icon controls, MathLive rendering, between-block insertion, re-editing, undo and help layout in both themes. The close test requires built frontend/Electron files and verifies save, discard, cancel and save failure using isolated files. It triggers the real Electron window's close path through `window.close()`; it does not click the physical OS title-bar button.
+
+`node apps/frontend/tests/performance/visual-runtime.mjs` measures real Chrome VisualEditor
+typing/selection P50/P95, refresh time, DOM mutations, long tasks and GC heap at 100/500/2,000 cells,
+with 20 edits per size and byte/source assertions. Run it serially on a quiet machine after shared
+packages are built. It isolates VisualEditor, not App/Worker scheduling, IME or Electron.
+`npm run bench --workspace=@modutex/document-core` also measures bounded/full reads at
+1/128/1,024/8,192 pieces. Preserve machine metadata; these new metrics have no approved threshold.

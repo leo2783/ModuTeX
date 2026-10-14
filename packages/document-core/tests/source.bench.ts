@@ -52,11 +52,31 @@ for (const size of [100 * 1024, 1024 * 1024, 5 * 1024 * 1024]) {
     gatePassed: p95 < p95GateMs
   });
 }
+const fragmentation = [];
+for (const pieces of [1, 128, 1024, 8192]) {
+  let document = SourceDocument.open(encoder.encode('a'.repeat(32768)));
+  if (pieces > 1) document = document.apply({ expectedVersion: 0,
+    patches: Array.from({ length: pieces / 2 }, (_, i) => ({ from: i * 4, to: i * 4, insert: 'b' })) }).document;
+  assert.equal(document.pieceCount, pieces);
+  const readings: Record<string, { p50Ms: number; p95Ms: number }> = {};
+  for (const [name, width] of [['oneUnit', 1], ['hundredUnits', 100], ['wholeDocument', document.length], ['boundary', 0]] as const) {
+    const times = [];
+    for (let i = 0; i < 20; i++) {
+      const at = width === document.length ? 0 : (i * 7919) % (document.length - width + 1);
+      const start = performance.now();
+      const result = document.read(at, at + width);
+      times.push(performance.now() - start); assert.equal(result.length, width);
+    }
+    const sorted = [...times].sort((a, b) => a - b);
+    readings[name] = { p50Ms: round(sorted[9]!), p95Ms: round(sorted[18]!) };
+  }
+  fragmentation.push({ pieces, readings, samplesPerRead: 20 });
+}
 console.log(JSON.stringify({
   scope: 'Source buffer only; excludes renderer, parser workers and real GUI typing',
   machine: { node: process.version, platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model, logicalCpus: cpus().length, totalMemoryBytes: totalmem() },
   comparator: 'Full UTF-8 string serialization, not a measurement of the legacy application',
   gates: { sourceApplyP95Ms: p95GateMs },
-  records
+  records, fragmentation
 }, null, 2));
 assert.ok(records.every(record => record.gatePassed), 'Source patch p95 exceeds the source-buffer budget');

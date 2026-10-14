@@ -73,7 +73,7 @@
 	</aside>
 	<div class="reading-pane">
 		<header>
-			<h1 id="release-heading" bind:this={heading} tabindex="-1">{showLimitations ? t('0.1.0 已知限制', '0.1.0 known limitations') : t('版本紀錄', 'Release notes')}</h1>
+			<h1 id="release-heading" bind:this={heading} tabindex="-1">{showLimitations ? t('已知限制', 'Known limitations') : t('版本紀錄', 'Release notes')}</h1>
 			<a href="#/workbench">{t('返回工作台', 'Back to workbench')}</a>
 		</header>
 		{#if failed}

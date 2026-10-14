@@ -99,7 +99,15 @@ export class EditorProjection {
 		}
 		const removed = [...new Set(joined.values())].sort((a, b) => a - b);
 		if (!removed.length) return new EditorProjection(next, crlf);
-		const shifted = (position: number) => position - removed.filter((at) => at < position).length;
+		const shifted = (position: number) => {
+			let low = 0, high = removed.length;
+			while (low < high) {
+				const middle = (low + high) >>> 1;
+				if (removed[middle]! < position) low = middle + 1;
+				else high = middle;
+			}
+			return position - low;
+		};
 		const adjusted = [...crlf.map(shifted), ...removed.map((at) => shifted(at - 1))].sort((a, b) => a - b);
 		return new EditorProjection(next, adjusted, removed.map((from) => ({ from, to: from + 1, insert: '' })));
 	}

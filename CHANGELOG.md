@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.2.0] — 2026-10-14
+
+### Added
+
+- Rebuilt Svelte document workspace with source, visual, and split editing modes sharing one lossless source model and undo history.
+- Inline bold, italic, emphasis, and underline projection, including nested formatting and cross-format text replacement without rewriting TeX wrappers.
+- Source section and environment folding, document outline navigation, and background parsing with recovery after worker failure.
+- Editable generated tables with row and column controls, proportional widths, header rows, and optional captions; equation and matrix source insertion.
+- Persistent appearance and source-editor preferences, plus an in-app version history.
+- Production frontend loading in Electron, with narrow file/watch/compiler IPC and cancellation preserving the last successful PDF.
+
+- Windows installation wizard, local npx distribution and SHA-256 verification instructions.
+- Graphical math templates, notebook cell dragging, code-language selection and PNG/JPEG clipboard images.
+
+### Fixed
+
+- Workspace startup resynchronization and batched filesystem events prevent stale source reads.
+- Frontend regression gates now run on both CI platforms; launcher tests execute the real child process.
+- Parser reset copies, CRLF projection lookup and repeated cell layout work are reduced; oversized code blocks avoid excessive highlighting work.
+
+### Changed
+
+- Load the source editor and PDF renderer only when needed.
+- Serialize PDF canvas rendering and protect source transactions and file operations against stale results.
+
+### Compatibility
+
+- Windows x64 distribution includes an unsigned installer and a local npx tarball. Native IME variants and large-document responsiveness retain the limitations below.
+- The existing Electron host and legacy components retain their current licensing. This update does not relicense the complete application.
+
 ## [0.2.0-dev.0] — 2026-10-13
 
 ### Added
@@ -12,27 +42,6 @@
 
 - Development preview; the existing Electron desktop host remains AGPL-3.0-only. First uncached compilation can require internet access.
 - Not an npm registry publication or a signed installer. Windows filesystem-watch regressions still have intermittent full-suite timing failures.
-
-## [0.2.0] — Unreleased
-
-### Added
-
-- Rebuilt Svelte document workspace with source, visual, and split editing modes sharing one lossless source model and undo history.
-- Inline bold, italic, emphasis, and underline projection, including nested formatting and cross-format text replacement without rewriting TeX wrappers.
-- Source section and environment folding, document outline navigation, and background parsing with recovery after worker failure.
-- Editable generated tables with row and column controls, proportional widths, header rows, and optional captions; equation and matrix source insertion.
-- Persistent appearance and source-editor preferences, plus an in-app version history.
-- Opt-in built frontend loading in Electron, with narrow file/watch/compiler IPC and cancellation preserving the last successful PDF.
-
-### Changed
-
-- Load the source editor and PDF renderer only when needed.
-- Serialize PDF canvas rendering and protect source transactions and file operations against stale results.
-
-### Compatibility
-
-- The frontend rewrite is in development. The Windows workbench main path has real browser and Electron acceptance; input-method, cross-platform, packaging, and full dependency-origin acceptance remain pending.
-- The existing Electron host and legacy components retain their current licensing. This update does not relicense the complete application.
 
 ## [0.1.0] — 2026-10-06
 

@@ -76,14 +76,24 @@ jobs:
       - run: node --test apps/frontend/tests/production/*.test.mjs
       - name: Verify the actual packaged frontend
         run: node scripts/tests/frontend-packaged-smoke.mjs release/win-unpacked/ModuTeX.exe
+      - name: Build Windows installer from the verified payload
+        run: npm exec --no -- electron-builder --win nsis --x64 --prepackaged release/win-unpacked --publish never
+      - name: Verify actual installation and installed frontend
+        run: node scripts/tests/frontend-installer-smoke.mjs release/ModuTeX-Setup-0.2.0.exe
+      - name: Generate installer SHA-256
+        shell: pwsh
+        run: |
+          $installer = 'release\ModuTeX-Setup-0.2.0.exe'
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "$installer.sha256" -Value "$hash  ModuTeX-Setup-0.2.0.exe" -Encoding ascii -NoNewline
       - name: Stage and pack the production npm desktop package
         shell: pwsh
         run: |
           $sourceCommit = git rev-parse HEAD
           if ($LASTEXITCODE -ne 0) { throw 'Source revision unavailable' }
-          node scripts/stage-npm-desktop.mjs --package-name modutex-desktop --version 0.2.0-dev.0 --source-commit $sourceCommit --payload-dir release/win-unpacked --output-dir release/npm-desktop-package
+          node scripts/stage-npm-desktop.mjs --package-name modutex-desktop --version 0.2.0 --source-commit $sourceCommit --payload-dir release/win-unpacked --output-dir release/npm-desktop-package
           if ($LASTEXITCODE -ne 0) { throw 'Production npm staging failed' }
-          node scripts/verify-npm-desktop.mjs --package-dir release/npm-desktop-package --package-name modutex-desktop --version 0.2.0-dev.0 --source-commit $sourceCommit
+          node scripts/verify-npm-desktop.mjs --package-dir release/npm-desktop-package --package-name modutex-desktop --version 0.2.0 --source-commit $sourceCommit
           if ($LASTEXITCODE -ne 0) { throw 'Staged npm package verification failed' }
           Push-Location release/npm-desktop-package
           try {
@@ -93,16 +103,16 @@ jobs:
             Pop-Location
           }
           $pack = @($packJson | ConvertFrom-Json)
-          if ($pack.Count -ne 1 -or $pack[0].filename -ne 'modutex-desktop-0.2.0-dev.0.tgz') { throw 'Unexpected npm tarball' }
+          if ($pack.Count -ne 1 -or $pack[0].filename -ne 'modutex-desktop-0.2.0.tgz') { throw 'Unexpected npm tarball' }
           Set-Content -LiteralPath release/npm-pack.json -Value $packJson -Encoding utf8
       - name: Generate SHA-256 and verify npm tarball
         shell: pwsh
         run: |
-          $tarballPath = 'release\modutex-desktop-0.2.0-dev.0.tgz'
-          $checksumPath = 'release\modutex-desktop-0.2.0-dev.0.tgz.sha256'
+          $tarballPath = 'release\modutex-desktop-0.2.0.tgz'
+          $checksumPath = 'release\modutex-desktop-0.2.0.tgz.sha256'
           if (-not (Test-Path -LiteralPath $tarballPath -PathType Leaf)) { throw "Tarball not found: $tarballPath" }
           $hash = (Get-FileHash -LiteralPath $tarballPath -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expected = "$hash  modutex-desktop-0.2.0-dev.0.tgz"
+          $expected = "$hash  modutex-desktop-0.2.0.tgz"
           Set-Content -LiteralPath $checksumPath -Value $expected -Encoding ascii -NoNewline
           $record = Get-Content -LiteralPath $checksumPath -Raw
           if ($record -ne $expected) { throw 'Tarball checksum record mismatch' }
@@ -114,12 +124,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'npm tarball extraction failed' }
           $sourceCommit = git rev-parse HEAD
           if ($LASTEXITCODE -ne 0) { throw 'Source revision unavailable' }
-          node scripts/verify-npm-desktop.mjs --package-dir release/tarball-verification/package --package-name modutex-desktop --version 0.2.0-dev.0 --source-commit $sourceCommit
+          node scripts/verify-npm-desktop.mjs --package-dir release/tarball-verification/package --package-name modutex-desktop --version 0.2.0 --source-commit $sourceCommit
           if ($LASTEXITCODE -ne 0) { throw 'Packed npm package content verification failed' }
       - name: Verify actual offline npx launch
         shell: pwsh
         run: |
-          npm run test:packaged -- release/modutex-desktop-0.2.0-dev.0.tgz
+          npm run test:packaged -- release/modutex-desktop-0.2.0.tgz
           if ($LASTEXITCODE -ne 0) { throw 'Packaged npx launch verification failed' }
       - name: Stage npm tarball and verification evidence
         shell: pwsh
@@ -127,8 +137,10 @@ jobs:
           $artifactDirectory = 'release\artifact'
           New-Item -ItemType Directory -Path $artifactDirectory | Out-Null
           $files = @(
-            'release\modutex-desktop-0.2.0-dev.0.tgz',
-            'release\modutex-desktop-0.2.0-dev.0.tgz.sha256',
+            'release\ModuTeX-Setup-0.2.0.exe',
+            'release\ModuTeX-Setup-0.2.0.exe.sha256',
+            'release\modutex-desktop-0.2.0.tgz',
+            'release\modutex-desktop-0.2.0.tgz.sha256',
             'release\npm-pack.json',
             'release\audit-report.json',
             'release\signature-report.json',
@@ -149,7 +161,7 @@ jobs:
       - name: Upload the specified Windows x64 artifact
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: ModuTeX-Windows-x64-0.2.0-dev.0
+          name: ModuTeX-Windows-x64-0.2.0
           path: release/artifact
           if-no-files-found: error
       - name: Upload packaged frontend failure diagnostics

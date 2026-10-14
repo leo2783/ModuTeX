@@ -1,4 +1,4 @@
-// keeps the app version in lockstep across the root and editor package.json (electron-builder
+// keeps the app version in lockstep across the root and active frontend package.json (electron-builder
 // stamps it into installers, Vite injects it as __APP_VERSION__). Independent workspace
 // packages keep their own semver.
 //

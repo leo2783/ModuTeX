@@ -83,6 +83,10 @@ jobs:
       # workspace build does not try to invoke wasm-pack here.
       - run: npm run test --workspace=texpile-typst-syntax-wasm
       - run: npm run build:shared --workspace=modutex-frontend
+      - run: npm run frontend:check
+      - run: npm run frontend:test
+      - run: npm run test --workspace=@modutex/document-core
+      - run: npm run test --workspace=@modutex/frontend-contracts
       - run: npm exec --no -- tsc -p electron --noEmit
       - run: npm run test:electron
 
@@ -145,5 +149,9 @@ jobs:
       - run: npm run build --workspace=modutex-landing
       - run: npm run test --workspace=texpile-typst-syntax-wasm
       - run: npm run build:shared --workspace=modutex-frontend
+      - run: npm run frontend:check
+      - run: npm run frontend:test
+      - run: npm run test --workspace=@modutex/document-core
+      - run: npm run test --workspace=@modutex/frontend-contracts
       - run: npm exec --no -- tsc -p electron --noEmit
       - run: npm run test:electron

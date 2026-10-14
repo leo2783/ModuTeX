@@ -141,6 +141,11 @@ const PR_GATES = [
 	'npm run testonce --workspace=modutex-editor',
 	'npm run build --workspace=modutex-landing',
 	'npm run test --workspace=texpile-typst-syntax-wasm',
+	'npm run build:shared --workspace=modutex-frontend',
+	'npm run frontend:check',
+	'npm run frontend:test',
+	'npm run test --workspace=@modutex/document-core',
+	'npm run test --workspace=@modutex/frontend-contracts',
 	'npm exec --no -- tsc -p electron --noEmit',
 	'npm run test:electron'
 ];
@@ -194,6 +199,27 @@ function nativePrContract(value) {
 		names.add(report.with.name);
 	}
 }
+
+test('ModuTeX verification always gates new frontend types and behavior', () => {
+	const commands = modutexChecks.map(([, args]) => args.join(' '));
+	for (const command of ['run frontend:check', 'run frontend:test']) assert.ok(commands.includes(command), command);
+	assert.ok(commands.indexOf('run build:shared --workspace=modutex-frontend') < commands.indexOf('run frontend:check'));
+});
+
+test('PR policy rejects removed, skipped or ignored new frontend gates on either OS', async () => {
+	const original = await workflow('test.yml');
+	for (const id of ['test', 'test-windows']) for (const command of ['npm run frontend:check', 'npm run frontend:test']) {
+		for (const mode of ['remove', 'skip', 'ignore']) {
+			const altered = structuredClone(original), job = altered.jobs[id];
+			const gate = job.steps.find(step => step.run === command);
+			assert.ok(gate);
+			if (mode === 'remove') job.steps = job.steps.filter(step => step !== gate);
+			else if (mode === 'skip') gate.if = 'false';
+			else gate['continue-on-error'] = true;
+			assert.throws(() => nativePrContract(altered), `${id} ${command} ${mode}`);
+		}
+	}
+});
 
 function supplyChainContract(steps, shell, prefix = '') {
 	const signatures = steps.find((step) => step.id === 'registry-signatures');
@@ -267,7 +293,7 @@ function windowsContract(value) {
 	assert.match(steps[npx].run, /npm run test:packaged --/);
 	assert.doesNotMatch(steps[npx].run, /npm root --global/);
 	assert.match(steps[packaged].run, /win-unpacked\/ModuTeX\.exe/);
-	assert.match(steps[npx].run, /modutex-desktop-0\.2\.0-dev\.0\.tgz/);
+	assert.match(steps[npx].run, /modutex-desktop-0\.2\.0\.tgz/);
 	for (const index of [pack, checksum, stage, upload]) assert.equal(steps[index].if, undefined);
 	for (const command of ['stage-npm-desktop.mjs', 'verify-npm-desktop.mjs --package-dir', 'npm pack', '--ignore-scripts', '--json'])
 		assert.ok(steps[pack].run.includes(command), `missing npm staging gate ${command}`);
@@ -277,13 +303,27 @@ function windowsContract(value) {
 	assert.match(steps[pack].run, /finally \{\s+Pop-Location/);
 	assert.match(steps[pack].run, /if \(\$LASTEXITCODE -ne 0\)/);
 	assert.match(steps[checksum].run, /Get-FileHash.*-Algorithm SHA256/);
-	assert.match(steps[checksum].run, /modutex-desktop-0\.2\.0-dev\.0\.tgz\.sha256/);
+	assert.match(steps[checksum].run, /modutex-desktop-0\.2\.0\.tgz\.sha256/);
 	assert.match(steps[checksum].run, /verify-npm-desktop\.mjs --tarball .*--sha256 \$recordedHash/);
 	assert.match(steps[checksum].run, /tar -xzf \$tarballPath -C release\/tarball-verification/);
 	assert.match(steps[checksum].run, /verify-npm-desktop\.mjs --package-dir release\/tarball-verification\/package/);
 	assert.match(steps[checksum].run, /if \(\$LASTEXITCODE -ne 0\)/);
-	assert.doesNotMatch(JSON.stringify(steps), /NSIS|ModuTeX-Setup|npm publish|gh release/);
+	assert.doesNotMatch(JSON.stringify(steps), /npm publish|gh release/);
+	const installer = steps.findIndex(step => step.name === 'Build Windows installer from the verified payload');
+	const installed = steps.findIndex(step => step.name === 'Verify actual installation and installed frontend');
+	const installerHash = steps.findIndex(step => step.name === 'Generate installer SHA-256');
+	assert.ok(packaged < installer && installer < installed && installed < installerHash && installerHash < pack);
+	for (const index of [installer, installed, installerHash]) {
+		assert.equal(steps[index].if, undefined);
+		assert.equal(steps[index]['continue-on-error'], undefined);
+	}
+	assert.equal(steps[installer].run, 'npm exec --no -- electron-builder --win nsis --x64 --prepackaged release/win-unpacked --publish never');
+	assert.equal(steps[installed].run, 'node scripts/tests/frontend-installer-smoke.mjs release/ModuTeX-Setup-0.2.0.exe');
+	assert.match(steps[installerHash].run, /Get-FileHash -LiteralPath \$installer -Algorithm SHA256/);
+	assert.match(steps[installerHash].run, /Set-Content -LiteralPath "\$installer.sha256"/);
 	for (const path of [
+		'ModuTeX-Setup-0.2.0.exe',
+		'ModuTeX-Setup-0.2.0.exe.sha256',
 		'LICENSE',
 		'build\\license.txt',
 		'TECTONIC-NOTICE.md',
@@ -295,11 +335,11 @@ function windowsContract(value) {
 		'SOURCE-OFFER.md',
 		'npm-desktop-inventory.json',
 		'npm-desktop-inventory.sha256',
-		'modutex-desktop-0.2.0-dev.0.tgz'
+		'modutex-desktop-0.2.0.tgz'
 	]) {
 		assert.ok(steps[stage].run.includes(path), `missing artifact evidence ${path}`);
 	}
-	assert.equal(steps[upload].with.name, 'ModuTeX-Windows-x64-0.2.0-dev.0');
+	assert.equal(steps[upload].with.name, 'ModuTeX-Windows-x64-0.2.0');
 	assert.equal(steps[upload].with.path, 'release/artifact');
 	assert.equal(steps[upload].with['if-no-files-found'], 'error');
 }
@@ -596,6 +636,16 @@ test('Windows workflow gates before real npm desktop packaging and precise evide
 
 test('workflow contract rejects missing gates, swallowed failures and missing evidence', async () => {
 	const original = await workflow('modutex-ci.yml');
+	for (const name of ['Build Windows installer from the verified payload', 'Verify actual installation and installed frontend', 'Generate installer SHA-256']) {
+		for (const mode of ['remove', 'skip', 'ignore']) {
+			const altered = structuredClone(original), job = altered.jobs['verify-and-package'];
+			const gate = job.steps.find(step => step.name === name);
+			if (mode === 'remove') job.steps = job.steps.filter(step => step !== gate);
+			else if (mode === 'skip') gate.if = 'false';
+			else gate['continue-on-error'] = true;
+			assert.throws(() => windowsContract(altered), `${name}: ${mode}`);
+		}
+	}
 	for (const mutate of [
 		(value) => {
 			value.jobs['verify-and-package']['continue-on-error'] = true;
@@ -639,7 +689,7 @@ test('workflow contract rejects missing gates, swallowed failures and missing ev
 		},
 		(value) => {
 			value.jobs['verify-and-package'].steps.find((step) => step.name === 'Generate SHA-256 and verify npm tarball').run =
-				'Get-FileHash release/modutex-desktop-0.2.0-dev.0.tgz -Algorithm SHA256';
+				'Get-FileHash release/modutex-desktop-0.2.0.tgz -Algorithm SHA256';
 		},
 		(value) => {
 			const step = value.jobs['verify-and-package'].steps.find((step) => step.name === 'Stage npm tarball and verification evidence');
@@ -674,7 +724,8 @@ test('actual npm audit failures preserve JSON and nonzero exit through the nativ
 					process.platform === 'win32'
 						? ['-NoProfile', '-NonInteractive', '-Command', source]
 						: ['--noprofile', '--norc', '-eo', 'pipefail', '-c', source],
-					{ cwd: directory, env: { ...process.env, npm_config_local_prefix: directory }, encoding: 'utf8', timeout: 30000 }
+					// Missing-lock negative cases need no registry access; keep the actual npm CLI deterministic.
+					{ cwd: directory, env: { ...process.env, npm_config_local_prefix: directory, npm_config_offline: 'true', npm_config_update_notifier: 'false' }, encoding: 'utf8', timeout: 30000 }
 				);
 				assert.equal(result.error, undefined);
 				assert.notEqual(result.status, null);

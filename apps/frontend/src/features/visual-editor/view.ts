@@ -942,7 +942,15 @@ export class VisualEditor {
 				return;
 			}
 			this.projection = nextProjection;
-			this.cachedDecorations = null;
+			// Accepted text edits preserve cell indices. Map the existing widgets and cell
+			// decorations through the real transaction instead of rebuilding every cell.
+			if (this.cachedDecorations && this.cachedDoc === transaction.before &&
+				this.cachedSelectedCell === this.selectedCellIndex && this.cachedEditable === this.editable() &&
+				this.cachedLocale === (this.options.locale?.() ?? 'zh-Hant') &&
+				transaction.before.childCount === nextState.doc.childCount) {
+				this.cachedDecorations = this.cachedDecorations.map(transaction.mapping, nextState.doc);
+				this.cachedDoc = nextState.doc;
+			} else this.cachedDecorations = null;
 			this.view.updateState(nextState);
 		} catch (error) {
 			try { if (this.options.source() !== source) this.projection = null; }

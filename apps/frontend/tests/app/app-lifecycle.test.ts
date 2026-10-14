@@ -347,7 +347,7 @@ interface HostWorkbenchDriver {
 		scope?: ParentNode
 	) => HTMLButtonElement | undefined;
 	readonly notice: (kind: 'changed' | 'missing') => HTMLElement | null;
-	readonly readCount: () => number;
+	readonly readCount: (path?: string) => number;
 	readonly emittedCount: () => number;
 	readonly activeWatchCount: () => number;
 	readonly compileStartCount: () => number;
@@ -380,6 +380,9 @@ async function withHostWorkbench(
 	let mounted: unknown;
 	let confirmCount = 0;
 	let readCount = 0;
+	const pathReads = new Map<string, number>();
+	const pendingIO = new Map<string, number>();
+	const trackIO = (id: string, delta: number) => pendingIO.set(id, (pendingIO.get(id) ?? 0) + delta);
 	let emittedCount = 0;
 	let compileStartCount = 0;
 	let recentOpenCount = 0;
@@ -387,12 +390,14 @@ async function withHostWorkbench(
 	let readGate: ReadGate | null = null;
 	const readGates: ReadGate[] = [];
 	const activeWatches = new Map<string, FrontendWatchInstance>();
+	const readyWatches = new Map<string, string>();
 	const eventListeners = new Set<(value: unknown) => void>();
 	const errorListeners = new Set<(value: unknown) => void>();
 
 	const stopAllNativeWatches = (failure?: FileWatchFailure) => {
 		for (const [subscriptionId, watcher] of [...activeWatches]) {
 			activeWatches.delete(subscriptionId);
+			readyWatches.delete(subscriptionId);
 			watcher.stop();
 			if (failure) {
 				for (const listener of errorListeners) {
@@ -447,9 +452,12 @@ async function withHostWorkbench(
 				return files!.open(path.join(roots[1]!, fileNames[1]!), 'file');
 			},
 			removeRecent: async () => {},
-			listFiles: async (id) => files!.list(id),
+			listFiles: async (id) => { trackIO(id, 1); try { return await files!.list(id); } finally { trackIO(id, -1); } },
 			readFile: async (ref) => {
 				readCount++;
+				pathReads.set(ref.path, (pathReads.get(ref.path) ?? 0) + 1);
+				trackIO(ref.workspaceId, 1);
+				try {
 				// Forward the genuine host receipt unchanged; the barrier only delays delivery.
 				const receipt = await files!.read(ref);
 				const gate = readGate;
@@ -460,6 +468,7 @@ async function withHostWorkbench(
 					gate.finished.resolve(undefined);
 				}
 				return receipt;
+				} finally { trackIO(ref.workspaceId, -1); }
 			},
 			writeFile: async (request) => files!.write(request),
 			saveAs: async (request) =>
@@ -527,14 +536,17 @@ async function withHostWorkbench(
 					onError(failure: FileWatchFailure) {
 						if (activeWatches.get(subscriptionId) !== watcher) return;
 						activeWatches.delete(subscriptionId);
+						readyWatches.delete(subscriptionId);
 						pushWatchError(subscriptionId, failure);
 					}
 				});
 				activeWatches.set(subscriptionId, watcher);
 				try {
 					await watcher.start();
+					readyWatches.set(subscriptionId, id);
 				} catch (error) {
 					if (activeWatches.get(subscriptionId) === watcher) activeWatches.delete(subscriptionId);
+					readyWatches.delete(subscriptionId);
 					watcher.stop();
 					throw error;
 				}
@@ -543,6 +555,7 @@ async function withHostWorkbench(
 				const watcher = activeWatches.get(subscriptionId);
 				if (watcher) {
 					activeWatches.delete(subscriptionId);
+					readyWatches.delete(subscriptionId);
 					watcher.stop();
 				}
 			},
@@ -640,6 +653,7 @@ async function withHostWorkbench(
 			flushSync();
 		};
 		const openFolder = async (fileName: string, marker: string) => {
+			const beforeReads = pathReads.get(fileName) ?? 0;
 			const openButton = await waitFor(
 				() => findButton((label) => label === 'Open folder' || label === '開啟資料夾',
 					container.querySelector('.global-actions') ?? container),
@@ -655,7 +669,8 @@ async function withHostWorkbench(
 				await flush();
 			}
 			await waitForSource(marker);
-			await waitFor(() => activeWatches.size === 1 ? true : undefined, 10_000, flush);
+			await waitFor(() => readyWatches.size === 1 && (pathReads.get(fileName) ?? 0) >= beforeReads + 2 &&
+				(pendingIO.get([...readyWatches.values()][0]!) ?? 0) === 0 ? true : undefined, 10_000, flush);
 		};
 
 		await run({
@@ -666,9 +681,9 @@ async function withHostWorkbench(
 			fileRow,
 			findButton,
 			notice: (kind) => container.querySelector<HTMLElement>(`.file-change-notice[data-kind="${kind}"]`),
-			readCount: () => readCount,
+			readCount: (path) => path === undefined ? readCount : pathReads.get(path) ?? 0,
 			emittedCount: () => emittedCount,
-			activeWatchCount: () => activeWatches.size,
+			activeWatchCount: () => readyWatches.size,
 			compileStartCount: () => compileStartCount,
 			confirmCount: () => confirmCount,
 			recentOpenCount: () => recentOpenCount,
@@ -1350,7 +1365,7 @@ test('an invalid workspace PDF reports its header error without replacing the so
 	await withHostWorkbench(async (workbench) => {
 		await workbench.openFolder('first.tex', 'BASE_FIRST');
 		const original = workbench.editorText();
-		const reads = workbench.readCount();
+		const reads = workbench.readCount('invalid.pdf');
 		const pdfRow = await waitFor(() => workbench.fileRow('invalid.pdf'), 10_000, workbench.flush);
 		await waitFor(() => pdfRow.disabled ? undefined : true, 10_000, workbench.flush);
 		pdfRow.click();
@@ -1361,7 +1376,7 @@ test('an invalid workspace PDF reports its header error without replacing the so
 			return strip?.textContent?.trim() || undefined;
 		}, 10_000, workbench.flush);
 		assert.ok(errorText.includes('Invalid PDF') || errorText.includes('不是有效的 PDF'));
-		assert.equal(workbench.readCount(), reads + 1);
+		assert.equal(workbench.readCount('invalid.pdf'), reads + 1);
 		assert.equal(workbench.editorText(), original, 'A rejected PDF must leave the current source untouched');
 		assert.equal(workbench.container.querySelector('.preview-pane .pane-title')?.textContent?.includes('invalid.pdf'), false);
 	});

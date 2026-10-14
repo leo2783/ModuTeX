@@ -1,56 +1,62 @@
-# 開發版 0.2.0-dev.0（Windows x64）
+# Installation / 安裝
 
-需要 Node.js 24.19 或更新、npm 11.17 或更新。下載同一份 dev build 的 tgz 與 sha256，先確認雜湊，再於下載資料夾執行：
+## Windows x64 — 0.2.0
 
-```powershell
-$expected = (Get-Content .\modutex-desktop-0.2.0-dev.0.tgz.sha256).Split(' ')[0].ToLowerInvariant()
-$actual = (Get-FileHash .\modutex-desktop-0.2.0-dev.0.tgz -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actual -ne $expected) { throw 'Checksum mismatch' }
-npx --offline --yes --ignore-scripts --package .\modutex-desktop-0.2.0-dev.0.tgz -- modutex
-```
+Download from the [official Release](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.0). Choose:
 
-這會開啟打包的新前端，不需要 Vite 或完整 TeX 安裝；首次未快取編譯可能需要網路。此版使用獨立 dev 設定資料夾。不是 npm registry 發布、EXE 安裝包或穩定 0.2.0 正式版。
+| File | Use | Requirements |
+|---|---|---|
+| `ModuTeX-Setup-0.2.0.exe` | Install with a wizard; launch from the Start menu. | Windows x64; no separate Node/npm/TeX installation. |
+| `modutex-desktop-0.2.0.tgz` | Run the local package through npx. | Windows x64, Node.js 24.19.0, npm 11.17.0. |
 
-以下保留既有 0.1.0 與原始碼啟動說明。
+請從官方 Release 下載檔案與同名 `.sha256`。EXE 提供安裝精靈及開始功能表捷徑；TGZ 透過 npx 執行，不會永久安裝 Windows 應用程式。兩者皆內建 Tectonic。
 
-# 啟動桌面版
+## Verify the download / 核對下載
 
-## 本地 0.1.0 套件
-
-需求：Windows x64、Node.js 24.19.0、npm 11.17.0。套件與 checksum 位於 `release/version-0.1.0/`；尚未公開發布到 npm registry。
-
-在該目錄核對檔案：
+In PowerShell, set `$download` to the EXE or TGZ filename. Only proceed if the checksum matches.
+在下載資料夾開啟 PowerShell，將檔名設為 EXE 或 TGZ；核對成功後才執行。
 
 ```powershell
-$expected = (Get-Content .\modutex-desktop-0.1.0.tgz.sha256).Split(' ')[0].ToLowerInvariant()
-$actual = (Get-FileHash .\modutex-desktop-0.1.0.tgz -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actual -ne $expected) { throw '套件 checksum 不符，請勿啟動' }
-npx --offline --yes --ignore-scripts --package .\modutex-desktop-0.1.0.tgz -- modutex
+$download = 'ModuTeX-Setup-0.2.0.exe'
+$expected = (Get-Content ".\$download.sha256").Split(' ')[0].ToLowerInvariant()
+$actual = (Get-FileHash ".\$download" -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw 'Checksum mismatch; do not run this file' }
 ```
 
-套件不是 EXE 安裝程式；`npx` 執行桌面 launcher，不是永久安裝。`--ignore-scripts` 禁止套件安裝腳本。Node／npm 版本不符時，先安裝指定版本，不要跳過檢查。
+Double-click the verified EXE and follow the wizard. Uninstall through Windows Settings → Apps; document files and application settings are retained.
+EXE 核對後雙擊並依精靈安裝。可由 Windows「設定 → 應用程式」解除安裝；文件與應用程式設定會保留。
 
-## PDF 編譯
-
-工作區選擇 Managed Tectonic。引擎已內建，缺少資源時自動從 `https://relay.fullyjustified.net/default_bundle_v33.tar` 下載；首次仍需網路。快取位於應用 userData 下的 `tectonic-cache`，已快取資源可離線使用。
-
-首次產生格式可能較慢，期限為 5 分鐘；一般編譯期限為 120 秒。取消或失敗不應取代上一份成功 PDF。新增套件可能需要補下載，不代表每次重新下載整套 TeX。
-
-若舊工作區仍選用 System TeX，請手動切換 Managed Tectonic。自訂指令不會被自動覆寫。System TeX 需自行安裝；MiKTeX 的 latexmk 另需 Perl。
-
-## 開發啟動
-
-在儲存庫根目錄使用相同 Node／npm 版本：
+For TGZ, verify `modutex-desktop-0.2.0.tgz` with the same steps, then run:
+TGZ 核對後執行：
 
 ```powershell
-npm ci
-npm run electron:dev
+npx --offline --yes --ignore-scripts --package .\modutex-desktop-0.2.0.tgz -- modutex
 ```
 
-若顯示找不到 `concurrently`，表示依賴未安裝完成；請先確認 `npm ci` 成功。
+Initial extraction can take several minutes. `--ignore-scripts` blocks package installation scripts. The TGZ is not published to the npm registry.
+首次解壓可能需要數分鐘；此命令使用下載的本機套件，不需要 npm registry 發布。
 
-## 安全設定
+## Windows blocking / Windows 封鎖
 
-MCP 預設關閉，只監聽 loopback；自訂指令另有權限設定。
+The installer is unsigned; **Unknown publisher** or **Windows protected your PC** can appear. A matching checksum verifies the downloaded bytes, not publisher identity or absence of malware.
+安裝程式尚未簽署，可能出現「未知的發行者」或「Windows 已保護您的電腦」。SHA-256 用於核對檔案完整性，不能取代發行者簽章或惡意程式檢查。
 
-其他使用限制見 [KNOWN_LIMITATIONS.md](KNOWN_LIMITATIONS.md)。
+| Message / 情況 | Action / 處理 |
+|---|---|
+| SmartScreen: unrecognized app / 無法辨識的應用程式 | Confirm the official Release and checksum. If you trust the file and Windows offers it, choose **More info → Run anyway** / 核對來源與雜湊且信任檔案後，可選「其他資訊 → 仍要執行」。 |
+| Downloaded file is blocked / 下載檔案被封鎖 | File **Properties → Unblock → Apply**, if available / 檔案「內容 → 解除封鎖 → 套用」，僅限有此選項時。 |
+| Browser blocks an uncommon download / 瀏覽器封鎖不常見下載 | Inspect the download warning and source; keep it only after checking the official Release. Verify SHA-256 before launch / 先核對官方來源，保留下載後仍須核對 SHA-256。 |
+| Antivirus reports malware, or checksum differs / 防毒警示或雜湊不符 | Stop; do not run. Report the exact warning and file version through GitHub Issues / 停止執行，回報警示與版本。 |
+| Smart App Control or organization policy blocks execution / 智慧型應用程式控制或組織政策封鎖 | A Run anyway option may not exist. Contact your administrator or wait for a signed build / 可能無法略過，請聯絡管理員或等待簽署版本。 |
+
+Do not disable system-wide antivirus or SmartScreen. TGZ still launches an executable and does not bypass these policies.
+不要關閉全系統防毒或 SmartScreen；TGZ 內含的執行檔仍受 Windows 政策限制。
+
+Microsoft references: [SmartScreen](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation), [downloaded-file blocking](https://support.microsoft.com/en-gb/windows/security/information-about-the-attachment-manager-in-microsoft-windows), [Smart App Control](https://support.microsoft.com/en-us/windows/security/threat-malware-protection/smart-app-control-frequently-asked-questions).
+
+## First compilation / 首次編譯
+
+Managed Tectonic downloads uncached resources from its configured bundle source. The first format build can take up to five minutes; subsequent compilations reuse the cache. New packages can require internet access again. A failure preserves the last successful PDF.
+首次產生格式或遇到未快取資源時需要網路，最多可等待五分鐘；後續使用快取。加入新套件仍可能需要下載。失敗時會保留上一份成功 PDF。
+
+See [compilation](COMPILATION.md), [editing](EDITING.md) and [known limitations](KNOWN_LIMITATIONS.md).

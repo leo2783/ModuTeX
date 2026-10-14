@@ -86,6 +86,7 @@
 		overflowed: boolean;
 		recoveryEvents: boolean;
 		processing: boolean;
+		resync: boolean;
 		recovering: boolean;
 		unsubscribe: (() => void) | null;
 	}
@@ -312,6 +313,7 @@
 			overflowed: false,
 			recoveryEvents: false,
 			processing: false,
+			resync: false,
 			recovering: false,
 			unsubscribe: null
 		};
@@ -327,6 +329,9 @@
 					return;
 				}
 				watch.unsubscribe = unsubscribe;
+				// The host baseline may include edits made between readFile and watch startup.
+				watch.resync = true;
+				void drainWorkspaceWatch(watch);
 			}).catch(() => failWorkspaceWatch(watch));
 		} catch {
 			failWorkspaceWatch(watch);
@@ -362,6 +367,14 @@
 		}
 		if (!watch.pending.has(queued.event.path)) queueWorkspaceEvent(watch, queued);
 	}
+	async function listWatchedFiles(watch: WorkspaceWatch) {
+		const port = desktop;
+		if (!port || !workspaceWatchIsCurrent(watch)) return null;
+		try {
+			const listed = await port.listFiles(watch.owner.id);
+			return workspaceWatchIsCurrent(watch) ? listed : null;
+		} catch { suspendWorkspaceWatch(watch); return null; }
+	}
 	async function reconcileSourceFromDisk(
 		watch: WorkspaceWatch,
 		documentId: string,
@@ -388,14 +401,8 @@
 				requeueWorkspaceEvent(watch, queued);
 				return;
 			}
-			let refreshed: readonly FileEntry[];
-			try {
-				refreshed = await port.listFiles(watch.owner.id);
-			} catch {
-				suspendWorkspaceWatch(watch);
-				return;
-			}
-			if (!workspaceWatchIsCurrent(watch) || source?.documentId !== documentId || sourceName !== path) return;
+			const refreshed = await listWatchedFiles(watch);
+			if (!refreshed || source?.documentId !== documentId || sourceName !== path) return;
 			entries = refreshed;
 			const exists = refreshed.some((entry) => entry.kind === 'file' && entry.path === path);
 			setExternalFileNotice(watch, documentId, path, exists ? 'changed' : 'missing');
@@ -432,18 +439,8 @@
 			errorState = fileErrorDescriptor(value);
 		}
 	}
-	async function reconcileWorkspaceEvent(watch: WorkspaceWatch, queued: QueuedWorkspaceEvent) {
-		const port = desktop;
-		if (!port || !workspaceWatchIsCurrent(watch)) return;
-		let listed: readonly FileEntry[];
-		try {
-			listed = await port.listFiles(watch.owner.id);
-		} catch {
-			suspendWorkspaceWatch(watch);
-			return;
-		}
+	async function reconcileWorkspaceEvent(watch: WorkspaceWatch, queued: QueuedWorkspaceEvent | null, listed: readonly FileEntry[]) {
 		if (!workspaceWatchIsCurrent(watch)) return;
-		entries = listed;
 		const currentSource = source;
 		if (!currentSource) return;
 		const currentPath = sourceName;
@@ -455,49 +452,49 @@
 		const wasMissing = externalFileNotice?.kind === 'missing' &&
 			externalFileNotice.documentId === currentSource.documentId && externalFileNotice.path === currentPath;
 		// Watch events belong to a path, even when reopening creates a new source identity.
-		if (queued.event.path !== currentPath) {
+		if (queued && queued.event.path !== currentPath) {
 			if (wasMissing) setExternalFileNotice(watch, currentSource.documentId, currentPath, 'changed');
 			return;
 		}
 		await reconcileSourceFromDisk(watch, currentSource.documentId, currentPath, queued);
 	}
+	function workspaceWatchCanDrain(watch: WorkspaceWatch) {
+		return !watch.overflowed && workspaceWatchIsCurrent(watch) && !opening && !saving;
+	}
 	async function drainWorkspaceWatch(watch: WorkspaceWatch | null = activeWorkspaceWatch) {
-		if (!watch || watch.processing || watch.overflowed || !workspaceWatchIsCurrent(watch) || opening || saving) return;
+		if (!watch || watch.processing || !workspaceWatchCanDrain(watch)) return;
 		watch.processing = true;
 		try {
-			while (watch.pending.size && !watch.overflowed && workspaceWatchIsCurrent(watch) && !opening && !saving) {
-				const queued = watch.pending.values().next().value as QueuedWorkspaceEvent | undefined;
-				if (!queued) break;
-				watch.pending.delete(queued.event.path);
-				await reconcileWorkspaceEvent(watch, queued);
+			while ((watch.pending.size || watch.resync && source) && workspaceWatchCanDrain(watch)) {
+				if (watch.resync && source) {
+					if (!watch.pending.has(sourceName)) watch.pending.set(sourceName,
+						{ event: { workspaceId: watch.owner.id, path: sourceName, kind: 'changed' } });
+					watch.resync = false;
+				}
+				const batch = [...watch.pending.values()];
+				const listed = await listWatchedFiles(watch);
+				if (!listed || watch.overflowed) return;
+				entries = listed;
+				for (const queued of batch) {
+					if (!workspaceWatchCanDrain(watch)) return;
+					// Leave unprocessed and newer same-path events pending across awaited I/O.
+					if (watch.pending.get(queued.event.path) !== queued) continue;
+					watch.pending.delete(queued.event.path);
+					await reconcileWorkspaceEvent(watch, queued, listed);
+				}
 			}
 		} finally {
 			watch.processing = false;
-			if (watch.pending.size && !watch.overflowed && workspaceWatchIsCurrent(watch) && !opening && !saving) {
+			if ((watch.pending.size || watch.resync && source) && workspaceWatchCanDrain(watch)) {
 				void drainWorkspaceWatch(watch);
 			}
 		}
 	}
 	async function reconcileWorkspaceSnapshot(watch: WorkspaceWatch) {
-		const port = desktop;
-		if (!port || !workspaceWatchIsCurrent(watch)) return;
-		let listed: readonly FileEntry[];
-		try {
-			listed = await port.listFiles(watch.owner.id);
-		} catch {
-			suspendWorkspaceWatch(watch);
-			return;
-		}
-		if (!workspaceWatchIsCurrent(watch)) return;
+		const listed = await listWatchedFiles(watch);
+		if (!listed) return;
 		entries = listed;
-		const currentSource = source;
-		if (!currentSource) return;
-		const path = sourceName;
-		if (!listed.some((entry) => entry.kind === 'file' && entry.path === path)) {
-			setExternalFileNotice(watch, currentSource.documentId, path, 'missing');
-			return;
-		}
-		await reconcileSourceFromDisk(watch, currentSource.documentId, path, null);
+		await reconcileWorkspaceEvent(watch, null, listed);
 	}
 	async function recoverWorkspaceWatch() {
 		const watch = activeWorkspaceWatch;
@@ -688,9 +685,9 @@
 	async function readDesktopFile(path: string, owner: WorkspaceInfo, manageBusy = true) {
 		if (!desktop) return;
 		if (manageBusy && opening) return;
-		if (manageBusy && !path.toLowerCase().endsWith('.pdf') && !allowReplacement()) return;
-		if (!path.toLowerCase().endsWith('.pdf')) abandonCompile();
 		const pdf = path.toLowerCase().endsWith('.pdf');
+		if (manageBusy && !pdf && !allowReplacement()) return;
+		if (!pdf) abandonCompile();
 		const ticket = pdf ? ++pdfTicket : ++sourceTicket;
 		if (manageBusy) opening = true;
 		errorState = null;

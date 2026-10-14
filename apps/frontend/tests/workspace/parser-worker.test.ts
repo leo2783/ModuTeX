@@ -7,6 +7,32 @@ import { ParserClient, type ParserTransport } from '../../src/features/parser/cl
 import type { ParserReply, ParserRequest } from '../../src/features/parser/engine.ts';
 const createWorker = () => new Worker(new URL('.././helpers/parser-worker.ts', import.meta.url));
 const bytes = (text: string) => new TextEncoder().encode(text);
+
+test('ParserClient transfers a 5 MiB reset while its authoritative BOM/CRLF bytes stay attached', { timeout: 30_000 }, async () => {
+	const worker = createWorker();
+	const input = new Uint8Array(5 * 1024 * 1024).fill(97);
+	input.set([0xef, 0xbb, 0xbf, 13, 10]);
+	const source = SourceDocument.open(input);
+	let transferred: Uint8Array | undefined;
+	let resolve!: (projection: SourceProjection) => void, reject!: (error: Error) => void;
+	const finished = new Promise<SourceProjection>((yes, no) => { resolve = yes; reject = no; });
+	const transport: ParserTransport = {
+		onmessage: null, onerror: null,
+		postMessage(request, transfer) {
+			if (request.kind === 'reset') transferred = request.bytes;
+			worker.postMessage(request, transfer as ArrayBuffer[]);
+		},
+		terminate: () => worker.terminate()
+	};
+	worker.on('message', (data: ParserReply) => transport.onmessage?.({ data } as MessageEvent<ParserReply>));
+	worker.on('error', error => reject(error));
+	const client = new ParserClient(transport, source, resolve, () => reject(new Error('Worker failed')));
+	try {
+		assert.ok(transferred); assert.equal(transferred.byteLength, 0, 'postMessage must detach only the reset allocation');
+		assert.deepEqual(await finished, parseSource(source));
+		assert.deepEqual(source.toBytes(), input); assert.equal(input.byteLength, 5 * 1024 * 1024);
+	} finally { client.dispose(); await worker.terminate(); }
+});
 function ask(worker: Worker, request: ParserRequest): Promise<ParserReply> {
 	return new Promise((resolve, reject) => { worker.once('message', resolve); worker.once('error', reject); worker.postMessage(request); });
 }
