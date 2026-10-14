@@ -174,3 +174,8 @@ build/*
 !build/icons/
 !build/deb-after-install.tpl
 !apps/texpile-editor/tests/unit/lib/latex-log/fixtures/*.log
+
+# Local review configuration and disposable browser-test output.
+.cbmignore
+.impeccable/
+apps/frontend/.pdf-lifetime-*/

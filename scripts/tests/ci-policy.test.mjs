@@ -143,6 +143,7 @@ const PR_GATES = [
 	'npm run test --workspace=texpile-typst-syntax-wasm',
 	'npm run build:shared --workspace=modutex-frontend',
 	'npm run frontend:check',
+	'npm run test:frontend-origin',
 	'npm run frontend:test',
 	'npm run test --workspace=@modutex/document-core',
 	'npm run test --workspace=@modutex/frontend-contracts',

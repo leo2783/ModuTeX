@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ModuTeX 新舊版前端操作與互動行為技術對比報告</title>
+  <style>
+    /* ==========================================================================
+       CSS Variables & Theme Definitions (零外部依賴、純本地規範)
+       ========================================================================== */
+    :root {
+      --bg-color: #FBFAF7;
+      --text-main: #172033;
+      --text-muted: #657085;
+      --accent: #5BA8DF;
+      --accent-hover: #4592C7;
+      --card-bg: #FFFFFF;
+      --card-accent: #DFF1FF;
+      --card-border: #E2E8F0;
+      --code-bg: #101828;
+      --code-text: #F8FAFC;
+      --code-border: #1E293B;
+      --code-line-num: #475569;
+      --tag-upgrade-bg: #E0F2FE;
+      --tag-upgrade-text: #0369A1;
+      --tag-flow-bg: #FEF3C7;
+      --tag-flow-text: #B45309;
+      --tag-new-bg: #DCFCE7;
+      --tag-new-text: #15803D;
+      --tag-unimpl-bg: #FEE2E2;
+      --tag-unimpl-text: #B91C1C;
+      --tag-removed-bg: #F1F5F9;
+      --tag-removed-text: #475569;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg-color: #0B0F17;
+      --text-main: #F1F5F9;
+      --text-muted: #94A3B8;
+      --accent: #38BDF8;
+      --accent-hover: #0EA5E9;
+      --card-bg: #151E2E;
+      --card-accent: #1E293B;
+      --card-border: #243247;
+      --code-bg: #070B12;
+      --code-text: #E2E8F0;
+      --code-border: #1E293B;
+      --code-line-num: #64748B;
+      --tag-upgrade-bg: #0C4A6E;
+      --tag-upgrade-text: #7DD3FC;
+      --tag-flow-bg: #78350F;
+      --tag-flow-text: #FDE68A;
+      --tag-new-bg: #14532D;
+      --tag-new-text: #86EFAC;
+      --tag-unimpl-bg: #7F1D1D;
+      --tag-unimpl-text: #FCA5A5;
+      --tag-removed-bg: #334155;
+      --tag-removed-text: #CBD5E1;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Base Reset */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    /* Container */
+    .app-container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px 20px 80px;
+    }
+
+    /* Header */
+    header.hero-header {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 32px 36px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+    }
+
+    .hero-title h1 {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
+      margin-bottom: 8px;
+    }
+
+    .hero-title p {
+      font-size: 15px;
+      color: var(--text-muted);
+      max-width: 860px;
+      line-height: 1.5;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    /* Controls Bar */
+    .filter-panel {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 18px 24px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .filter-row-top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .search-box {
+      flex: 1;
+      min-width: 260px;
+      position: relative;
+    }
+
+    .search-box input {
+      width: 100%;
+      padding: 10px 14px 10px 38px;
+      font-size: 14px;
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-color);
+      color: var(--text-main);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .search-box input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(91, 168, 223, 0.2);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+      font-size: 14px;
+    }
+
+    .select-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .select-group label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    select.filter-select {
+      padding: 9px 14px;
+      font-size: 13px;
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-color);
+      color: var(--text-main);
+      cursor: pointer;
+      outline: none;
+    }
+
+    select.filter-select:focus {
+      border-color: var(--accent);
+    }
+
+    /* Dimension Tabs */
+    .dim-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--card-border);
+      background: var(--bg-color);
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tab-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .tab-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #FFFFFF;
+      font-weight: 600;
+    }
+
+    .tab-count {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.08);
+    }
+
+    .tab-btn.active .tab-count {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    /* Actions toolbar */
+    .stats-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      color: var(--text-muted);
+      padding: 0 4px;
+      margin-bottom: 16px;
+    }
+
+    .btn {
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--card-border);
+      background: var(--card-bg);
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .btn-theme {
+      background: var(--card-bg);
+      color: var(--text-main);
+    }
+
+    /* Operations Cards Grid / List */
+    .card-list {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .op-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .op-card:hover {
+      border-color: rgba(91, 168, 223, 0.5);
+      box-shadow: var(--shadow-md);
+    }
+
+    .op-card.is-expanded {
+      border-color: var(--accent);
+    }
+
+    /* Card Header */
+    .card-header {
+      padding: 16px 22px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+      background: transparent;
+      gap: 16px;
+      transition: background-color 0.15s;
+    }
+
+    .card-header:hover {
+      background-color: rgba(91, 168, 223, 0.04);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .card-id-badge {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+      background: var(--bg-color);
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--card-border);
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .header-badges {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .status-tag {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 12px;
+      white-space: nowrap;
+    }
+
+    .status-upgrade { background: var(--tag-upgrade-bg); color: var(--tag-upgrade-text); }
+    .status-flow { background: var(--tag-flow-bg); color: var(--tag-flow-text); }
+    .status-new { background: var(--tag-new-bg); color: var(--tag-new-text); }
+    .status-unimplemented { background: var(--tag-unimpl-bg); color: var(--tag-unimpl-text); }
+    .status-removed { background: var(--tag-removed-bg); color: var(--tag-removed-text); }
+
+    .dim-tag {
+      font-size: 11px;
+      color: var(--text-muted);
+      background: var(--bg-color);
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--card-border);
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .chevron {
+      transition: transform 0.25s ease;
+      display: inline-block;
+    }
+
+    .op-card.is-expanded .chevron {
+      transform: rotate(180deg);
+    }
+
+    /* Card Body */
+    .card-body {
+      display: none;
+      padding: 0 22px 24px;
+      border-top: 1px solid var(--card-border);
+      background: var(--card-bg);
+    }
+
+    .op-card.is-expanded .card-body {
+      display: block;
+    }
+
+    /* 4-Section Grid */
+    .section-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin: 20px 0;
+    }
+
+    .section-item {
+      background: var(--bg-color);
+      padding: 14px 18px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--card-border);
+    }
+
+    .section-label {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .section-content {
+      font-size: 13.5px;
+      color: var(--text-main);
+      line-height: 1.55;
+    }
+
+    .location-path {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      word-break: break-all;
+      color: var(--text-muted);
+    }
+
+    /* Side-by-Side Code Evidence */
+    .code-evidence-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin: 20px 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .code-comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .code-pane {
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .code-pane-header {
+      background: rgba(255, 255, 255, 0.04);
+      border-bottom: 1px solid var(--code-border);
+      padding: 8px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: #94A3B8;
+    }
+
+    .pane-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }
+
+    .pane-badge-new {
+      background: #0284C7;
+      color: #FFFFFF;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+    }
+
+    .pane-badge-legacy {
+      background: #475569;
+      color: #FFFFFF;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+    }
+
+    .pane-file-meta {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #64748B;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 320px;
+    }
+
+    .pane-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .copy-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #E2E8F0;
+      padding: 3px 8px;
+      font-size: 11px;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .copy-btn:hover {
+      background: rgba(255, 255, 255, 0.18);
+      color: #FFFFFF;
+    }
+
+    .copy-btn.copied {
+      background: #16A34A;
+      color: #FFFFFF;
+      border-color: #16A34A;
+    }
+
+    .code-view {
+      padding: 12px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--code-text);
+      max-height: 380px;
+      overflow-y: auto;
+    }
+
+    .code-view table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .code-view td {
+      padding: 0;
+      vertical-align: top;
+      white-space: pre;
+    }
+
+    .line-number {
+      width: 44px;
+      min-width: 44px;
+      user-select: none;
+      text-align: right;
+      padding-right: 14px;
+      color: var(--code-line-num);
+      font-size: 11px;
+    }
+
+    .line-content {
+      color: var(--code-text);
+    }
+
+    /* Unimplemented Notice */
+    .unimpl-notice {
+      padding: 32px 20px;
+      text-align: center;
+      color: #94A3B8;
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      height: 100%;
+    }
+
+    .unimpl-badge {
+      background: rgba(239, 68, 68, 0.2);
+      color: #F87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    /* Syntax Highlighting Tokens (本地安全高亮) */
+    .tok-kw { color: #C678DD; font-weight: 600; }
+    .tok-fn { color: #61AFEF; }
+    .tok-str { color: #98C379; }
+    .tok-num { color: #D19A66; }
+    .tok-com { color: #5C6370; font-style: italic; }
+    .tok-tex { color: #E5C07B; font-weight: 600; }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      background: var(--card-bg);
+      border: 1px dashed var(--card-border);
+      border-radius: var(--radius-md);
+      color: var(--text-muted);
+      display: none;
+    }
+
+    .empty-state h3 {
+      font-size: 16px;
+      margin-bottom: 6px;
+      color: var(--text-main);
+    }
+
+    /* Responsive Adaptation (1440px 與 375px) */
+    @media (max-width: 960px) {
+      .hero-top {
+        flex-direction: column;
+      }
+      .code-comparison-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .app-container {
+        padding: 16px 12px 60px;
+      }
+      header.hero-header {
+        padding: 20px 18px;
+      }
+      .hero-title h1 {
+        font-size: 20px;
+      }
+      .filter-panel {
+        padding: 14px 16px;
+      }
+      .card-header {
+        padding: 14px 16px;
+      }
+      .card-body {
+        padding: 0 16px 18px;
+      }
+      .section-grid {
+        grid-template-columns: 1fr;
+      }
+      .filter-row-top {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .search-box {
+        width: 100%;
+      }
+      .dim-tabs {
+        overflow-x: auto;
+        padding-bottom: 4px;
+        flex-wrap: nowrap;
+      }
+      .tab-btn {
+        flex-shrink: 0;
+      }
+    }
+  </style>
+</head>
+<body><aside role="note" style="padding:16px;margin:16px;border:2px solid #7a6524;background:#fff5d6;color:#332c18">歷史快照：2026-10-11。本文操作說明、程式碼片段與行號反映當時內容；目前 main 的狀態請見 <a href="../architecture/FRONTEND_REWRITE_STATUS.md">現行實作狀態</a>。</aside>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="hero-header">
+      <div class="hero-top">
+        <div class="hero-title">
+          <h1>ModuTeX 新舊版前端操作與互動行為技術對比報告</h1>
+          <p>
+            全面對比 ModuTeX 新版前端（<code>apps/frontend</code>、<code>packages/document-core</code>、<code>packages/frontend-contracts</code>）與舊版前端（<code>apps/editor-legacy</code>）之真實原始碼實作，涵蓋 4 大操作維度、共計 36 項具體前端操作節點。
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button class="btn btn-theme" id="theme-toggle" title="切換深淺色主題" aria-label="切換深淺色主題">
+            <span id="theme-icon">🌙</span> <span id="theme-text">深色模式</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Filters & Controls -->
+    <section class="filter-panel" aria-label="過濾與搜尋面板">
+      <div class="filter-row-top">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="search" id="search-input" placeholder="即時搜尋操作項目、函式名稱、檔案路徑或關鍵字..." aria-label="即時搜尋操作項目">
+        </div>
+        <div class="select-group">
+          <label for="status-filter">差異狀態：</label>
+          <select id="status-filter" class="filter-select" aria-label="篩選差異狀態">
+            <option value="all">全部狀態 (全部 36 項)</option>
+            <option value="操作升級/重構">操作升級/重構</option>
+            <option value="操作流程改變">操作流程改變</option>
+            <option value="新版新增">新版新增</option>
+            <option value="舊版具備但新版尚未實作">舊版具備但新版尚未實作</option>
+            <option value="新版刻意移除">新版刻意移除</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Dimension Tabs -->
+      <div class="dim-tabs" role="tablist">
+        <button class="tab-btn active" data-dim="all" role="tab" aria-selected="true">
+          全部維度 <span class="tab-count" id="count-all">36</span>
+        </button>
+        <button class="tab-btn" data-dim="維度 1：視覺化與原始碼編輯核心操作" role="tab" aria-selected="false">
+          維度 1：核心編輯 <span class="tab-count">10</span>
+        </button>
+        <button class="tab-btn" data-dim="維度 2：數學公式與矩陣編輯操作" role="tab" aria-selected="false">
+          維度 2：數學與矩陣 <span class="tab-count">7</span>
+        </button>
+        <button class="tab-btn" data-dim="維度 3：表格、程式碼塊與圖表工具操作" role="tab" aria-selected="false">
+          維度 3：表格與程式碼 <span class="tab-count">8</span>
+        </button>
+        <button class="tab-btn" data-dim="維度 4：工作台、檔案系統與編譯預覽互動" role="tab" aria-selected="false">
+          維度 4：工作台與編譯 <span class="tab-count">11</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Stats and Batch Actions -->
+    <div class="stats-bar">
+      <div>
+        顯示 <strong id="visible-count">36</strong> / 36 項具體操作項目
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn" id="expand-all-btn">展開全部</button>
+        <button class="btn" id="collapse-all-btn">收合全部</button>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div class="empty-state" id="empty-state">
+      <h3>未找到符合條件的操作項目</h3>
+      <p>請嘗試更換搜尋關鍵字或調整篩選條件。</p>
+    </div>
+
+    <!-- Cards Container -->
+    <main class="card-list" id="card-list"></main>
+  </div>
+
+  <!-- 引用外部資料集，同時具備自包含內嵌資料 fallback -->
+  <script src="comparison-data.js"></script>
+  <script id="inline-data-script">
+    if (typeof COMPARISON_DATA === 'undefined') {
+      window.COMPARISON_DATA = {"metadata":{"generatedAt":"2026-10-11T17:55:00Z","totalItems":36,"dimensions":[{"id":"dim1","name":"維度 1：視覺化與原始碼編輯核心操作","count":10},{"id":"dim2","name":"維度 2：數學公式與矩陣編輯操作","count":7},{"id":"dim3","name":"維度 3：表格、程式碼塊與圖表工具操作","count":8},{"id":"dim4","name":"維度 4：工作台、檔案系統與編譯預覽互動","count":11}],"author":"ModuTeX Implementation Worker","system":"ModuTeX Frontend Technical Comparison"},"items":[{"id":"op-01","dimension":"維度 1：視覺化與原始碼編輯核心操作","name":"原始碼/視覺化模式切換","status":"操作升級/重構","definition":"編輯器於純文字 LaTeX 原始碼檢視與 WYSIWYG 結構化視覺預覽檢視之間的雙向模式切換與狀態協調機制。","location":"新版：apps/frontend/src/features/source-editor/SourceView.svelte:693-698；舊版：apps/editor-legacy/src/lib/workspace/viewModeSwitch.svelte.ts:45-75","purpose":"新版採用 CodeMirror 6 與 ProseMirror 雙檢視常駐於同一 DOM 階層，透過 CSS hidden 屬性即時切換可見性。CodeMirror 作為單一權威緩衝區，ProseMirror 僅為投影，所有編輯操作經由 sourcePatchTransaction 寫入，達成零延遲切換與單一歷史源。舊版透過 ViewModeSwitchCoordinator 銷毀並重新掛載不同視圖元件，利用 localStorage 持久化偏好，模式切換時拍攝純文字快照維護歷史。","edgeCases":"新版在公式、矩陣、表格或程式碼工具草稿開啟時切換模式，會強制調用 closeTool() 關閉暫態草稿，確保未提交 DOM 不殘留；若 Web Worker 解析中斷，原始碼模式仍可持續編輯並提供重試按鈕。","newCode":{"file":"apps/frontend/src/features/source-editor/SourceView.svelte","lineStart":693,"lineEnd":698,"lang":"svelte","isImplemented":true,"snippet":"\t\t\t<div bind:this={visualTarget}></div>\n\t\t</div>\n\t</div>\n</div>\n\n<style>"},"legacyCode":{"file":"apps/editor-legacy/src/lib/workspace/viewModeSwitch.svelte.ts","lineStart":45,"lineEnd":75,"lang":"typescript","isImplemented":true,"snippet":"\t/** $state so the consuming effect re-fires when a new anchor is captured */\n\tpendingVisualAnchor = $state<{ scroll: number; cursor: number | null } | null>(null);\n\n\t/** cross-mode undo/redo; native undo/redo runs first and the editors only call step() when\n\t * their own history is exhausted */\n\thistory = createSourceHistory();\n\n\tconstructor(private deps: ViewModeDeps) {}\n\n\t/** restore the persisted choice; call once at mount */\n\trestore() {\n\t\tif (browser && localStorage.getItem(VIEW_MODE_KEY) === 'source') {\n\t\t\tthis.mode = 'source';\n\t\t\tthis.lastEditMode = 'source';\n\t\t}\n\t}\n\n\t/** orig.start stamps are body-relative; bodyOffsetOf knows where the body begins in the FILE\n\t * (fragments synthesize a preamble that is not in the file, so theirs starts at 0) */\n\tprivate bodyOffset(): number {\n\t\tconst meta = this.deps.getDocMeta();\n\t\treturn meta ? bodyOffsetOf(meta) : 0;\n\t}\n\n\t/** entering visual mode: consume the anchor once the PM view exists AND its doc matches the\n\t * current source. On the edited path the editor first mounts with the STALE doc while the\n\t * worker re-parse runs; consuming then would resolve against the wrong document. */\n\ttryResolvePendingAnchor(): void {\n\t\tconst v = get(editorViewStore);\n\t\tconst anchor = this.pendingVisualAnchor;\n\t\tif (!v || anchor == null || this.mode !== 'visual') return;"}},{"id":"op-02","dimension":"維度 1：視覺化與原始碼編輯核心操作","name":"Block/Cell 選取框判定","status":"操作升級/重構","definition":"在視覺化編輯環境中，使用者游標定位、焦點獲取以及區塊容器外框反白高亮與專屬操作列顯示之邊界判定機制。","location":"新版：apps/frontend/src/features/visual-editor/view.ts:494-503；舊版：apps/editor-legacy/src/lib/editor/extensions/block-handle-plugin.svelte.ts:80-105","purpose":"新版採用 Notebook 筆記本式架構，透過 ProseMirror 裝飾器將頂層區塊標記為帶有 [data-cell-index] 的儲存格容器。點擊進入後賦予 is-selected 樣式類別，呈現專屬高亮外框並浮現頂部工具列。舊版採用懸停式偵測，滑鼠滑過區塊時以游標垂直座標 y 與水平中線 stableX 估算目標，於外層 body 繪製 Notion 風格的浮動把手。","edgeCases":"點擊目標為儲存格工具列、邊界插入鈕或公式草稿面板內部互動元件時，clickCell 提早返回避免清除選取；原子節點使用 NodeSelection 整塊選取，文字節點使用 TextSelection 支援字元游標。","newCode":{"file":"apps/frontend/src/features/visual-editor/view.ts","lineStart":494,"lineEnd":503,"lang":"typescript","isImplemented":true,"snippet":"\t\t\t\t\t\t\tconst child = doc.child(i);\n\t\t\t\t\t\t\tdecorations.push(Decoration.widget(pos, () => this.createDragHandle(i), { side: 0, stopEvent: () => true, destroy: dom => disposeCellDragHandle(dom as HTMLElement), key: `cell-grip-${loc}-${i}-${editable}` }));\n\t\t\t\t\t\t\tconst isSelected = i === selected;\n\t\t\t\t\t\t\tdecorations.push(Decoration.node(pos, pos + child.nodeSize, {\n\t\t\t\t\t\t\t\tclass: `notebook-cell${isSelected ? ' is-selected' : ''}`,\n\t\t\t\t\t\t\t\t'data-cell-index': String(i),\n\t\t\t\t\t\t\t\t'data-cell-type': child.type.name\n\t\t\t\t\t\t\t}));\n\t\t\t\t\t\t\tif (isSelected && !this.options.cellToolbar) {\n\t\t\t\t\t\t\t\tdecorations.push(Decoration.widget(pos, () => this.createCellToolbarElement(i), {"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/extensions/block-handle-plugin.svelte.ts","lineStart":80,"lineEnd":105,"lang":"typescript","isImplemented":true,"snippet":"\tprivate blockAt(y: number): number | null {\n\t\tconst containerRect = this.view.dom.getBoundingClientRect();\n\t\tconst stableX = containerRect.left + containerRect.width / 2;\n\t\tconst coords = this.view.posAtCoords({ left: stableX, top: y });\n\t\tif (!coords) return null;\n\t\t// coords.inside is the only way to hit atomic-leaf nodeviews (raw_latex / code_block / block_math):\n\t\t// PM can't resolve a coord inside their opaque DOM, so the depth walk below only finds the parent\n\t\tif (coords.inside >= 0) {\n\t\t\tconst insideNode = this.view.state.doc.nodeAt(coords.inside);\n\t\t\tif (insideNode && insideNode.isBlock && !SKIP_NODE_TYPES.has(insideNode.type.name)) {\n\t\t\t\treturn coords.inside;\n\t\t\t}\n\t\t}\n\t\t// fallback: between blocks (inside -1) or a skipped node, walk up for a usable ancestor\n\t\tconst resolved = this.view.state.doc.resolve(coords.pos);\n\t\tfor (let depth = resolved.depth; depth > 0; depth--) {\n\t\t\tconst node = resolved.node(depth);\n\t\t\tif (node.isBlock && !SKIP_NODE_TYPES.has(node.type.name)) return resolved.before(depth);\n\t\t}\n\t\treturn null;\n\t}\n\n\tprivate updateFromPoint(y: number) {\n\t\tconst blockPos = this.blockAt(y);\n\t\tif (blockPos == null) return; // over padding or outside the doc, leave the gutter as-is\n\t\tthis.hoveredPos = blockPos;"}},{"id":"op-03","dimension":"維度 1：視覺化與原始碼編輯核心操作","name":"Gutter 拖曳排序與位移回饋","status":"操作升級/重構","definition":"透過儲存格側邊 Gutter 把手進行垂直拖曳、視覺位移回饋以及重新排列儲存格先後順序之互動流程。","location":"新版：apps/frontend/src/features/visual-editor/cell-drag.ts:5-40；舊版：apps/editor-legacy/src/lib/editor/extensions/block-handle-plugin.svelte.ts:138-150","purpose":"新版採用獨立 Pointer Events 拖曳控制器，按下把手後啟動動畫幀監聽，水平位移限制於 ±20px 防範版面撕裂，垂直位移即時寫入 CSS 變數 --cell-drag-y 提供平滑視覺回饋；釋放後調用 cellMoveTransaction 產生原子性原始碼修補。舊版依賴 HTML5 原生 DragEvent 與 dataTransfer.setDragImage，依賴 ProseMirror 內建拖放機制。","edgeCases":"拖曳中按下 Escape 鍵立即取消拖曳並重置 CSS 類別；拖曳跨越自身相鄰邊界判定為原位釋放，不派發異動；接近視窗邊緣 40px 自動啟動平滑捲動。","newCode":{"file":"apps/frontend/src/features/visual-editor/cell-drag.ts","lineStart":5,"lineEnd":40,"lang":"typescript","isImplemented":true,"snippet":"/** Pointer dragging stays separate from text selection and ProseMirror's content drag. */\nexport function cellDragHandle(doc: Document, index: number, enabled: boolean, label: string,\n\tcapture: () => { cells: SourceSpan[]; current(): boolean; commit(boundary: number): void } | null,\n\tonCleanup: (cleanup: (() => void) | null) => void): HTMLElement {\n\tconst wrapper = doc.createElement('div'); wrapper.className = 'cell-drag-gutter'; wrapper.contentEditable = 'false';\n\tconst handle = doc.createElement('button'); handle.type = 'button'; handle.className = 'cell-drag-handle'; handle.disabled = !enabled;\n\thandle.title = label; handle.setAttribute('aria-label', `${label} ${index + 1}`);\n\thandle.innerHTML = '<svg width=\"16\" height=\"20\" viewBox=\"0 0 16 20\" aria-hidden=\"true\"><g fill=\"currentColor\"><circle cx=\"5\" cy=\"5\" r=\"1.5\"/><circle cx=\"11\" cy=\"5\" r=\"1.5\"/><circle cx=\"5\" cy=\"10\" r=\"1.5\"/><circle cx=\"11\" cy=\"10\" r=\"1.5\"/><circle cx=\"5\" cy=\"15\" r=\"1.5\"/><circle cx=\"11\" cy=\"15\" r=\"1.5\"/></g></svg>';\n\thandle.addEventListener('pointerdown', event => {\n\t\tif (event.button !== 0 || handle.disabled) return;\n\t\tevent.preventDefault(); event.stopPropagation();\n\t\tconst root = handle.closest<HTMLElement>('.ProseMirror'), win = doc.defaultView, session = capture();\n\t\tif (!session || !root || !win) return;\n\t\tconst nodes = [...root.querySelectorAll<HTMLElement>('[data-cell-index]')], boundaries = [...root.querySelectorAll<HTMLElement>('[data-boundary-index]')];\n\t\tlet boundary = index, y = event.clientY, moved = false, frame = 0;\n\t\tlet scroll = root.parentElement;\n\t\twhile (scroll && !/(auto|scroll)/.test(win.getComputedStyle(scroll).overflowY)) scroll = scroll.parentElement;\n\t\tconst originalRect = nodes[index]?.getBoundingClientRect(), originalScroll = scroll?.scrollTop ?? 0;\n\t\troot.classList.add('is-cell-picked-up'); root.style.setProperty('--cell-drag-x', '0px'); root.style.setProperty('--cell-drag-y', '-2px');\n\t\tconst mark = () => {\n\t\t\tboundary = nodes.findIndex((node, i) => { const rect = i === index && originalRect ? originalRect : node.getBoundingClientRect(); const correction = i === index ? (scroll?.scrollTop ?? 0) - originalScroll : 0; return y < rect.top - correction + rect.height / 2; });\n\t\t\tif (boundary < 0) boundary = session.cells.length;\n\t\t\tfor (const node of boundaries) node.classList.toggle('is-drop-target', moved && Number(node.dataset.boundaryIndex) === boundary && boundary !== index && boundary !== index + 1);\n\t\t};\n\t\tconst cleanup = () => { win.cancelAnimationFrame(frame); win.removeEventListener('pointermove', move); win.removeEventListener('pointerup', up); win.removeEventListener('pointercancel', cancel); win.removeEventListener('keydown', key, true); win.removeEventListener('blur', cancel); boundaries.forEach(node => node.classList.remove('is-drop-target')); root.classList.remove('is-cell-dragging', 'is-cell-picked-up'); root.style.removeProperty('--cell-drag-x'); root.style.removeProperty('--cell-drag-y'); onCleanup(null); };\n\t\tconst move = (e: PointerEvent) => { if (e.pointerId !== event.pointerId) return; if (!session.current()) { cleanup(); return; } e.preventDefault(); y = e.clientY; moved ||= Math.hypot(e.clientX - event.clientX, y - event.clientY) > 4; root.classList.toggle('is-cell-dragging', moved); root.style.setProperty('--cell-drag-x', `${Math.min(20, Math.max(-20, e.clientX - event.clientX))}px`); root.style.setProperty('--cell-drag-y', `${y - event.clientY + (scroll?.scrollTop ?? 0) - originalScroll}px`); mark(); };\n\t\tconst cancel = () => cleanup();\n\t\tconst key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cleanup(); } };\n\t\tconst up = (e: PointerEvent) => { if (e.pointerId !== event.pointerId) return; const area = root.getBoundingClientRect(), visible = scroll?.getBoundingClientRect() ?? area; const inside = e.clientX >= area.left - 24 && e.clientX <= area.right && e.clientY >= visible.top && e.clientY <= visible.bottom; const commit = moved && inside && session.current() && boundary !== index && boundary !== index + 1; cleanup(); if (commit) session.commit(boundary); };\n\t\tconst tick = () => { if (!session.current()) { cleanup(); return; } if (moved && scroll) { const rect = scroll.getBoundingClientRect(); const speed = y < rect.top + 40 ? -12 : y > rect.bottom - 40 ? 12 : 0; if (speed) { scroll.scrollTop += speed; root.style.setProperty('--cell-drag-y', `${y - event.clientY + scroll.scrollTop - originalScroll}px`); mark(); } } frame = win.requestAnimationFrame(tick); };\n\t\tonCleanup(cleanup); win.addEventListener('pointermove', move, { passive: false }); win.addEventListener('pointerup', up); win.addEventListener('pointercancel', cancel); win.addEventListener('keydown', key, true); win.addEventListener('blur', cancel); frame = win.requestAnimationFrame(tick);\n\t});\n\tconst cell = () => handle.closest('.ProseMirror')?.querySelector<HTMLElement>(`[data-cell-index=\"${index}\"]`);\n\tconst win = doc.defaultView!;\n\tlet observer: ResizeObserver | null = null;\n\tconst layout = () => { const node = cell(); if (!node) return; const rect = node.getBoundingClientRect(), gutter = wrapper.getBoundingClientRect(); handle.style.top = `${rect.top - gutter.top}px`; handle.style.height = `${Math.max(28, rect.height)}px`; };"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/extensions/block-handle-plugin.svelte.ts","lineStart":138,"lineEnd":150,"lang":"typescript","isImplemented":true,"snippet":"\tprivate onDragStart = (event: DragEvent) => {\n\t\tif (this.hoveredPos == null) return;\n\t\tconst { view } = this;\n\t\tconst sel = NodeSelection.create(view.state.doc, this.hoveredPos);\n\t\tview.dispatch(view.state.tr.setSelection(sel));\n\t\t(view as unknown as { dragging: unknown }).dragging = { slice: sel.content(), move: true };\n\t\tevent.dataTransfer?.setData('text/plain', '');\n\t\tif (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';\n\t\tconst dom = view.nodeDOM(this.hoveredPos);\n\t\tif (dom instanceof HTMLElement) event.dataTransfer?.setDragImage(dom, 0, 0);\n\t\tthis.scheduleHide();\n\t};\n"}},{"id":"op-04","dimension":"維度 1：視覺化與原始碼編輯核心操作","name":"上下方新增儲存格","status":"操作流程改變","definition":"在現有儲存格上方或下方插入新區塊，提供各類型儲存格範本之邊界操作機制。","location":"新版：apps/frontend/src/features/visual-editor/view.ts:321-345；舊版：apps/editor-legacy/src/lib/editor/extensions/block-handle-plugin.svelte.ts:151-175","purpose":"新版於儲存格操作列提供「+ 上方」與「+ 下方」選單，並在相鄰儲存格間隙設置常駐邊界插入觸發點，支援文字、公式、矩陣、表格與程式碼等 5 類區塊範本。舊版僅於懸停把手提供單一插入按鈕於下方新增，缺乏上方插入與多型態直接選單。","edgeCases":"於文件首尾邊界插入新儲存格時，自動校正前後空行與段落分隔符；插入後立即將焦點聚焦至新儲存格的首個可編輯節點。","newCode":{"file":"apps/frontend/src/features/visual-editor/view.ts","lineStart":321,"lineEnd":345,"lang":"typescript","isImplemented":true,"snippet":"\t\tconst makeInsertMenu = (above: boolean) => {\n\t\t\tconst wrap = doc.createElement('div');\n\t\t\twrap.className = 'cell-insert-wrap';\n\t\t\tconst trigger = doc.createElement('button');\n\t\t\ttrigger.type = 'button';\n\t\t\ttrigger.className = 'cell-tool-btn';\n\t\t\ttrigger.textContent = above ? this.text('+ 上方', '+ Above') : this.text('+ 下方', '+ Below');\n\t\t\ttrigger.title = above ? this.text('在上方插入', 'Insert above') : this.text('在下方插入', 'Insert below');\n\t\t\ttrigger.disabled = !this.editable() || !this.options.insertBlock;\n\t\t\tthis.cellActionButtons.add(trigger);\n\t\t\tconst menu = doc.createElement('div');\n\t\t\tmenu.className = 'cell-insert-menu';\n\t\t\tconst makeItem = (kind: 'text' | 'equation' | 'matrix' | 'table' | 'code', label: string) => {\n\t\t\t\tconst button = doc.createElement('button');\n\t\t\t\tbutton.type = 'button';\n\t\t\t\tbutton.className = 'cell-menu-btn';\n\t\t\t\tbutton.textContent = label;\n\t\t\t\tbutton.disabled = !this.editable() || !this.options.insertBlock;\n\t\t\t\tthis.cellActionButtons.add(button);\n\t\t\t\tbutton.addEventListener('click', (event) => {\n\t\t\t\t\tevent.preventDefault();\n\t\t\t\t\tevent.stopPropagation();\n\t\t\t\t\twrap.classList.remove('open');\n\t\t\t\t\tif (!this.editable() || !this.options.insertBlock) return;\n\t\t\t\t\tconst boundary = above ? cellIndex : cellIndex + 1;"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/extensions/block-handle-plugin.svelte.ts","lineStart":151,"lineEnd":175,"lang":"typescript","isImplemented":true,"snippet":"\tprivate runInsert = async (item: BlockInsertItem) => {\n\t\tif (this.hoveredPos == null) return;\n\t\tconst { view } = this;\n\t\tconst hovered = view.state.doc.nodeAt(this.hoveredPos);\n\t\tif (!hovered) return;\n\n\t\tif (isBlockCommand(item)) {\n\t\t\tconst state = view.state;\n\t\t\tawait executeBlockCommand(\n\t\t\t\titem,\n\t\t\t\tcreateBlockCommandContext(state, view.dispatch.bind(view), this.hoveredPos, 'after', undefined, diagramRequesterFor(view))\n\t\t\t);\n\t\t} else {\n\t\t\tconst node = item.make(view.state.schema);\n\t\t\tif (!node) return;\n\t\t\t// insert as next sibling; if the parent can't accept the node type (heading in a list, ...),\n\t\t\t// walk up to the nearest ancestor that can, so the click never silently fails\n\t\t\tlet at = this.hoveredPos + hovered.nodeSize;\n\t\t\tlet resolvedAt = view.state.doc.resolve(at);\n\t\t\twhile (resolvedAt.depth > 0 && !resolvedAt.parent.canReplaceWith(resolvedAt.index(), resolvedAt.index(), node.type)) {\n\t\t\t\tat = resolvedAt.after();\n\t\t\t\tresolvedAt = view.state.doc.resolve(at);\n\t\t\t}\n\t\t\tconst tr = view.state.tr.insert(at, node);\n\t\t\tconst sel = item.select === 'node' ? NodeSelection.create(tr.doc, at) : TextSelection.near(tr.doc.resolve(at + 1));"}},{"id":"op-05","dimension":"維度 1：視覺化與原始碼編輯核心操作","name":"刪除儲存格與確認防護","status":"操作升級/重構","definition":"刪除目標儲存格並自編輯器與原始碼中安全移除區塊節點之操作流程。","location":"新版：apps/frontend/src/features/source-editor/SourceView.svelte:397-420；舊版：apps/editor-legacy/src/lib/editor/extensions/block-handle-plugin.svelte.ts:185-197","purpose":"新版點擊刪除按鈕時，若儲存格內含非空白內容，強制觸發確認對話框提示確認，確認後透過原子修補自原始碼中精確刪除。舊版透過 runDelete 直接移除節點，無防誤刪確認機制。","edgeCases":"空白儲存格直接刪除無需彈窗確認；刪除後自動將選取焦點平滑轉移至相鄰上方或下方儲存格；若刪除最後一個儲存格則保留空文件預設容器。","newCode":{"file":"apps/frontend/src/features/source-editor/SourceView.svelte","lineStart":397,"lineEnd":420,"lang":"svelte","isImplemented":true,"snippet":"\t\t} catch { toolError = 'insert-stale'; }\n\t}\n\tfunction handleCellAction(action: 'delete' | 'move-up' | 'move-down', span: SourceSpan, adjacent?: SourceSpan) {\n\t\tif (!editor || !active || saving) return;\n\t\tif (tool !== null) closeTool();\n\t\tconst current = editor.state.field(sourceState).projection.document;\n\t\tif (span.documentId !== current.documentId || span.version !== current.version) {\n\t\t\ttoolError = 'insert-stale';\n\t\t\treturn;\n\t\t}\n\t\tif (adjacent && (adjacent.documentId !== current.documentId || adjacent.version !== current.version)) {\n\t\t\ttoolError = 'insert-stale';\n\t\t\treturn;\n\t\t}\n\t\tif (action === 'delete') {\n\t\t\tconst content = current.read(span.from, span.to);\n\t\t\tconst isNonEmpty = content.trim().length > 0 && content.trim() !== '\\\\par';\n\t\t\tif (isNonEmpty && !window.confirm(t('確定要刪除此區塊嗎？', 'Delete this cell?'))) {\n\t\t\t\treturn false;\n\t\t\t}\n\t\t\tconst deleteFrom = span.from, deleteTo = span.to;\n\t\t\tconst patch: SourcePatch = {\n\t\t\t\tfrom: deleteFrom,\n\t\t\t\tto: deleteTo,"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/extensions/block-handle-plugin.svelte.ts","lineStart":185,"lineEnd":197,"lang":"typescript","isImplemented":true,"snippet":"\tprivate runDelete = () => {\n\t\tif (this.hoveredPos == null) return;\n\t\tconst { view } = this;\n\t\tconst node = view.state.doc.nodeAt(this.hoveredPos);\n\t\tif (!node) return;\n\t\t// tr.delete respects the schema: removing the last required child (e.g. last table row)\n\t\t// no-ops instead of corrupting the doc\n\t\tconst tr = view.state.tr.delete(this.hoveredPos, this.hoveredPos + node.nodeSize);\n\t\tview.dispatch(tr);\n\t\tview.focus();\n\t\tthis.state.visible = false;\n\t\tthis.hoveredPos = null;\n\t};"}},{"id":"op-06","dimension":"維度 1：視覺化與原始碼編輯核心操作","name":"移動儲存格與段落修復","status":"操作升級/重構","definition":"透過儲存格控制列上移或下移按鈕調整區塊排列順序，並維持 LaTeX 段落語法完整性之操作機制。","location":"新版：apps/frontend/src/features/source-editor/cell-move.ts:7-30；舊版：apps/editor-legacy/src/lib/editor/extensions/block-handle-plugin.svelte.ts:138-150","purpose":"新版點擊上移或下移按鈕，調用 cellMoveTransaction 計算陣列區間旋轉；自動檢查移動前後是否缺少 \\par 段落分隔標記並自動補足，確保段落不發生非預期黏合。舊版未提供上下移動專屬按鈕，依賴拖曳重新插入。","edgeCases":"位於文件首部儲存格之上移按鈕呈現禁用狀態；位於尾部儲存格之下移按鈕呈現禁用狀態；移動包含註解的區塊時保留前後註解邊界。","newCode":{"file":"apps/frontend/src/features/source-editor/cell-move.ts","lineStart":7,"lineEnd":30,"lang":"typescript","isImplemented":true,"snippet":"export function cellMoveTransaction(state: EditorState, cells: readonly SourceSpan[], index: number, boundary: number) {\n\tconst source = state.field(sourceState).projection.document;\n\tif (!Number.isInteger(index) || !Number.isInteger(boundary) || index < 0 || index >= cells.length || boundary < 0 || boundary > cells.length) throw new Error('CELL_MOVE_RANGE');\n\tfor (let i = 0; i < cells.length; i++) {\n\t\tconst span = cells[i]!;\n\t\tif (span.documentId !== source.documentId || span.version !== source.version || span.from < 0 || span.to < span.from || span.to > source.length || i > 0 && cells[i - 1]!.to > span.from) throw new Error('STALE_CELL_MOVE');\n\t}\n\tif (boundary === index || boundary === index + 1) return null;\n\tconst destination = boundary > index ? boundary - 1 : boundary;\n\tconst first = Math.min(index, destination), last = Math.max(index, destination);\n\tconst projected = projectVisual(source, parseSource(source)).document;\n\tconst paragraphs = new Set<string>(); projected.forEach(node => { if (node.type.name === 'source_block') paragraphs.add(`${node.attrs.from}:${node.attrs.to}`); });\n\tconst spans = cells.slice(first, last + 1), contents = spans.map(span => ({ text: source.read(span.from, span.to), paragraph: paragraphs.has(`${span.from}:${span.to}`) }));\n\tconst [moving] = contents.splice(index - first, 1); contents.splice(destination - first, 0, moving!);\n\tlet previousParagraph = first > 0 && paragraphs.has(`${cells[first - 1]!.from}:${cells[first - 1]!.to}`);\n\tconst insert = contents.map((content, i) => {\n\t\t// The original first paragraph has no \\\\par marker. When moved after text,\n\t\t// supply that fence so two cells do not silently become one paragraph.\n\t\tconst fence = content.paragraph && previousParagraph && !/^\\\\par\\b/.test(content.text) ? `\\\\par${source.profile.preferredLineEnding}` : '';\n\t\tpreviousParagraph = content.paragraph;\n\t\treturn fence + content.text + (i < spans.length - 1 ? source.read(spans[i]!.to, spans[i + 1]!.from) : '');\n\t}).join('');\n\treturn sourcePatchTransaction(state, source, [{ from: spans[0]!.from, to: spans.at(-1)!.to, insert, expected: source.read(spans[0]!.from, spans.at(-1)!.to) }], true);\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/extensions/block-handle-plugin.svelte.ts","lineStart":138,"lineEnd":150,"lang":"typescript","isImplemented":true,"snippet":"\tprivate onDragStart = (event: DragEvent) => {\n\t\tif (this.hoveredPos == null) return;\n\t\tconst { view } = this;\n\t\tconst sel = NodeSelection.create(view.state.doc, this.hoveredPos);\n\t\tview.dispatch(view.state.tr.setSelection(sel));\n\t\t(view as unknown as { dragging: unknown }).dragging = { slice: sel.content(), move: true };\n\t\tevent.dataTransfer?.setData('text/plain', '');\n\t\tif (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';\n\t\tconst dom = view.nodeDOM(this.hoveredPos);\n\t\tif (dom instanceof HTMLElement) event.dataTransfer?.setDragImage(dom, 0, 0);\n\t\tthis.scheduleHide();\n\t};\n"}},{"id":"op-07","dimension":"維度 1：視覺化與原始碼編輯核心操作","name":"文字格式設定（粗體/斜體/底線）","status":"操作升級/重構","definition":"對選取文字套用粗體、斜體、底線等字體樣式，並映射至對應 LaTeX 巨集指令之操作功能。","location":"新版：apps/frontend/src/features/source-editor/format.ts:356-385；舊版：apps/editor-legacy/src/lib/schema/text-formatting.ts:1-24","purpose":"新版在 AST 語法樹層級直接計算變更，formatTransaction 精確拆解括號邊界，支援巢狀格式智慧消除與包裹，保護行內公式不受文字格式干擾。舊版依賴 ProseMirror Schema Marks 進行節點樣式標記，儲存時再由序列化器轉換為 LaTeX 指令。","edgeCases":"選取範圍若跨越段落分界（包含連續換行或 \\par），formatTransaction 拋出 FORMAT_RANGE 異常拒絕執行；游標處於折疊狀態時於原始碼模式直接插入成對標籤並將游標置入花括號內。","newCode":{"file":"apps/frontend/src/features/source-editor/format.ts","lineStart":356,"lineEnd":385,"lang":"typescript","isImplemented":true,"snippet":"export function formatTransaction(state: EditorState, parsed: SourceProjection, format: TextFormat, span?: SourceSpan) {\n\tif (state.readOnly) throw new Error('EDITOR_READ_ONLY');\n\tconst projection = state.field(sourceState).projection, source = projection.document;\n\tif (!projectionIsCurrent(source, parsed) || span && (span.documentId !== source.documentId || span.version !== source.version)) throw new Error('STALE_FORMAT');\n\tif (!Object.hasOwn(commands, format)) throw new Error('FORMAT_KIND');\n\tconst selection = span ? rangeInsertionTarget(state, span) : state.selection.main;\n\tconst from = projection.toSource(selection.from), to = projection.toSource(selection.to);\n\tif (selection.from !== selection.to && hasParagraphBreak(source.read(from, to))) throw new Error('FORMAT_RANGE');\n\tconst match: { wrapper: SyntaxNode | null; enclosing: SyntaxNode | null; plain: boolean } = { wrapper: null, enclosing: null, plain: false };\n\tconst visit = (nodes: readonly SyntaxNode[]) => {\n\t\tfor (const node of nodes) {\n\t\t\tif (node.span.from > from || node.span.to < to) continue;\n\t\t\tif (node.kind === 'text' && (from !== to || from < node.span.to || from === source.length)) match.plain = true;\n\t\t\tif (node.kind === 'format' && node.content && formats[node.name] && ((from === node.span.from && to === node.span.to) || (from === node.content.from && to === node.content.to))) {\n\t\t\t\tif (!match.wrapper || formats[match.wrapper.name] !== format || formats[node.name] === format) match.wrapper = node;\n\t\t\t}\n\t\t\tif (node.kind === 'format' && node.content && formats[node.name] === format && from >= node.content.from && to <= node.content.to) match.enclosing = node;\n\t\t\tif (node.kind === 'format' || node.kind === 'heading' || node.kind === 'environment' && node.name === 'document') visit(node.children);\n\t\t}\n\t};\n\tvisit(parsed.nodes);\n\tconst wrapper = match.wrapper;\n\tconst inlineRange = selection.from === selection.to ? null : collectInlineRange(parsed.nodes, source, from, to);\n\tif (!match.plain && !wrapper && !inlineRange) throw new Error('FORMAT_RANGE');\n\tif (wrapper && wrapper.content && formats[wrapper.name] === format && canCancelWrapper(inlineRange, wrapper, format)) {\n\t\tconst whole = rangeInsertionTarget(state, wrapper.span), inner = rangeInsertionTarget(state, wrapper.content);\n\t\treturn state.update({ changes: [{ from: whole.from, to: inner.from, insert: '' }, { from: inner.to, to: whole.to, insert: '' }],\n\t\t\tselection: { anchor: whole.from, head: whole.from + inner.to - inner.from }, userEvent: 'input.format' });\n\t}\n\tif (selection.from !== selection.to && match.enclosing?.content && canCancelWrapper(inlineRange, match.enclosing, format)) {"},"legacyCode":{"file":"apps/editor-legacy/src/lib/schema/text-formatting.ts","lineStart":1,"lineEnd":24,"lang":"typescript","isImplemented":true,"snippet":"export const FONT_SIZES = ['tiny', 'scriptsize', 'footnotesize', 'small', 'normalsize', 'large', 'Large', 'LARGE', 'huge', 'Huge'] as const;\nexport type FontSize = (typeof FONT_SIZES)[number];\nexport const PARAGRAPH_ALIGNMENTS = ['auto', 'left', 'center', 'right'] as const;\nexport type ParagraphAlignment = (typeof PARAGRAPH_ALIGNMENTS)[number];\nexport const ALIGNMENT_DECLARATIONS = { left: 'raggedright', center: 'centering', right: 'raggedleft' } as const;\nexport const FONT_SIZE_EM: Record<FontSize, number> = {\n\ttiny: 0.5,\n\tscriptsize: 0.7,\n\tfootnotesize: 0.8,\n\tsmall: 0.9,\n\tnormalsize: 1,\n\tlarge: 1.2,\n\tLarge: 1.44,\n\tLARGE: 1.728,\n\thuge: 2.074,\n\tHuge: 2.488\n};\nexport function isFontSize(value: unknown): value is FontSize {\n\treturn typeof value === 'string' && (FONT_SIZES as readonly string[]).includes(value);\n}\nexport function isParagraphAlignment(value: unknown): value is ParagraphAlignment {\n\treturn typeof value === 'string' && (PARAGRAPH_ALIGNMENTS as readonly string[]).includes(value);\n}\n"}},{"id":"op-08","dimension":"維度 1：視覺化與原始碼編輯核心操作","name":"文字顏色設定與 xcolor 注入","status":"操作升級/重構","definition":"為選取文字套用指定顏色色碼，並於文件前言自動注入 \\usepackage{xcolor} 套件之功能。","location":"新版：apps/frontend/src/features/source-editor/format.ts:337-348；舊版：apps/editor-legacy/src/lib/workspace/text-color-package-context.ts:29-65","purpose":"新版以 colorTransaction 自動檢驗前言是否引入 xcolor 套件，在單一原子編輯交易中同時完成前言修補與 \\textcolor[HTML]{HEX}{...} 標記套用，省去繁瑣彈窗。舊版依賴 TextColorPackageCoordinator，套件缺失時彈出互動視窗等待使用者確認後方可套用。","edgeCases":"十六進位色碼必須嚴格匹配 /^[0-9a-fA-F]{6}$/ 格式；選取範圍包含段落分界時終止套用；前言已存在 xcolor 宣告時不重複注入。","newCode":{"file":"apps/frontend/src/features/source-editor/format.ts","lineStart":337,"lineEnd":348,"lang":"typescript","isImplemented":true,"snippet":"export function colorTransaction(state: EditorState, parsed: SourceProjection, hex: string, span?: SourceSpan) {\n\tif (state.readOnly || !/^[0-9a-fA-F]{6}$/.test(hex)) throw new Error('FORMAT_RANGE');\n\tconst projection = state.field(sourceState).projection, source = projection.document;\n\tif (!projectionIsCurrent(source, parsed)) throw new Error('STALE_FORMAT');\n\tconst selected = span ? rangeInsertionTarget(state, span) : state.selection.main;\n\tconst from = projection.toSource(selected.from), to = projection.toSource(selected.to);\n\tif (!collectInlineRange(parsed.nodes, source, from, to)) throw new Error('FORMAT_RANGE');\n\tconst plan = packagePlan(source, parsed, 'xcolor');\n\tconst patches = [{ from, to: from, insert: `\\\\textcolor[HTML]{${hex.toUpperCase()}}{`, expected: '' }, { from: to, to, insert: '}', expected: '' }];\n\tif (plan) patches.unshift({ from: plan.span.from, to: plan.span.to, insert: plan.insert.replace(/\\n/g, source.profile.preferredLineEnding), expected: '' });\n\treturn sourcePatchTransaction(state, source, patches);\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/workspace/text-color-package-context.ts","lineStart":29,"lineEnd":65,"lang":"typescript","isImplemented":true,"snippet":"export class TextColorPackageCoordinator implements TextColorPackageRequester {\n\tconstructor(\n\t\tprivate readonly document: DocumentBuffer,\n\t\tprivate readonly packagePrompt: PackagePromptController,\n\t\tprivate readonly host: TextColorPackageCoordinatorHost\n\t) {}\n\n\tasync ensureXcolor(signal: AbortSignal, targetIsCurrent: () => boolean): Promise<TextColorGateLease | null> {\n\t\tif (get(isReadOnly) || signal.aborted) return null;\n\t\tconst path = this.document.path;\n\t\tconst activePath = this.host.getActivePath();\n\t\tconst kind = this.host.getKind();\n\t\tconst viewMode = this.host.getViewMode();\n\t\tconst view = this.host.getView();\n\t\tconst viewDoc = view?.state.doc ?? null;\n\t\tconst sourceBefore = this.document.texSource;\n\t\tlet expectedSource = sourceBefore;\n\n\t\tif (!path || !activePath || !samePath(path, activePath) || kind !== 'tex' || viewMode !== 'visual' || !view || !targetIsCurrent()) {\n\t\t\treturn null;\n\t\t}\n\n\t\tconst isCurrent = (): boolean =>\n\t\t\t!signal.aborted &&\n\t\t\t!get(isReadOnly) &&\n\t\t\tthis.document.path === path &&\n\t\t\tsamePath(this.host.getActivePath() ?? '', path) &&\n\t\t\tthis.host.getKind() === kind &&\n\t\t\tthis.host.getViewMode() === viewMode &&\n\t\t\tthis.host.getView() === view &&\n\t\t\tview.state.doc === viewDoc &&\n\t\t\tthis.document.texSource === expectedSource &&\n\t\t\ttargetIsCurrent();\n\n\t\tconst lease: TextColorGateLease = { isCurrent };\n\t\tif (hasLatexPackage(sourceBefore, 'xcolor')) return isCurrent() ? lease : null;\n"}},{"id":"op-09","dimension":"維度 1：視覺化與原始碼編輯核心操作","name":"章節摺疊與縮排持久化","status":"舊版具備但新版尚未實作","definition":"編輯器內部章節區段的摺疊與展開，以及段落首行縮排屬性在本地存儲或文件狀態中的持久化儲存機制。","location":"新版：apps/frontend/src/features/source-editor/folding.ts:18-45；舊版：apps/editor-legacy/src/lib/editor/extensions/section-folding.ts:37-75","purpose":"舊版在視覺化編輯器中實作基於標題路徑鏈的折疊記憶，並持久化至工作區設定；支援按下 Tab 鍵輪播段落縮排模式（auto, indent, noindent）。新版將折疊機制建構於 CodeMirror 6，依據動態 AST 區間進行記憶體內動態折疊，折疊狀態不寫入 localStorage，重載後重置，且尚未實作段落首行縮排輪播功能。","edgeCases":"文件重新解析期間舊折疊索引暫時維持，解析完成派發 foldProjection 即時替換；無效折疊區間自動平滑解除。","newCode":{"file":"apps/frontend/src/features/source-editor/folding.ts","lineStart":18,"lineEnd":45,"lang":"typescript","isImplemented":true,"snippet":"function index(state: EditorState, parsed: SourceProjection): FoldIndex {\n\tconst source = state.field(sourceState).projection.document;\n\tconst byLine = new Map<number, FoldRange>();\n\tconst add = (start: number, boundary: number, preserveBoundary: boolean) => {\n\t\tconst line = state.doc.lineAt(editorPosition(state, start));\n\t\tconst end = editorPosition(state, boundary);\n\t\tconst to = preserveBoundary ? state.doc.lineAt(end).from - 1 : end;\n\t\tif (to <= line.to || state.doc.lineAt(to).number === line.number) return;\n\t\tconst previous = byLine.get(line.from);\n\t\tif (!previous || previous.to < to) byLine.set(line.from, Object.freeze({ line: line.from, from: line.to, to }));\n\t};\n\tconst body = parsed.nodes.find((node) => node.kind === 'environment' && node.name === 'document');\n\tconst headings = (body?.children ?? parsed.nodes).filter((node) => node.kind === 'heading' && /^(?:section|subsection|subsubsection)\\*?$/.test(node.name));\n\tconst stack: { node: SyntaxNode; level: number }[] = [];\n\tconst levels: Record<string, number> = { section: 0, subsection: 1, subsubsection: 2 };\n\tfor (const node of headings) {\n\t\tconst level = levels[node.name.replace(/\\*$/, '')]!;\n\t\twhile (stack.length && stack.at(-1)!.level >= level) add(stack.pop()!.node.span.from, node.span.from, true);\n\t\tstack.push({ node, level });\n\t}\n\twhile (stack.length) add(stack.pop()!.node.span.from, body?.content?.to ?? source.length, Boolean(body?.content));\n\tconst pending = [...parsed.nodes];\n\twhile (pending.length) {\n\t\tconst node = pending.pop()!;\n\t\tlet environment = false;\n\t\tif (node.content) try { environment = source.read(node.span.from, Math.min(node.span.to, node.span.from + 6)) === '\\\\begin'; }\n\t\tcatch (error) { if (!(error instanceof SourceError) || error.code !== 'RANGE') throw error; } // An unknown macro's prefix may cut a surrogate; it is not an environment.\n\t\tif (node.content && environment) {"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/extensions/section-folding.ts","lineStart":37,"lineEnd":75,"lang":"typescript","isImplemented":true,"snippet":"export function sectionDescriptors(doc: PMNode, relativeFile: string): SectionDescriptor[] {\n\tconst headings: Array<{ pos: number; node: PMNode; level: number; title: string; chain: string[] }> = [];\n\tconst stack: Array<{ level: number; title: string }> = [];\n\tlet pos = 0;\n\n\tfor (let index = 0; index < doc.childCount; index++) {\n\t\tconst node = doc.child(index);\n\t\tif (node.type.name === 'heading') {\n\t\t\tconst level = Number(node.attrs.level) || 1;\n\t\t\twhile (stack.length && stack.at(-1)!.level >= level) stack.pop();\n\t\t\tconst title = node.textContent.trim();\n\t\t\tconst chain = [...stack.map((item) => item.title), title];\n\t\t\theadings.push({ pos, node, level, title, chain });\n\t\t\tstack.push({ level, title });\n\t\t}\n\t\tpos += node.nodeSize;\n\t}\n\n\tconst occurrences = new Map<string, number>();\n\treturn headings.map((heading, index) => {\n\t\tconst occurrenceBase = JSON.stringify([heading.level, heading.chain]);\n\t\tconst occurrence = occurrences.get(occurrenceBase) ?? 0;\n\t\toccurrences.set(occurrenceBase, occurrence + 1);\n\n\t\tlet contentTo = doc.content.size;\n\t\tfor (let next = index + 1; next < headings.length; next++) {\n\t\t\tif (headings[next].level <= heading.level) {\n\t\t\t\tcontentTo = headings[next].pos;\n\t\t\t\tbreak;\n\t\t\t}\n\t\t}\n\n\t\tconst base = {\n\t\t\trelativeFile,\n\t\t\tancestorHeadingChain: heading.chain,\n\t\t\tlevel: heading.level,\n\t\t\toccurrence,\n\t\t\tfolded: true\n\t\t};"}},{"id":"op-10","dimension":"維度 1：視覺化與原始碼編輯核心操作","name":"共用 Undo/Redo 與選取恢復","status":"操作升級/重構","definition":"編輯器操作記錄堆疊管理策略，以及在撤銷或重做後游標位置與選取範圍之精準復原機制。","location":"新版：apps/frontend/src/features/source-editor/state.ts:91-105；舊版：apps/editor-legacy/src/lib/editor/EditorView.svelte:160-170","purpose":"新版建立全系統單一權威歷史架構，所有視覺化修改皆轉化為 sourcePatchTransaction 寫入 CodeMirror 歷史；HistoryEntry 保存前後 ChangeSet 與 EditorSelection，撤銷時精準還原游標至修改前字元位置。舊版存在視覺化 ProseMirror、原始碼 CodeMirror 與跨模式快照等三套分離歷史，切換後容易發生游標遺失與堆疊衝突。","edgeCases":"歷史記錄達到 200 筆上限時以滑動窗口捨棄最舊記錄；撤銷至存檔檢查點精確將 dirty 標記翻轉回 false。","newCode":{"file":"apps/frontend/src/features/source-editor/state.ts","lineStart":91,"lineEnd":105,"lang":"typescript","isImplemented":true,"snippet":"export function historyTransaction(state: EditorState, direction: 'undo' | 'redo') {\n\tconst entry = state.field(sourceState)[direction].at(-1);\n\tif (!entry) return null;\n\treturn state.update({ changes: direction === 'undo' ? entry.inverse : entry.forward,\n\t\tselection: direction === 'undo' ? entry.beforeSelection : entry.afterSelection,\n\t\teffects: navigate.of(direction), userEvent: direction });\n}\n\nexport interface InsertionTarget { readonly documentId: string; readonly version: number; readonly from: number; readonly to: number }\nexport function insertionTarget(state: EditorState): InsertionTarget {\n\tconst source = state.field(sourceState).projection.document;\n\treturn { documentId: source.documentId, version: source.version, from: state.selection.main.from, to: state.selection.main.to };\n}\nexport function rangeInsertionTarget(state: EditorState, span: SourceSpan): InsertionTarget {\n\tconst projection = state.field(sourceState).projection, source = projection.document;"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/EditorView.svelte","lineStart":160,"lineEnd":170,"lang":"svelte","isImplemented":true,"snippet":"\t\t\t\trules: [...listInputRules, ...smartQuotes, emDashRule, enDashRule, emDashUpgradeRule, ellipsis] as readonly InputRule[]\n\t\t\t}),\n\t\t\tkeymap({\n\t\t\t\t// PM history first, then the workspace snapshot history (survives mode switches).\n\t\t\t\t// consume the key even at the stack edge so the browser's native undo can't fire.\n\t\t\t\t'Mod-z': (state, dispatch) => historyUndo(state, dispatch) || (onHistoryBoundary ? (onHistoryBoundary('undo'), true) : false),\n\t\t\t\t'Mod-y': (state, dispatch) => historyRedo(state, dispatch) || (onHistoryBoundary ? (onHistoryBoundary('redo'), true) : false),\n\t\t\t\t'Mod-Shift-z': (state, dispatch) => historyRedo(state, dispatch) || (onHistoryBoundary ? (onHistoryBoundary('redo'), true) : false),\n\t\t\t\tBackspace: undoInputRule,\n\t\t\t\t'Mod-b': toggleMark(schema.marks.strong),\n\t\t\t\t'Mod-i': toggleMark(schema.marks.em),"}},{"id":"op-11","dimension":"維度 2：數學公式與矩陣編輯操作","name":"行內公式文件內編輯","status":"操作流程改變","definition":"在視覺化文件中嵌入 MathLive 編輯環境，進行行內公式之就地即時輸入與排版。","location":"新版：apps/frontend/src/features/math/field.ts:37-62；舊版：apps/editor-legacy/src/lib/editor/extensions/mathlivebridge/mathViewport.ts:21-50","purpose":"新版採用暫態就地草稿機制，點擊公式時就地掛載包含 math-field 的編輯條，草稿修改在確認前不污染主文件歷史，完成後一次性生成補丁寫入並銷毀實例。舊版將所有公式實體化為常駐 ProseMirror NodeView，長文檔容易累積過多元件導致效能下滑。","edgeCases":"公式長度上限嚴格限制為 65,536 字元，超過上限自動阻斷並回滾；包含空字元（\\u0000）時拒絕提交；IME 組字確認時攔截 keyCode 229 防範誤退出。","newCode":{"file":"apps/frontend/src/features/math/field.ts","lineStart":37,"lineEnd":62,"lang":"typescript","isImplemented":true,"snippet":"export function createMathField(target: HTMLElement): MathfieldElement {\n\tconst ownerDocument = target.ownerDocument;\n\tconst Field = ownerDocument.defaultView?.customElements.get('math-field') as typeof MathfieldElement | undefined;\n\tif (!Field) throw new Error('MATH_FIELD_NOT_REGISTERED');\n\tif (typeof window !== 'undefined' && window.mathVirtualKeyboard) {\n\t\twindow.mathVirtualKeyboard.hide();\n\t}\n\tField.fontsDirectory = null;\n\tField.soundsDirectory = null;\n\tconst field = ownerDocument.createElement('math-field') as MathfieldElement;\n\tfield.mathVirtualKeyboardPolicy = 'manual';\n\t// Windows IMEs may report Enter with keyCode 229 and isComposing=false.\n\t// Keep candidate navigation native, away from both editor shortcut handlers.\n\tconst controller = new AbortController();\n\tconst state = { active: false, dispose: () => controller.abort() };\n\tcompositions.set(field, state);\n\tfield.addEventListener('compositionstart', () => { state.active = true; }, { capture: true, signal: controller.signal });\n\tfield.addEventListener('compositionend', () => { state.active = false; }, { capture: true, signal: controller.signal });\n\tfield.addEventListener('keydown', event => {\n\t\tif (isMathComposition(field, event)) event.stopImmediatePropagation();\n\t}, { capture: true, signal: controller.signal });\n\ttarget.replaceChildren(field);\n\tfield.menuItems = [];\n\tfield.macros = { ...field.macros, htmlData: { args: 2, def: '#2' }, href: { args: 2, def: '#2' }, htmlClass: { args: 2, def: '#2' }, htmlId: { args: 2, def: '#2' }, style: { args: 2, def: '#2' } };\n\treturn field;\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/extensions/mathlivebridge/mathViewport.ts","lineStart":21,"lineEnd":50,"lang":"typescript","isImplemented":true,"snippet":"function ensureObserver(): IntersectionObserver | null {\n\tif (typeof IntersectionObserver === 'undefined') return null;\n\tobserver ??= new IntersectionObserver(\n\t\t(entries, obs) => {\n\t\t\tfor (const entry of entries) {\n\t\t\t\tif (!entry.isIntersecting) continue;\n\t\t\t\tconst upgrade = pending.get(entry.target);\n\t\t\t\tif (!upgrade) continue;\n\t\t\t\t// drop it first: upgrading is one-way, and re-entry here would rebuild a live field\n\t\t\t\tpending.delete(entry.target);\n\t\t\t\tobs.unobserve(entry.target);\n\t\t\t\tupgrade();\n\t\t\t}\n\t\t},\n\t\t{ rootMargin: UPGRADE_MARGIN }\n\t);\n\treturn observer;\n}\n\n/** run `upgrade` once `el` comes near the viewport. Upgrades immediately where IntersectionObserver\n * is missing (jsdom, SSR), which reproduces the old eager behaviour rather than rendering nothing. */\nexport function upgradeWhenNear(el: Element, upgrade: Upgrade): void {\n\tconst obs = ensureObserver();\n\tif (!obs) {\n\t\tupgrade();\n\t\treturn;\n\t}\n\tpending.set(el, upgrade);\n\tobs.observe(el);\n}"}},{"id":"op-12","dimension":"維度 2：數學公式與矩陣編輯操作","name":"區塊公式文件內編輯","status":"操作流程改變","definition":"針對獨立展示型區塊公式，提供獨立面板或巨集包裹之視覺化編輯與 LaTeX 原始碼同步流程。","location":"新版：apps/frontend/src/features/math/source.ts:80-84；舊版：apps/editor-legacy/src/lib/editor/extensions/mathlivebridge/mlview.svelte.ts:146-180","purpose":"新版提供獨立公式抽屜面板，提供視覺預覽與 LaTeX 原始碼雙向同步，序列化時自動包裹標準 \\[\\n...\\n\\] 區塊。舊版在編輯器本體中掛載 isblock 旗標之 MathLiveView 節點視圖。","edgeCases":"公式區塊換行符號自動正規化；若公式內容僅含空白則於儲存時自動清理佔位符。","newCode":{"file":"apps/frontend/src/features/math/source.ts","lineStart":80,"lineEnd":84,"lang":"typescript","isImplemented":true,"snippet":"export function equationSource(value: string, inline: boolean): string {\n\tvalue = equationLatex(value);\n\treturn inline ? '\\\\(' + value + '\\\\)' : '\\\\[\\n' + value + '\\n\\\\]';\n}\n"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/extensions/mathlivebridge/mlview.svelte.ts","lineStart":146,"lineEnd":180,"lang":"typescript","isImplemented":true,"snippet":"export default class MathLiveView implements NodeView {\n\tdom: HTMLElement;\n\t/** undefined until materialize() runs; see the placeholder note there */\n\tmathField?: MathfieldElement;\n\tnode: Node;\n\tupdating: boolean;\n\t/** static typeset standing in for the field until this node comes near the viewport */\n\tprivate placeholder?: HTMLElement;\n\tprivate mlpluginkey;\n\tprivate origFocus?: (options?: FocusOptions) => void;\n\tprivate settingsContainer?: HTMLElement;\n\tprivate settingsComponent?: ReturnType<typeof mount>;\n\tprivate isblock: boolean;\n\tprivate pendingVirtualMatrixRequest?: AbortController;\n\t// no user input yet: skip auto-delete on first blur (focus race when created via shortcut)\n\tprivate isNewlyCreated: boolean = true;\n\t// empty + one backspace = pending, second backspace or blur deletes\n\tprivate pendingDelete: boolean = false;\n\tprivate equationNumbersContainer?: HTMLElement;\n\n\tconstructor(\n\t\tnode: Node,\n\t\tprivate view: EditorView,\n\t\tprivate getPos: () => number,\n\t\tmlpluginkey,\n\t\tisblock: boolean = false,\n\t\tprivate mathPackageRequester?: MathPackageRequester\n\t) {\n\t\tthis.mlpluginkey = mlpluginkey;\n\t\tthis.isblock = isblock;\n\t\tthis.node = node;\n\t\tthis.view = view;\n\t\tthis.getPos = getPos;\n\t\tif (isblock) {\n\t\t\tthis.dom = document.createElement('div');"}},{"id":"op-13","dimension":"維度 2：數學公式與矩陣編輯操作","name":"191 項常見公式與符號面板","status":"操作升級/重構","definition":"編輯器內建數學符號與範本目錄，涵蓋希臘字母大小寫整併、微積分與極限等專業結構之選單面板。","location":"新版：apps/frontend/src/features/math/catalog.ts:165-171；舊版：apps/editor-legacy/src/lib/editor/comp/toolbar/mathSymbols.ts:27-70","purpose":"新版擴充符號目錄至 191 項標準學術符號，將希臘小寫（29項）與希臘大寫（11項）合併為單一 40 項面板，並增設極限與級數（8項）、微積分（13項）等專屬分頁。舊版僅提供 8 個基礎群組共約 140 項，大小寫希臘字母未合併且微積分符號不完整。","edgeCases":"插入模板公式時若 MathLive 內部有選取內容則自動填入主要佔位符，無選取內容則使用預設佔位符 #?。","newCode":{"file":"apps/frontend/src/features/math/catalog.ts","lineStart":165,"lineEnd":171,"lang":"typescript","isImplemented":true,"snippet":"const calculusVariants: CatalogItem[] = ['int', 'iint', 'iiint', 'oint', 'oiint', 'oiiint'].flatMap((command, index) =>\n\t['', '\\\\nolimits_{#?}^{#?}', '\\\\limits_{#?}^{#?}'].map((limits, variant) => ({\n\t\tid: command + '-variant-' + variant,\n\t\tlabelZh: ['單重積分', '雙重積分', '三重積分', '封閉單重積分', '封閉雙重積分', '封閉三重積分'][index]! + ['（無限界）', '（側置限界）', '（上下限界）'][variant]!,\n\t\tlabelEn: command + [' without limits', ' side limits', ' stacked limits'][variant],\n\t\tlatex: '\\\\' + command + limits + ' #@', display: command\n\t})));"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/comp/toolbar/mathSymbols.ts","lineStart":27,"lineEnd":70,"lang":"typescript","isImplemented":true,"snippet":"export const SYMBOL_GROUPS: SymbolGroup[] = [\n\t{\n\t\tid: 'common',\n\t\tlabel: () => m.mathpal_group_common(),\n\t\ticon: Radical,\n\t\tsymbols: [\n\t\t\t{ latex: '\\\\frac{#@}{#0}', tooltip: 'Fraction', displayLatex: '\\\\frac{a}{b}' },\n\t\t\t{ latex: '\\\\sqrt{#0}', tooltip: 'Square root', displayLatex: '\\\\sqrt{x}' },\n\t\t\t{ latex: '\\\\sqrt[#?]{#0}', tooltip: 'Nth root', displayLatex: '\\\\sqrt[n]{x}' },\n\t\t\t{ latex: '^{#?}', tooltip: 'Superscript', displayLatex: 'x^{n}' },\n\t\t\t{ latex: '_{#?}', tooltip: 'Subscript', displayLatex: 'x_{n}' },\n\t\t\t{ latex: '^{#?}_{#?}', tooltip: 'Super & subscript', displayLatex: 'x_{i}^{n}' },\n\t\t\t{ latex: '\\\\pm', tooltip: 'Plus-minus' },\n\t\t\t{ latex: '\\\\mp', tooltip: 'Minus-plus' },\n\t\t\t{ latex: '\\\\times', tooltip: 'Times' },\n\t\t\t{ latex: '\\\\div', tooltip: 'Division' },\n\t\t\t{ latex: '\\\\cdot', tooltip: 'Dot product' },\n\t\t\t{ latex: '\\\\infty', tooltip: 'Infinity' },\n\t\t\t{ latex: '\\\\frac{1}{#?}', tooltip: 'Reciprocal', displayLatex: '\\\\frac{1}{x}' },\n\t\t\t{ latex: '\\\\binom{#?}{#?}', tooltip: 'Binomial', displayLatex: '\\\\binom{n}{k}' },\n\t\t\t{ latex: '\\\\left|#?\\\\right|', tooltip: 'Absolute value', displayLatex: '\\\\left|x\\\\right|' },\n\t\t\t{ latex: '\\\\left(#?\\\\right)', tooltip: 'Parentheses', displayLatex: '\\\\left(x\\\\right)' }\n\t\t]\n\t},\n\t{\n\t\tid: 'greek',\n\t\tlabel: () => m.mathpal_group_greek(),\n\t\ticon: Pi,\n\t\tsymbols: [\n\t\t\t{ latex: '\\\\alpha', tooltip: 'alpha' },\n\t\t\t{ latex: '\\\\beta', tooltip: 'beta' },\n\t\t\t{ latex: '\\\\gamma', tooltip: 'gamma' },\n\t\t\t{ latex: '\\\\delta', tooltip: 'delta' },\n\t\t\t{ latex: '\\\\epsilon', tooltip: 'epsilon' },\n\t\t\t{ latex: '\\\\zeta', tooltip: 'zeta' },\n\t\t\t{ latex: '\\\\eta', tooltip: 'eta' },\n\t\t\t{ latex: '\\\\theta', tooltip: 'theta' },\n\t\t\t{ latex: '\\\\iota', tooltip: 'iota' },\n\t\t\t{ latex: '\\\\kappa', tooltip: 'kappa' },\n\t\t\t{ latex: '\\\\lambda', tooltip: 'lambda' },\n\t\t\t{ latex: '\\\\mu', tooltip: 'mu' },\n\t\t\t{ latex: '\\\\nu', tooltip: 'nu' },\n\t\t\t{ latex: '\\\\xi', tooltip: 'xi' },\n\t\t\t{ latex: '\\\\omicron', tooltip: 'omicron' },"}},{"id":"op-14","dimension":"維度 2：數學公式與矩陣編輯操作","name":"矩陣編輯器動態尺寸調整","status":"操作升級/重構","definition":"視覺化調整矩陣行列維度，支援格內輸入與尺寸增減防護之矩陣專用工具。","location":"新版：apps/frontend/src/features/math/source.ts:33-48；舊版：apps/editor-legacy/src/lib/editor/extensions/mathlivebridge/matrixLatex.ts:26-51","purpose":"新版將尺寸範圍有界限制於 1x1 至 10x10，縮小矩陣時若裁切儲存格包含非空白內容，自動觸發確認對話框防範資料遺失。舊版僅支援特定 amspath 矩陣環境，縮小缺乏內容保護。","edgeCases":"單一儲存格長度上限 1,024 字元；格內禁止輸入換列（\\\\）與欄位分隔符（&）防止矩陣語法破壞。","newCode":{"file":"apps/frontend/src/features/math/source.ts","lineStart":33,"lineEnd":48,"lang":"typescript","isImplemented":true,"snippet":"export function matrixSize(value: number): number {\n\tif (!Number.isInteger(value) || value < 1 || value > 10) throw new RangeError('MATRIX_SIZE');\n\treturn value;\n}\nexport function resizeMatrix(previous: MatrixDraft, rows: number, columns: number): { matrix: MatrixDraft; discarded: boolean } {\n\tmatrixSize(rows); matrixSize(columns); matrixSize(previous.rows); matrixSize(previous.columns);\n\tif (previous.cells.length !== previous.rows * previous.columns) throw new Error('MATRIX_CELLS');\n\tlet discarded = false;\n\tfor (let row = 0; row < previous.rows; row++) for (let column = 0; column < previous.columns; column++) {\n\t\tif ((row >= rows || column >= columns) && previous.cells[row * previous.columns + column]!.trim()) discarded = true;\n\t}\n\treturn { matrix: { rows, columns, cells: Array.from({ length: rows * columns }, (_, index) => {\n\t\tconst row = Math.floor(index / columns), column = index % columns;\n\t\treturn row < previous.rows && column < previous.columns ? previous.cells[row * previous.columns + column]! : '';\n\t}) }, discarded };\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/extensions/mathlivebridge/matrixLatex.ts","lineStart":26,"lineEnd":51,"lang":"typescript","isImplemented":true,"snippet":"export function validMatrixSize(rows: number | undefined, columns: number | undefined): rows is number {\n\treturn (\n\t\tNumber.isInteger(rows) &&\n\t\tNumber.isInteger(columns) &&\n\t\trows !== undefined &&\n\t\tcolumns !== undefined &&\n\t\trows >= 1 &&\n\t\trows <= 20 &&\n\t\tcolumns >= 1 &&\n\t\tcolumns <= 20\n\t);\n}\n\n/** New interactive matrix sizes are intentionally capped at 10; legacy documents still use validMatrixSize. */\nexport function validInteractiveMatrixSize(rows: number | undefined, columns: number | undefined): rows is number {\n\treturn (\n\t\tNumber.isInteger(rows) &&\n\t\tNumber.isInteger(columns) &&\n\t\trows !== undefined &&\n\t\tcolumns !== undefined &&\n\t\trows >= 1 &&\n\t\trows <= 10 &&\n\t\tcolumns >= 1 &&\n\t\tcolumns <= 10\n\t);\n}"}},{"id":"op-15","dimension":"維度 2：數學公式與矩陣編輯操作","name":"矩陣 Array 語法相容保留","status":"操作升級/重構","definition":"矩陣資料結構序列化為標準 LaTeX 語法，在免依賴額外套件環境下保持相容之轉換機制。","location":"新版：apps/frontend/src/features/math/source.ts:63-73；舊版：apps/editor-legacy/src/lib/workspace/math-package-context.ts:29-65","purpose":"新版序列化輸出標準 \\begin{array}{ccc} 搭配 \\left/\\right 定界括號，確保未載入 amsmath 時亦能編譯通過。舊版強制要求 amsmath 套件並透過彈窗注入環境宣告。","edgeCases":"支援 6 種括號樣式雙向切換（圓括號、方括號、大括號、單直線、雙直線、無括號）；欄寬對齊碼依欄數自動生成相應長度之 c 字元字串。","newCode":{"file":"apps/frontend/src/features/math/source.ts","lineStart":63,"lineEnd":73,"lang":"typescript","isImplemented":true,"snippet":"export function matrixSource(matrix: MatrixDraft, brackets: 'parentheses' | 'square' | 'none' | 'curly' | 'bars' | 'double-bars'): string {\n\tmatrixSize(matrix.rows); matrixSize(matrix.columns);\n\tif (matrix.cells.length !== matrix.rows * matrix.columns) throw new Error('MATRIX_CELLS');\n\tif (!['parentheses', 'square', 'none', 'curly', 'bars', 'double-bars'].includes(brackets)) throw new Error('MATRIX_BRACKETS');\n\tconst rows = Array.from({ length: matrix.rows }, (_, row) => matrix.cells.slice(row * matrix.columns, (row + 1) * matrix.columns).map(cellSource).join(' & '));\n\tconst array = '\\\\begin{array}{' + 'c'.repeat(matrix.columns) + '}\\n' + rows.join(' \\\\\\\\\\n') + '\\n\\\\end{array}';\n\tconst delimiters = { parentheses: ['(', ')'], square: ['[', ']'], curly: ['\\\\{', '\\\\}'], bars: ['|', '|'], 'double-bars': ['\\\\Vert', '\\\\Vert'] } as const;\n\tif (brackets === 'none') return array;\n\tconst [opening, closing] = delimiters[brackets];\n\treturn '\\\\left' + opening + array + '\\\\right' + closing;\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/workspace/math-package-context.ts","lineStart":29,"lineEnd":65,"lang":"typescript","isImplemented":true,"snippet":"export class MathPackageCoordinator implements MathPackageRequester {\n\tconstructor(\n\t\tprivate readonly document: DocumentBuffer,\n\t\tprivate readonly packagePrompt: PackagePromptController,\n\t\tprivate readonly host: MathPackageCoordinatorHost\n\t) {}\n\n\tasync ensureAmsmath(signal: AbortSignal, targetIsCurrent: () => boolean): Promise<MathPackageGateLease | null> {\n\t\tconst path = this.document.path;\n\t\tconst kind = this.host.getKind();\n\t\tconst activePath = this.host.getActivePath();\n\t\tconst viewMode = this.host.getViewMode();\n\t\tconst view = this.host.getView();\n\t\tconst viewDoc = view?.state.doc ?? null;\n\t\tconst sourceBefore = this.document.texSource;\n\t\tlet expectedSource = sourceBefore;\n\t\tif (\n\t\t\t!path ||\n\t\t\t!activePath ||\n\t\t\t!samePath(path, activePath) ||\n\t\t\tkind !== 'tex' ||\n\t\t\tviewMode === 'diff' ||\n\t\t\t(viewMode === 'visual' && !view) ||\n\t\t\t!targetIsCurrent()\n\t\t) {\n\t\t\treturn null;\n\t\t}\n\n\t\tconst isCurrent = (): boolean =>\n\t\t\t!signal.aborted &&\n\t\t\tthis.document.path === path &&\n\t\t\tsamePath(this.host.getActivePath() ?? '', path) &&\n\t\t\tthis.host.getKind() === kind &&\n\t\t\tthis.host.getViewMode() === viewMode &&\n\t\t\tthis.host.getView() === view &&\n\t\t\t(!view || view.state.doc === viewDoc) &&\n\t\t\tthis.document.texSource === expectedSource &&"}},{"id":"op-16","dimension":"維度 2：數學公式與矩陣編輯操作","name":"數學虛擬鍵盤移除與 CSS 隱藏","status":"新版刻意移除","definition":"停用並自 DOM 中徹底移除 MathLive 原生虛擬螢幕鍵盤與選單切換按鈕之策略。","location":"新版：apps/frontend/src/features/math/field.ts:11-24；舊版：apps/editor-legacy/src/lib/editor/extensions/mathlivebridge/virtualKeyboardConfig.ts:1-40","purpose":"新版透過 CSS shadow DOM ::part 選擇器遮蔽 virtual-keyboard-toggle 與 menu-toggle 按鈕，將聲音與字型目錄設為 null，大幅縮減記憶體與渲染負載。舊版完整載入 350 行虛擬鍵盤設定與 5 組自訂鍵盤佈局。","edgeCases":"動態掛載多個 math-field 實例時共用全域隱藏樣式標籤，避免重複插入樣式節點。","newCode":{"file":"apps/frontend/src/features/math/field.ts","lineStart":11,"lineEnd":24,"lang":"typescript","isImplemented":true,"snippet":"if (typeof document !== 'undefined') {\n\tconst STYLE_ID = 'mathlive-hide-chrome';\n\tif (!document.getElementById(STYLE_ID)) {\n\t\tconst style = document.createElement('style');\n\t\tstyle.id = STYLE_ID;\n\t\tstyle.textContent = `\n\t\t\tmath-field::part(virtual-keyboard-toggle),\n\t\t\tmath-field::part(menu-toggle) {\n\t\t\t\tdisplay: none !important;\n\t\t\t}\n\t\t`;\n\t\tdocument.head.appendChild(style);\n\t}\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/extensions/mathlivebridge/virtualKeyboardConfig.ts","lineStart":1,"lineEnd":40,"lang":"typescript","isImplemented":true,"snippet":"import { initVirtualKeyboardInCurrentBrowsingContext } from 'mathlive';\nimport type { VirtualKeyboardLayout, VirtualKeyboardName } from 'mathlive';\nimport { generateMatrixLatex, type MatrixEnvironment } from './matrixLatex';\nimport { m } from '$lib/paraglide/messages';\n\nexport const VIRTUAL_MATRIX_REQUEST_EVENT = 'modutex:virtual-matrix-request';\n\nconst VIRTUAL_MATRIX_PRESETS: Readonly<Record<number, { rows: number; columns: number; environment: MatrixEnvironment }>> = {\n\t1: { rows: 2, columns: 2, environment: 'pmatrix' },\n\t2: { rows: 2, columns: 2, environment: 'bmatrix' },\n\t3: { rows: 2, columns: 2, environment: 'vmatrix' },\n\t4: { rows: 2, columns: 2, environment: 'matrix' },\n\t5: { rows: 3, columns: 1, environment: 'pmatrix' },\n\t6: { rows: 3, columns: 1, environment: 'bmatrix' }\n};\n\n/** Resolve only the finite app-owned numeric commands sent by the installed MathLive keyboard. */\nexport function virtualMatrixLatexForPreset(detail: unknown): string | null {\n\tif (typeof detail !== 'number' || !Number.isInteger(detail)) return null;\n\tconst preset = VIRTUAL_MATRIX_PRESETS[detail];\n\treturn preset ? generateMatrixLatex(preset.rows, preset.columns, preset.environment) : null;\n}\n\nconst virtualMatrixCommand = (preset: number): [string, string, number] => ['dispatchEvent', VIRTUAL_MATRIX_REQUEST_EVENT, preset];\nimport { loadSettings } from '$lib/settings';\n\nconst basicLayout = (): VirtualKeyboardLayout => ({\n\tlabel: m.mathpal_kbd_basic_label(),\n\ttooltip: m.mathpal_kbd_basic_tooltip(),\n\trows: [\n\t\t[\n\t\t\t{ latex: '\\\\frac{#@}{#0}', class: 'small', variants: ['\\\\tfrac{#@}{#0}', '\\\\dfrac{#@}{#0}'] },\n\t\t\t{ latex: '\\\\sqrt{#0}', variants: ['\\\\sqrt[3]{#0}', '\\\\sqrt[#?]{#0}'] },\n\t\t\t'#@^{#?}',\n\t\t\t{ latex: '#@_{#?}', variants: ['#@^{#?}_{#?}', '_{#?}^{#?}'] },\n\t\t\t{ label: '[separator]', width: 0.5 },\n\t\t\t'[7]',\n\t\t\t'[8]',\n\t\t\t'[9]',\n\t\t\t{ latex: '\\\\div', class: 'small' },"}},{"id":"op-17","dimension":"維度 2：數學公式與矩陣編輯操作","name":"數學空白折疊與 IME 防護","status":"操作升級/重構","definition":"落實標準數學輸入模式之連續空白折疊規則，並防範輸入法候選字確認引發非預期跳出編輯。","location":"新版：apps/frontend/src/features/math/field.ts:40-62；舊版：apps/editor-legacy/src/lib/editor/extensions/mathlivebridge/matrixLatex.ts:1-25","purpose":"新版設定 smartMode = false 保持純數學模式，自動折疊連續空白，在鍵盤事件捕獲階段攔截 keyCode 229 防範輸入法干擾。舊版依賴字串解析階段之正規表示式進行空格過濾。","edgeCases":"輸入法組字完成後恢復正常鍵盤事件派發；清理公式時自動移除結尾贅餘之 \\placeholder 標記。","newCode":{"file":"apps/frontend/src/features/math/field.ts","lineStart":40,"lineEnd":62,"lang":"typescript","isImplemented":true,"snippet":"\tif (!Field) throw new Error('MATH_FIELD_NOT_REGISTERED');\n\tif (typeof window !== 'undefined' && window.mathVirtualKeyboard) {\n\t\twindow.mathVirtualKeyboard.hide();\n\t}\n\tField.fontsDirectory = null;\n\tField.soundsDirectory = null;\n\tconst field = ownerDocument.createElement('math-field') as MathfieldElement;\n\tfield.mathVirtualKeyboardPolicy = 'manual';\n\t// Windows IMEs may report Enter with keyCode 229 and isComposing=false.\n\t// Keep candidate navigation native, away from both editor shortcut handlers.\n\tconst controller = new AbortController();\n\tconst state = { active: false, dispose: () => controller.abort() };\n\tcompositions.set(field, state);\n\tfield.addEventListener('compositionstart', () => { state.active = true; }, { capture: true, signal: controller.signal });\n\tfield.addEventListener('compositionend', () => { state.active = false; }, { capture: true, signal: controller.signal });\n\tfield.addEventListener('keydown', event => {\n\t\tif (isMathComposition(field, event)) event.stopImmediatePropagation();\n\t}, { capture: true, signal: controller.signal });\n\ttarget.replaceChildren(field);\n\tfield.menuItems = [];\n\tfield.macros = { ...field.macros, htmlData: { args: 2, def: '#2' }, href: { args: 2, def: '#2' }, htmlClass: { args: 2, def: '#2' }, htmlId: { args: 2, def: '#2' }, style: { args: 2, def: '#2' } };\n\treturn field;\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/extensions/mathlivebridge/matrixLatex.ts","lineStart":1,"lineEnd":25,"lang":"typescript","isImplemented":true,"snippet":"export type MatrixEnvironment = 'matrix' | 'pmatrix' | 'bmatrix' | 'Bmatrix' | 'vmatrix' | 'Vmatrix';\n\nconst MATRIX_ENVIRONMENTS = new Set<MatrixEnvironment>(['matrix', 'pmatrix', 'bmatrix', 'Bmatrix', 'vmatrix', 'Vmatrix']);\nconst AMSMATH_ENVIRONMENTS = new Set([\n\t'matrix',\n\t'pmatrix',\n\t'bmatrix',\n\t'Bmatrix',\n\t'vmatrix',\n\t'Vmatrix',\n\t'align',\n\t'alignat',\n\t'flalign',\n\t'gather',\n\t'multline',\n\t'aligned',\n\t'alignedat',\n\t'gathered',\n\t'split',\n\t'cases',\n\t'subarray',\n\t'xalignat',\n\t'xxalignat'\n]);\n"}},{"id":"op-18","dimension":"維度 3：表格、程式碼塊與圖表工具操作","name":"表格視覺化面板行列增刪","status":"操作升級/重構","definition":"在表格設定面板中調整表格行列維度，管理一維儲存格陣列之互動流程。","location":"新版：apps/frontend/src/features/tables/TablePanel.svelte:33-45；舊版：apps/editor-legacy/src/lib/editor/extensions/table/TableWrapperComponent.svelte:1-40","purpose":"新版透過 changeTableAxis 維護一維 cells 陣列與欄權重 weights，刪除含內容欄列時觸發防誤刪確認。舊版依賴 prosemirror-tables 節點樹變異進行欄列增刪。","edgeCases":"列數限制於 1 至 100 列，欄數限制於 1 至 20 欄；超出範圍之調整請求自動忽略。","newCode":{"file":"apps/frontend/src/features/tables/TablePanel.svelte","lineStart":33,"lineEnd":45,"lang":"svelte","isImplemented":true,"snippet":"\tfunction change(axis: 'row' | 'column', action: 'insert' | 'delete', index: number) {\n\t\tcancelDrag();\n\t\ttry {\n\t\t\tconst proposal = changeTableAxis(table, axis, action, index);\n\t\t\tif (proposal.discarded && !window.confirm(t('刪除會移除這行或這列的內容。要繼續嗎？', 'Deleting removes the content in this row or column. Continue?'))) return;\n\t\t\ttable = proposal.table; row = Math.min(row, table.rows - 1); column = Math.min(column, table.columns - 1); error = null;\n\t\t\tfocusCell(row, column);\n\t\t} catch { error = 'axis'; }\n\t}\n\tfunction cell(index: number, value: string) {\n\t\tconst cells = [...table.cells];\n\t\tcells[index] = value;\n\t\ttable = { ...table, cells };"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/extensions/table/TableWrapperComponent.svelte","lineStart":1,"lineEnd":40,"lang":"svelte","isImplemented":true,"snippet":"<script lang=\"ts\">\n\timport { Popover, Portal, Switch, Tooltip } from '@skeletonlabs/skeleton-svelte';\n\timport {\n\t\tSettings,\n\t\tChevronDown,\n\t\tAlertCircle,\n\t\tInfo,\n\t\tAlignLeft,\n\t\tAlignCenter,\n\t\tAlignRight,\n\t\tWrapText,\n\t\tStretchHorizontal,\n\t\tArrowUp,\n\t\tArrowDown,\n\t\tArrowLeft,\n\t\tArrowRight\n\t} from '@lucide/svelte';\n\timport type { Node } from 'prosemirror-model';\n\timport { sanitizeLabel } from '$lib/editor/utils/label';\n\timport { isReadOnly } from '$lib/stores/permissionStore';\n\timport { templateFeaturesStore } from '$lib/stores/editorStore';\n\timport { parseColspec, generateColspec, type ColAlign } from '$lib/latex-parser/colspec';\n\timport type { TablePreset, TableStructureAction } from '$lib/editor/comp/toolbar/table-preset-commands';\n\timport { m } from '$lib/paraglide/messages';\n\n\tinterface Props {\n\t\t/** typst hides every LaTeX-only control; see tableWrapperView's TableDialect */\n\t\tdialect?: 'latex' | 'typst';\n\t\ttableNumber: number;\n\t\tsectionNumber: string | null;\n\t\tnode: Node;\n\t\tupdateAttrs: (attrs: Partial<typeof node.attrs>) => void;\n\t\tcheckDuplicate: (label: string) => boolean;\n\t\t// per-row latex rules (\\hline etc.): one string before each row + one after the last row\n\t\trowRules: string[];\n\t\tbottomRule: string;\n\t\tsetRowRule: (rowIndex: number, rule: string) => void;\n\t\tsetBottomRule: (rule: string) => void;\n\t\tsetVerticalLines: (on: boolean) => void;\n\t\tsetColumnWidth: (columnIndex: number, percent: number) => void;"}},{"id":"op-19","dimension":"維度 3：表格、程式碼塊與圖表工具操作","name":"欄寬 ↔ 拖曳把手與比例調整","status":"操作升級/重構","definition":"在表格面板中拖曳相鄰欄位分割線，即時自適應調整欄寬百分比之操作功能。","location":"新版：apps/frontend/src/features/tables/column-resize.ts:2-43；舊版：apps/editor-legacy/src/lib/serializer/tableSerializer.ts:30-70","purpose":"新版於相鄰欄位間以 ColumnDrag 執行權重重分配，保持其餘欄位權重與總和固定，提供 5% 最小邊界保護防止欄位塌陷，並支援方向鍵微調。舊版序列化輸出 tabularx 格式，無連續拖曳把手。","edgeCases":"指標鎖定透過 setPointerCapture 保證滑鼠移出表格仍能持續追蹤；欄寬比例限制在 0.01 至 1000 之間。","newCode":{"file":"apps/frontend/src/features/tables/column-resize.ts","lineStart":2,"lineEnd":43,"lang":"typescript","isImplemented":true,"snippet":"export function resizeColumns(weights: readonly number[], boundary: number, share: number): readonly number[] {\n\tif (weights.length < 2 || !Number.isInteger(boundary) || boundary < 0 || boundary >= weights.length - 1 ||\n\t\t!Number.isFinite(share) || weights.some(value => !Number.isFinite(value) || value <= 0 || value > 1000)) throw new Error('COLUMN_RESIZE');\n\tconst total = weights.reduce((sum, value) => sum + value, 0);\n\tconst pair = weights[boundary]! + weights[boundary + 1]!;\n\t// Preserve the generator's maximum weight while keeping both cells reachable.\n\tconst floor = Math.min(pair * 0.05, weights[boundary]!, weights[boundary + 1]!);\n\tconst minimum = Math.max(floor, pair - 1000);\n\tconst maximum = Math.min(pair - floor, 1000);\n\tconst left = Math.max(minimum, Math.min(maximum, weights[boundary]! + share * total));\n\tconst right = pair - left;\n\tconst next = [...weights];\n\t// Floating-point subtraction can round a very narrow positive column to zero.\n\t// Keep the original valid pair rather than make either adjacent column vanish.\n\tif (!Number.isFinite(left) || !Number.isFinite(right) || !(left > 0) || !(right > 0) || left > 1000 || right > 1000) {\n\t\tnext[boundary] = weights[boundary]!; next[boundary + 1] = weights[boundary + 1]!;\n\t} else {\n\t\tnext[boundary] = left; next[boundary + 1] = right;\n\t}\n\treturn Object.freeze(next);\n}\n\n/** One captured pointer. Movement always uses the start snapshot, avoiding cumulative drift. */\nexport class ColumnDrag {\n\tprivate current: { pointer: number; x: number; width: number; boundary: number; weights: readonly number[] } | null = null;\n\tbegin(pointer: number, x: number, width: number, boundary: number, weights: readonly number[]): boolean {\n\t\tif (this.current) return false;\n\t\tif (!Number.isSafeInteger(pointer) || !Number.isFinite(x) || !Number.isFinite(width) || width <= 0) return false;\n\t\tresizeColumns(weights, boundary, 0);\n\t\tthis.current = { pointer, x, width, boundary, weights: [...weights] }; return true;\n\t}\n\tmove(pointer: number, x: number): readonly number[] | null {\n\t\tconst current = this.current;\n\t\tif (!current || current.pointer !== pointer || !Number.isFinite(x)) return null;\n\t\treturn resizeColumns(current.weights, current.boundary, (x - current.x) / current.width);\n\t}\n\tend(pointer: number): boolean {\n\t\tif (!this.current || this.current.pointer !== pointer) return false;\n\t\tthis.current = null; return true;\n\t}\n\tcancel(): void { this.current = null; }\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/serializer/tableSerializer.ts","lineStart":30,"lineEnd":70,"lang":"typescript","isImplemented":true,"snippet":"};\n\nconst ACTIVE_STYLE = BORDERED;\n\ntype RowspanCoverage = Map<number, Map<number, { colspan: number }>>;\n\n/** Dispatch entry: only table_wrapper and table need real handling. */\nexport function serializeTable(node: Node, serializeNode: SerializeNodeFn): string {\n\tif (node.type.name === 'table_wrapper') return wrapper(node, serializeNode);\n\tif (node.type.name === 'table') return assembleTable(node, serializeNode);\n\tif (node.type.name === 'table_caption' || node.type.name === 'table_notes') return renderInline(node, serializeNode);\n\treturn ''; // rows/cells are consumed by their parents\n}\n\nfunction renderInline(node: Node, serializeNode: SerializeNodeFn): string {\n\tlet out = '';\n\tnode.forEach((child, _offset, index) => {\n\t\tout += serializeNode(child, { parent: node, index, isLastChild: index === node.childCount - 1, inTableCell: true });\n\t});\n\treturn out;\n}\n\nfunction childByType(node: Node, typeName: string): Node | null {\n\tlet found: Node | null = null;\n\tnode.forEach((c) => {\n\t\tif (!found && c.type.name === typeName) found = c;\n\t});\n\treturn found;\n}\n\nfunction wrapper(node: Node, serializeNode: SerializeNodeFn): string {\n\tconst captionNode = childByType(node, 'table_caption');\n\tconst tableNode = childByType(node, 'table');\n\tconst notesNode = childByType(node, 'table_notes');\n\n\tconst captionOpt = captionNode?.attrs.captionOpt != null ? `[${String(captionNode.attrs.captionOpt)}]` : '';\n\tconst caption = captionNode ? `\\\\caption${captionOpt}{${renderInline(captionNode, serializeNode)}}\\\\vspace{2mm}\\n` : '';\n\t// extra labels re-emit BEFORE the primary, matching source order (`label` holds the LAST\n\t// \\label found, so anything in extraLabels came before it).\n\tconst extraLabels =\n\t\ttypeof node.attrs.extraLabels === 'string' && node.attrs.extraLabels"}},{"id":"op-20","dimension":"維度 3：表格、程式碼塊與圖表工具操作","name":"表格框線樣式與 booktabs 注入","status":"操作升級/重構","definition":"切換表格框線風格（三線表、全框線、僅橫線），並原子化同步前言套件宣告之操作機制。","location":"新版：apps/frontend/src/features/tables/preamble.ts:44-62；舊版：apps/editor-legacy/src/lib/workspace/table-package-context.ts:30-70","purpose":"新版選擇 booktabs 時於單一交易中自動檢驗並注入 \\usepackage{booktabs}，全框線時自動計算垂直線寬補償量。舊版透過彈窗互動確認 ensureBooktabs，增加操作摩擦。","edgeCases":"單一儲存格長度上限 2048 字元，禁止內嵌換行與空字元；不符合預期語法的表格自動回退為 Raw 區塊安全保留。","newCode":{"file":"apps/frontend/src/features/tables/preamble.ts","lineStart":44,"lineEnd":62,"lang":"typescript","isImplemented":true,"snippet":"export function tableInsertionTransaction(state: EditorState, target: InsertionTarget, text: string, plan?: PackagePlan | null,\n\tvisual?: { readonly span: SourceSpan; readonly inlineOnly: boolean } | null) {\n\tif (visual) {\n\t\tconst captured = rangeInsertionTarget(state, visual.span);\n\t\tif (captured.from !== target.from || captured.to !== target.to || captured.documentId !== target.documentId || captured.version !== target.version) throw new Error('STALE_INSERTION');\n\t}\n\tif (!plan) return visual ? visualInsertionTransaction(state, visual.span, text, visual.inlineOnly) : insertionTransaction(state, target, text);\n\tconst source = state.field(sourceState).projection.document;\n\tif (target.documentId !== source.documentId || target.version !== source.version) throw new Error('STALE_INSERTION');\n\tconst packageTarget = rangeInsertionTarget(state, plan.span);\n\tconst expected = booktabsPlan(source, parseSource(source));\n\tif (!expected || plan.span.from !== expected.span.from || plan.span.to !== expected.span.to || plan.insert !== expected.insert || packageTarget.from >= target.from) throw new Error('PREAMBLE_RANGE');\n\t// Reuse the visual tool's exact boundary and readonly policy, but do not dispatch its intermediate state.\n\tconst table = visual ? visualInsertionTransaction(state, visual.span, text, visual.inlineOnly) : insertionTransaction(state, target, text);\n\tif (!table.docChanged) return table;\n\tconst changes: { from: number; to: number; insert: string }[] = [{ from: packageTarget.from, to: packageTarget.to, insert: plan.insert }];\n\ttable.changes.iterChanges((from, to, _newFrom, _newTo, value) => changes.push({ from, to, insert: value.toString() }));\n\treturn state.update({ changes, selection: { anchor: table.newSelection.main.head + plan.insert.length }, userEvent: 'input.tool' });\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/workspace/table-package-context.ts","lineStart":30,"lineEnd":70,"lang":"typescript","isImplemented":true,"snippet":"\nexport const TABLE_PACKAGE_CONTEXT = Symbol('modutex.table-package-requester');\n\nexport interface TablePackageCoordinatorHost {\n\tgetActivePath(): string | null;\n\tgetKind(): FileKind;\n\tgetView(): EditorView | null;\n\tgetViewMode(): 'visual' | 'source' | 'diff';\n\tafterPackageChange(): Promise<boolean>;\n\tonPackageError?(error: unknown): void;\n}\n\n/** One safe package decision shared by visual and source table insertion controls. */\nexport class TablePackageCoordinator implements TablePackageRequester {\n\tconstructor(\n\t\tprivate readonly document: DocumentBuffer,\n\t\tprivate readonly packagePrompt: PackagePromptController,\n\t\tprivate readonly host: TablePackageCoordinatorHost\n\t) {}\n\n\tasync ensureBooktabs(\n\t\tsignal: AbortSignal,\n\t\ttargetIsCurrent: (patch?: TablePackagePatchReceipt) => boolean\n\t): Promise<TablePackageGateLease | null> {\n\t\tif (get(isReadOnly) || signal.aborted) return null;\n\t\tconst path = this.document.path;\n\t\tconst kind = this.host.getKind();\n\t\tconst activePath = this.host.getActivePath();\n\t\tconst viewMode = this.host.getViewMode();\n\t\tconst view = this.host.getView();\n\t\tconst viewDoc = view?.state.doc ?? null;\n\t\tconst sourceBefore = this.document.texSource;\n\t\tlet expectedSource = sourceBefore;\n\t\tlet patchReceipt: TablePackagePatchReceipt | undefined;\n\t\tif (\n\t\t\t!path ||\n\t\t\t!activePath ||\n\t\t\t!samePath(path, activePath) ||\n\t\t\tkind !== 'tex' ||\n\t\t\tviewMode === 'diff' ||\n\t\t\t(viewMode === 'visual' && !view) ||"}},{"id":"op-21","dimension":"維度 3：表格、程式碼塊與圖表工具操作","name":"Code 儲存格 145 種語言目錄","status":"操作升級/重構","definition":"提供廣泛程式語言清單目錄，並映射至對應語法解析器與 LaTeX 參數之配置功能。","location":"新版：apps/frontend/src/features/code/source.ts:17-37；舊版：apps/editor-legacy/src/lib/editor/cmHighlight.ts:1-40","purpose":"新版整合 9 種主語言並動態納入 @codemirror/language-data 全部 145 種語言目錄，精確定義 lstlisting 參數。舊版僅支援有限的靜態語言高亮清單。","edgeCases":"未匹配語言自動降級為純文字 verbatim 環境；語言識別碼不分大小寫比對。","newCode":{"file":"apps/frontend/src/features/code/source.ts","lineStart":17,"lineEnd":37,"lang":"typescript","isImplemented":true,"snippet":"const PRIMARY_LANGUAGES = [\n\t['text', '純文字', 'Plain text', ''], ['python', 'Python', 'Python', 'Python'],\n\t['javascript', 'JavaScript', 'JavaScript', ''], ['typescript', 'TypeScript', 'TypeScript', ''],\n\t['c', 'C', 'C', 'C'], ['cpp', 'C++', 'C++', 'C++'], ['json', 'JSON', 'JSON', ''],\n\t['bash', 'Shell', 'Shell', 'bash'], ['sql', 'SQL', 'SQL', 'SQL']\n] as const;\ntype CodeLanguage = readonly [string, string, string, string];\nconst primaryNames = new Set(PRIMARY_LANGUAGES.map(entry => entry[2]));\nexport const CODE_LANGUAGES: readonly CodeLanguage[] = [\n\t...PRIMARY_LANGUAGES,\n\t['wsl', 'Shell（WSL）', 'Shell (WSL)', 'bash'],\n\t...languages.filter(entry => !primaryNames.has(entry.name as never)).map(entry => [\n\t\tentry.name.toLowerCase().replaceAll('+', 'plus').replaceAll('#', 'sharp').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''), entry.name, entry.name, ''\n\t] as CodeLanguage)\n];\n\nexport function codeLanguage(language = 'text') {\n\tconst entry = CODE_LANGUAGES.find(entry => entry[0] === language);\n\tif (!entry) throw new Error('CODE_LANGUAGE');\n\treturn entry;\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/cmHighlight.ts","lineStart":1,"lineEnd":40,"lang":"typescript","isImplemented":true,"snippet":"// The one highlight style every CodeMirror in the app shares - source editor, raw islands, code\n// blocks, diff panel - so LaTeX, Markdown and Typst colour the same construct the same way.\n//\n// The palette is hand-picked PER MODE (GitHub Primer hues) instead of the old\n// defaultHighlightStyle-plus-auto-brightener: every colour here clears ~5:1 contrast on the light\n// surface and ~7:1 on the dark one, and each semantic role keeps the same hue family across modes\n// so a file reads the same in both. Swapped via a Compartment when the resolved mode changes.\nimport { Compartment, type Extension } from '@codemirror/state';\nimport { EditorView, ViewPlugin } from '@codemirror/view';\nimport { syntaxHighlighting, HighlightStyle } from '@codemirror/language';\nimport { tags, type Tag } from '@lezer/highlight';\nimport { get } from 'svelte/store';\nimport { resolvedMode } from '$lib/theme';\n\ninterface Role {\n\ttag: Tag | readonly Tag[];\n\t/** light-mode / dark-mode colour; omitted = default text colour (font-only role) */\n\tlight?: string;\n\tdark?: string;\n\tfontWeight?: string;\n\tfontStyle?: string;\n\ttextDecoration?: string;\n}\n\n// One row per semantic role. The tags cover what our three dialects emit: the LaTeX mode's\n// tokenTable, typst-syntax-wasm's styleTags, @lezer/markdown, and the BibTeX mode - sub-tags\n// (integer under number, controlKeyword under keyword, heading1-6 under heading) inherit.\nconst roles: Role[] = [\n\t// grey italic: comments, shebangs, raw-language annotations, md metadata\n\t{ tag: [tags.comment, tags.meta, tags.documentMeta, tags.annotation], light: '#59636e', dark: '#9198a1', fontStyle: 'italic' },\n\t// red: keywords of every kind (control flow, let/set/show, and/or via tag inheritance),\n\t// math delimiters (LaTeX \\[ $ / typst # $), and escapes\n\t{ tag: [tags.keyword, tags.escape], light: '#cf222e', dark: '#ff7b72' },\n\t// purple: imports (\\usepackage, #import) - set off from other keywords like VS Code does\n\t{ tag: tags.moduleKeyword, light: '#8250df', dark: '#d2a8ff' },\n\t// blue: each dialect's syntax carrier, ONE hue across all three - LaTeX \\commands and \\item,\n\t// typst #func(), = and list markers, md's #/>/-/``` marks, bib fields. This is what makes the\n\t// three dialects read as one theme: LaTeX is carried by macros where md/typst are carried by\n\t// markers, so splitting those into two hues made the files look unrelated.\n\t// NO tags.list here: md's list rule covers the whole list SUBTREE (item text included), so a"}},{"id":"op-22","dimension":"維度 3：表格、程式碼塊與圖表工具操作","name":"Code 儲存格延遲語法高亮","status":"操作升級/重構","definition":"程式碼區塊之非同步延遲載入語法高亮渲染機制，兼顧初次呈現速度與安全保護。","location":"新版：apps/frontend/src/features/code/highlight.ts:5-21；舊版：apps/editor-legacy/src/lib/editor/cmHighlight.ts:51-85","purpose":"新版先以 textContent 提供即時無阻塞顯示，隨後非同步載入 Lezer 語言解析器，以 DocumentFragment 節點安全替換防範 XSS，支援取消清理。舊版在編輯器載入時全量同步初始化解析器。","edgeCases":"快速切換語言或銷毀元件時自動調用取消函式，中止尚未完成之語法解析。","newCode":{"file":"apps/frontend/src/features/code/highlight.ts","lineStart":5,"lineEnd":21,"lang":"typescript","isImplemented":true,"snippet":"export function highlightCode(host: HTMLElement, code: string, language: string): () => void {\n\tlet cancelled = false;\n\thost.textContent = code;\n\tconst aliases: Record<string, string> = { cpp: 'C++', bash: 'Shell', wsl: 'Shell' };\n\tconst description = languages.find(entry => entry.name.toLowerCase() === (aliases[language] ?? language).toLowerCase()\n\t\t|| entry.name.toLowerCase().replaceAll('+', 'plus').replaceAll('#', 'sharp').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') === language);\n\tif (description) void description.load().then(support => {\n\t\tif (cancelled) return;\n\t\tconst fragment = host.ownerDocument.createDocumentFragment(); let position = 0;\n\t\thighlightTree(support.language.parser.parse(code), classHighlighter, (from, to, classes) => {\n\t\t\tif (from > position) fragment.append(code.slice(position, from));\n\t\t\tconst token = host.ownerDocument.createElement('span'); token.className = classes; token.textContent = code.slice(from, to); fragment.append(token); position = to;\n\t\t});\n\t\tfragment.append(code.slice(position)); if (!cancelled) host.replaceChildren(fragment);\n\t}).catch(() => { /* Keep the literal text available if a language chunk cannot load. */ });\n\treturn () => { cancelled = true; };\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/cmHighlight.ts","lineStart":51,"lineEnd":85,"lang":"typescript","isImplemented":true,"snippet":"\t// every smart quote in prose with it, so any colour here paints body text\n\t{ tag: tags.special(tags.string), light: '#116329', dark: '#7ee787' },\n\t{ tag: tags.labelName, light: '#116329', dark: '#7ee787' },\n\t// orange: environment names and types, and all literals (numbers, bools, none/auto)\n\t{ tag: [tags.className, tags.typeName], light: '#953800', dark: '#ffa657' },\n\t{ tag: [tags.number, tags.bool, tags.literal, tags.atom], light: '#953800', dark: '#ffa657' },\n\t// dark blue: strings\n\t{ tag: tags.string, light: '#0a3069', dark: '#a5d6ff' },\n\t// headings: bold in the DEFAULT text colour, all three dialects. The colour stays on the\n\t// marker (\\section, =, #): the title is the document's own text, not syntax\n\t{ tag: tags.heading, fontWeight: 'bold' },\n\t// url gets the colour; link is underline-ONLY because md's Link rule spans the whole link\n\t// subtree, text included - colouring it painted \"[Inline link]\" instead of just the URL\n\t{ tag: tags.url, light: '#0969da', dark: '#58a6ff', textDecoration: 'underline' },\n\t{ tag: tags.link, textDecoration: 'underline' },\n\t// amber: inline code / verbatim / raw\n\t{ tag: tags.monospace, light: '#7d4e00', dark: '#e3b341' },\n\t// pink: separators (\\\\, ---, linebreaks) and operators (&, ^, _)\n\t{ tag: [tags.contentSeparator, tags.operator], light: '#bf3989', dark: '#f778ba' },\n\t// font-only roles\n\t{ tag: tags.emphasis, fontStyle: 'italic' },\n\t{ tag: tags.strong, fontWeight: 'bold' },\n\t{ tag: tags.strikethrough, textDecoration: 'line-through' },\n\t// diffs and errors\n\t{ tag: tags.inserted, light: '#116329', dark: '#7ee787' },\n\t{ tag: [tags.deleted, tags.invalid], light: '#82071e', dark: '#ffa198' }\n];\n\nfunction specsFor(mode: 'light' | 'dark') {\n\treturn roles.map(({ tag, light, dark, fontWeight, fontStyle, textDecoration }) => {\n\t\tconst color = mode === 'dark' ? dark : light;\n\t\treturn {\n\t\t\ttag: tag as Tag | Tag[],\n\t\t\t...(color ? { color } : {}),\n\t\t\t...(fontWeight ? { fontWeight } : {}),"}},{"id":"op-23","dimension":"維度 3：表格、程式碼塊與圖表工具操作","name":"Code verbatim 逃逸與 1MB 上限","status":"操作升級/重構","definition":"防止程式碼內容破壞外層 LaTeX 環境之邊界過濾與容量上限防護機制。","location":"新版：apps/frontend/src/features/code/source.ts:50-65；舊版：apps/editor-legacy/src/lib/serializer/latexSerializer.ts:110-140","purpose":"新版設定 1MB 承載上限，偵測空字元立即報錯，檢測內含 \\end{verbatim} 或 \\end{lstlisting} 結束標記立即拋出 CODE_END_DELIMITER 拒絕序列化。舊版直接將字串包覆輸出，缺乏結束標記逃逸防護。","edgeCases":"反向解析遭遇未受控參數時安全回退為 Raw LaTeX，防止原始碼被破壞。","newCode":{"file":"apps/frontend/src/features/code/source.ts","lineStart":50,"lineEnd":65,"lang":"typescript","isImplemented":true,"snippet":"export function codeSource(code: string, starred = false, language = 'text'): string {\n\tconst selected = codeLanguage(language);\n\tif (typeof code !== 'string' || code.length > 1048576 || code.includes('\\0')) {\n\t\tthrow new Error('CODE_SOURCE');\n\t}\n\t// 內建 verbatim 在語法上無法跳脫 \\end{verbatim}，禁止內嵌結束標記\n\tif (/\\\\end\\{(?:verbatim\\*?|lstlisting)\\}/.test(code)) {\n\t\tthrow new Error('CODE_END_DELIMITER');\n\t}\n\tconst normalized = code.replace(/\\r\\n|\\r/g, '\\n');\n\tconst env = language === 'text' ? (starred ? 'verbatim*' : 'verbatim') : 'lstlisting';\n\tconst options = env === 'lstlisting' ? `[language=${selected[3]},name=${selected[0]}]` : '';\n\t// LaTeX verbatim 會自動吸收 \\begin{verbatim} 緊接的首個換行符；確保結尾換行使 \\end{verbatim} 位於新行\n\tconst body = normalized.endsWith('\\n')\n\t\t? normalized\n\t\t: (normalized.length > 0 ? normalized + '\\n' : '');"},"legacyCode":{"file":"apps/editor-legacy/src/lib/serializer/latexSerializer.ts","lineStart":110,"lineEnd":140,"lang":"typescript","isImplemented":true,"snippet":"\tconst children: Node[] = [];\n\tnode.forEach((child) => children.push(child));\n\n\t// adjacent inline children with the EXACT same marks serialize as ONE wrapped run. PM auto-\n\t// merges identical text nodes, but atom leaves never merge, so \\texttt{A\\ B} parses to three\n\t// same-marked nodes and would serialize as three separate \\texttt{} calls: pointless churn\n\t// that multiplies per chip.\n\tconst pieces: string[] = [];\n\tlet i = 0;\n\twhile (i < children.length) {\n\t\tconst marks = markableMarks(children[i]);\n\t\tlet j = i + 1;\n\t\tif (marks && marks.length > 0) {\n\t\t\tconst key = marksKey(marks);\n\t\t\twhile (j < children.length) {\n\t\t\t\tconst nextMarks = markableMarks(children[j]);\n\t\t\t\tif (!nextMarks || marksKey(nextMarks) !== key) break;\n\t\t\t\tj++;\n\t\t\t}\n\t\t}\n\t\tif (j === i + 1) {\n\t\t\tpieces.push(serializeNode(children[i], { parent: node, index: i, isLastChild: i === children.length - 1, inTableCell }));\n\t\t} else {\n\t\t\tlet inner = '';\n\t\t\tfor (let k = i; k < j; k++) inner += serializeBare(children[k]);\n\t\t\tpieces.push(applyMarks(inner, marks as readonly Mark[]));\n\t\t}\n\t\ti = j;\n\t}\n\n\tlet out = '';"}},{"id":"op-24","dimension":"維度 3：表格、程式碼塊與圖表工具操作","name":"Draw.io 圖表嵌入與訊息橋接","status":"舊版具備但新版尚未實作","definition":"在編輯器中內嵌 Draw.io 繪圖介面，透過安全 PostMessage 協議傳輸圖檔與重新關聯之流程。","location":"新版：packages/frontend-contracts/src/types.ts:94-110（合約層邊界，前端尚未實作）；舊版：apps/editor-legacy/src/lib/diagram/client.ts:18-35","purpose":"舊版建立隔離通訊工作階段，以 32 位元組隨機 Nonce 驗證來源，支援向量 SVG/PDF 匯出與 Relink 重新關聯。新版架構於合約與後端保留協定，前端操作介面尚未實作。","edgeCases":"舊版通訊設有超時時限，iframe 重複導航立即中斷工作階段；檔案大小限制為 10MB。","newCode":{"file":"packages/frontend-contracts/src/types.ts","lineStart":94,"lineEnd":110,"lang":"typescript","isImplemented":false,"snippet":"export interface DesktopPort {\n\topenWorkspace(kind: 'folder' | 'file'): Promise<WorkspaceInfo | null>;\n\tlistRecent(): Promise<readonly RecentDocument[]>;\n\topenRecent(id: string): Promise<WorkspaceInfo>;\n\tremoveRecent(id: string): Promise<void>;\n\tlistFiles(workspaceId: string): Promise<readonly FileEntry[]>;\n\treadFile(file: FileRef): Promise<ReadReceipt>;\n\twriteFile(request: WriteRequest): Promise<WriteReceipt>;\n\tsaveAs(request: SaveAsRequest): Promise<SaveAsReceipt | null>;\n\twatchFiles(\n\t\tworkspaceId: string,\n\t\tlistener: (event: FileEvent) => void,\n\t\tonError?: (failure: FileWatchFailure) => void\n\t): Promise<Unsubscribe>;\n\tcompile(request: CompileRequest): Promise<CompileHandle>;\n\tcloseWorkspace(workspaceId: string): Promise<void>;\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/diagram/client.ts","lineStart":18,"lineEnd":35,"lang":"typescript","isImplemented":true,"snippet":"export interface DiagramBridge {\n\tdiagramRead(request: DiagramReadRequest): Promise<DiagramReadResult>;\n\tdiagramStatus(request: DiagramReadRequest): Promise<DiagramBundleStatusResult>;\n\tdiagramWrite(request: DiagramWriteRequest): Promise<unknown>;\n\tdiagramRelink(request: DiagramRelinkRequest): Promise<DiagramRelinkResult | null>;\n\tdiagramRenderPdf(request: DiagramPdfRequest): Promise<DiagramPdfResult>;\n\tdiagramCancelPdf?(request: DiagramPdfCancelRequest): Promise<DiagramPdfCancelResult>;\n\tdiagramPrepareDrawioVector?(request: { xml: string }): Promise<{ xml: string }>;\n}\n\nexport interface DiagramPdfReceipt {\n\toutputRelPath: string;\n\tsvgRelPath: string;\n\tsourceSha256: string;\n\tsvgSha256: string;\n\tpdfSha256: string;\n}\n"}},{"id":"op-25","dimension":"維度 3：表格、程式碼塊與圖表工具操作","name":"Mermaid 圖表嵌入與即時渲染","status":"舊版具備但新版尚未實作","definition":"輸入 Mermaid 文字語法即時呈現向量圖表，並整合至編譯管線之圖表操作流程。","location":"新版：packages/frontend-contracts/src/types.ts:94-110（前端尚未實作）；舊版：apps/editor-legacy/src/lib/diagram/client.ts:44-75","purpose":"舊版於合約層與後端保留 .mmd 檔案關聯與 1MB 上限檢查，前端介面層阻擋 Mermaid 彈窗互動。新版前端目前尚未實作 Mermaid 編輯器與即時 SVG 預覽面板。","edgeCases":"舊版限制 Mermaid 來源檔案上限為 1MB，超過即拋出 PAYLOAD_TOO_LARGE。","newCode":{"file":"packages/frontend-contracts/src/types.ts","lineStart":94,"lineEnd":110,"lang":"typescript","isImplemented":false,"snippet":"export interface DesktopPort {\n\topenWorkspace(kind: 'folder' | 'file'): Promise<WorkspaceInfo | null>;\n\tlistRecent(): Promise<readonly RecentDocument[]>;\n\topenRecent(id: string): Promise<WorkspaceInfo>;\n\tremoveRecent(id: string): Promise<void>;\n\tlistFiles(workspaceId: string): Promise<readonly FileEntry[]>;\n\treadFile(file: FileRef): Promise<ReadReceipt>;\n\twriteFile(request: WriteRequest): Promise<WriteReceipt>;\n\tsaveAs(request: SaveAsRequest): Promise<SaveAsReceipt | null>;\n\twatchFiles(\n\t\tworkspaceId: string,\n\t\tlistener: (event: FileEvent) => void,\n\t\tonError?: (failure: FileWatchFailure) => void\n\t): Promise<Unsubscribe>;\n\tcompile(request: CompileRequest): Promise<CompileHandle>;\n\tcloseWorkspace(workspaceId: string): Promise<void>;\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/diagram/client.ts","lineStart":44,"lineEnd":75,"lang":"typescript","isImplemented":true,"snippet":"export type DiagramRelinkBridge = Pick<DiagramBridge, 'diagramRelink'>;\n\nconst UUID_SOURCE = '[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';\nconst SOURCE = new RegExp(`^assets/diagrams/[a-z0-9]+(?:-[a-z0-9]+)*-(${UUID_SOURCE})\\\\.(mmd|drawio)$`);\nconst SHA256 = /^[0-9a-f]{64}$/;\n\nfunction parseRelinkResult(type: DiagramType, value: unknown): DiagramRelinkResult & { id: string } {\n\tif (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_RELINK_RESULT');\n\tconst result = value as Record<string, unknown>;\n\tif (Object.keys(result).sort().join(',') !== 'content,mtimeMs,relativePath,sha256,size') {\n\t\tthrow new Error('INVALID_RELINK_RESULT');\n\t}\n\tconst match = typeof result.relativePath === 'string' ? SOURCE.exec(result.relativePath) : null;\n\tconst expectedExtension = type === 'mermaid' ? 'mmd' : 'drawio';\n\tif (\n\t\t!match ||\n\t\tmatch[2] !== expectedExtension ||\n\t\ttypeof result.content !== 'string' ||\n\t\tresult.content.length === 0 ||\n\t\ttypeof result.sha256 !== 'string' ||\n\t\t!SHA256.test(result.sha256) ||\n\t\ttypeof result.mtimeMs !== 'number' ||\n\t\t!Number.isFinite(result.mtimeMs) ||\n\t\tresult.mtimeMs < 0 ||\n\t\ttypeof result.size !== 'number' ||\n\t\t!Number.isSafeInteger(result.size) ||\n\t\tresult.size <= 0 ||\n\t\tnew TextEncoder().encode(result.content).byteLength !== result.size\n\t) {\n\t\tthrow new Error('INVALID_RELINK_RESULT');\n\t}\n\treturn { ...(result as unknown as DiagramRelinkResult), id: match[1]! };"}},{"id":"op-26","dimension":"維度 4：工作台、檔案系統與編譯預覽互動","name":"檔案樹目錄導覽與手風琴展開","status":"操作升級/重構","definition":"在工作台側邊欄呈現專案檔案階層，支援目錄展開折疊與路徑點擊開啟之導覽功能。","location":"新版：apps/frontend/src/components/FileTree.svelte:24-56；舊版：apps/editor-legacy/src/lib/editor/comp/FileTree.svelte:120-160","purpose":"新版以 88 行輕量架構，透過原生 details 與 summary 搭配遞迴 snippet 展開，排序目錄優先。舊版長達 909 行，包含 Git 變更標籤、拖曳移動與複雜圖示組件。","edgeCases":"扁平陣列上限支援 4096 筆項目；自動為深層巢狀路徑合成虛擬目錄節點。","newCode":{"file":"apps/frontend/src/components/FileTree.svelte","lineStart":24,"lineEnd":56,"lang":"svelte","isImplemented":true,"snippet":"\tconst children = $derived.by(() => {\n\t\tconst unique = new Map<string, FileEntry>();\n\t\tfor (const entry of entries) {\n\t\t\tunique.set(entry.path, entry);\n\t\t\tconst parts = entry.path.split('/');\n\t\t\tfor (let length = 1; length < parts.length; length++) {\n\t\t\t\tconst path = parts.slice(0, length).join('/');\n\t\t\t\tif (!unique.has(path)) unique.set(path, { path, kind: 'directory' });\n\t\t\t}\n\t\t}\n\t\tconst tree = new Map<string, FileEntry[]>();\n\t\tfor (const entry of unique.values()) {\n\t\t\tconst parent = entry.path.slice(0, Math.max(0, entry.path.lastIndexOf('/')));\n\t\t\tconst siblings = tree.get(parent) ?? []; siblings.push(entry); tree.set(parent, siblings);\n\t\t}\n\t\tfor (const siblings of tree.values()) siblings.sort((a, b) => a.kind !== b.kind ? a.kind === 'directory' ? -1 : 1 : a.path.localeCompare(b.path));\n\t\treturn tree;\n\t});\n<\/script>\n\n<svelte:window onclick={(event) => { if (menu && !menuElement?.contains(event.target as Node)) closeMenu(); }} onkeydown={(event) => { if (menu && event.key === 'Escape') { event.preventDefault(); closeMenu(true); } }} onresize={() => closeMenu()} />\n\n{#snippet branch(parent: string, depth: number)}\n\t{#each children.get(parent) ?? [] as entry (entry.path)}\n\t\t{#if entry.kind === 'directory'}\n\t\t\t<details class=\"tree-folder\" open={depth === 0}>\n\t\t\t\t<summary style:padding-left={`${8 + depth * 14}px`}>\n\t\t\t\t\t<svg class=\"tree-chevron\" viewBox=\"0 0 20 20\" aria-hidden=\"true\"><path d=\"m7 4 6 6-6 6\" /></svg>\n\t\t\t\t\t<svg class=\"tree-icon\" viewBox=\"0 0 20 20\" aria-hidden=\"true\"><path d=\"M2 5h6l2 2h8v10H2Z\" /></svg>\n\t\t\t\t\t<span title={entry.path}>{entry.path.split('/').at(-1)}</span>\n\t\t\t\t</summary>\n\t\t\t\t{@render branch(entry.path, depth + 1)}\n\t\t\t</details>"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/comp/FileTree.svelte","lineStart":120,"lineEnd":160,"lang":"svelte","isImplemented":true,"snippet":"\n\t// ---- selection (ctrl/cmd toggles, shift ranges over the visible order) ----\n\tlet selected = $state<string[]>([]);\n\n\t// The tree's SELECTION is its own state, separate from which file is open: clicking a row\n\t// leaves it selected (grey) so the context menu and multi-file drag have something to act on.\n\t// But changing file from anywhere else -- the tab bar, Ctrl+K, a SyncTeX jump -- left that grey\n\t// behind on the row you last clicked, which reads as a hover stuck under a cursor that moved\n\t// away long ago. Drop it, unless the newly opened file is itself in the selection: a plain row\n\t// click selects and opens in one gesture, and that selection has to survive its own open.\n\t$effect(() => {\n\t\tconst a = activePath;\n\t\tif (!a) return;\n\t\tuntrack(() => {\n\t\t\tif (!selected.some((p) => samePath(p, a))) selected = [];\n\t\t});\n\t});\n\tlet anchorPath: string | null = null; // shift-range pivot; the last plain/ctrl-clicked row\n\n\t/** the tree in on-screen order, honouring which folders are expanded (shift-range domain). */\n\tfunction flattenVisible(entries: TreeEntry[] = tree, out: TreeEntry[] = []): TreeEntry[] {\n\t\tfor (const e of entries) {\n\t\t\tout.push(e);\n\t\t\tif (e.type === 'dir' && expanded[e.path]) flattenVisible(e.children ?? [], out);\n\t\t}\n\t\treturn out;\n\t}\n\tfunction findEntry(path: string, entries: TreeEntry[] = tree): TreeEntry | null {\n\t\tfor (const e of entries) {\n\t\t\tif (e.path === path) return e;\n\t\t\tif (e.type === 'dir') {\n\t\t\t\tconst hit = findEntry(path, e.children ?? []);\n\t\t\t\tif (hit) return hit;\n\t\t\t}\n\t\t}\n\t\treturn null;\n\t}\n\t/** the selected entries with nested ones pruned: moving/deleting a folder covers its children,\n\t *  and handling a child separately after its parent moved would act on a dead path. */\n\tfunction selectedEntries(): TreeEntry[] {\n\t\tconst paths = selected.filter((p) => !selected.some((other) => other !== p && isInside(p, other)));"}},{"id":"op-27","dimension":"維度 4：工作台、檔案系統與編譯預覽互動","name":"檔案右鍵選單","status":"操作升級/重構","definition":"在檔案樹節點上觸發上下文功能表，提供開啟、編譯 PDF 與複製相對路徑等動作之互動機制。","location":"新版：apps/frontend/src/components/FileTree.svelte:10-23；舊版：apps/editor-legacy/src/lib/editor/comp/FileTree.svelte:350-390","purpose":"新版右鍵選單計算座標時嚴格限制於可視邊界內，提供開啟、編譯 PDF 與複製路徑功能，開啟後自動聚焦首個按鈕。舊版為多層巢狀重型選單，包含刪除、重命名與 Git 操作。","edgeCases":"視窗縮放或點擊外部時選單自動關閉；按下 Escape 鍵關閉選單並精確還原觸發元素焦點。","newCode":{"file":"apps/frontend/src/components/FileTree.svelte","lineStart":10,"lineEnd":23,"lang":"svelte","isImplemented":true,"snippet":"\tasync function openMenu(event: MouseEvent, path: string) {\n\t\tevent.preventDefault();\n\t\tconst target = event.currentTarget as HTMLButtonElement, rect = target.getBoundingClientRect();\n\t\tmenu = { path, target, x: Math.max(0, Math.min(event.clientX || rect.left, window.innerWidth - 220)), y: Math.max(0, Math.min(event.clientY || rect.bottom, window.innerHeight - 132)) };\n\t\tawait tick(); menuElement?.querySelector<HTMLButtonElement>('button')?.focus();\n\t}\n\tfunction closeMenu(restore = false) { const target = menu?.target; menu = null; if (restore) target?.focus(); }\n\tasync function act(action: 'open' | 'compile' | 'copy') {\n\t\tconst path = menu?.path; closeMenu(true); if (!path) return;\n\t\tif (action === 'open') await onOpen(path);\n\t\telse if (action === 'compile') await onCompile?.(path);\n\t\telse try { await navigator.clipboard.writeText(path); notice = t('已複製相對路徑', 'Relative path copied'); }\n\t\tcatch { notice = t('無法複製路徑', 'Could not copy the path'); }\n\t}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/comp/FileTree.svelte","lineStart":350,"lineEnd":390,"lang":"svelte","isImplemented":true,"snippet":"\t// A pasted screenshot arrives as a nameless \"image.png\"; give it a recognizable name.\n\tfunction onPaste(e: ClipboardEvent) {\n\t\tif (!allowImport || !onImport) return;\n\t\tconst el = e.target as HTMLElement | null;\n\t\tif (el?.closest('input, textarea, [contenteditable=\"true\"], [contenteditable=\"\"]')) return;\n\t\tconst files = [...(e.clipboardData?.files ?? [])];\n\t\tif (!files.length) return;\n\t\te.preventDefault();\n\t\tconst items = files.map((f, i) => {\n\t\t\tlet name = f.name || 'pasted-image.png';\n\t\t\tif (/^image\\.(png|jpe?g|gif|webp)$/i.test(name)) name = name.replace(/^image/i, 'pasted-image');\n\t\t\tif (files.length > 1 && files.every((x) => x.name === files[0].name)) name = name.replace(/(\\.[^.]+)$/, `-${i + 1}$1`);\n\t\t\treturn { relPath: name, file: f };\n\t\t});\n\t\tonImport(items, pasteTargetDir());\n\t}\n\n\t// ---- copy / paste WITHIN the tree ----\n\t// Its own clipboard of absolute paths, not the OS one. Reading real file paths back out of a\n\t// system clipboard is not something a renderer can do, and putting the BYTES on it would mean\n\t// loading every selected file into memory to copy a folder. Paste reuses onCopyIn, which is the\n\t// same fs-side recursive copy a drag from another window already performs.\n\tlet clipboard = $state<string[]>([]);\n\tconst canPaste = $derived(clipboard.length > 0 && !!onCopyIn);\n\n\tfunction copySelection() {\n\t\tconst paths = selectedEntries().map((e) => e.path);\n\t\tif (!paths.length) return;\n\t\tclipboard = paths;\n\t\ttoaster.success({\n\t\t\ttitle:\n\t\t\t\tpaths.length === 1 ? m.filetree_toast_copied_one({ count: paths.length }) : m.filetree_toast_copied_other({ count: paths.length })\n\t\t});\n\t}\n\n\tfunction pasteClipboard(targetDir = pasteTargetDir()) {\n\t\t// the same containment rule the drop path applies: a folder cannot be pasted into itself\n\t\tconst safe = clipboard.filter((p) => targetDir !== p && !isInside(targetDir, p));\n\t\tif (safe.length) onCopyIn?.(safe, targetDir);\n\t}\n"}},{"id":"op-28","dimension":"維度 4：工作台、檔案系統與編譯預覽互動","name":"大綱導覽（Table of Contents）","status":"操作升級/重構","definition":"解析 LaTeX 章節標題，於側邊欄呈階梯式目錄並支援點擊跳轉至原始碼或視覺位置之導覽功能。","location":"新版：apps/frontend/src/features/source-editor/outline.ts:5-22；舊版：apps/editor-legacy/src/lib/editor/comp/TableOfContents.svelte:15-55","purpose":"新版直接複用 AST 語法投影節點，省去重複解析開銷；標題上限 160 字元並具備 UTF-16 代理對邊界保護；跳轉遭遇視覺樹無法呈現時自動切換至原始碼模式。舊版使用分離的雙軌 TOC store 分別維護。","edgeCases":"投影狀態過期或檔案儲存中時大綱按鈕安全禁用；具備 4 種清晰的大綱狀態文字反饋。","newCode":{"file":"apps/frontend/src/features/source-editor/outline.ts","lineStart":5,"lineEnd":22,"lang":"typescript","isImplemented":true,"snippet":"export function sourceOutline(source: SourceDocument, projection: SourceProjection): readonly OutlineEntry[] {\n\tif (!projectionIsCurrent(source, projection)) throw new Error('STALE_OUTLINE');\n\tconst body = projection.nodes.find((node) => node.kind === 'environment' && node.name === 'document');\n\tconst pending = [...(body?.children ?? projection.nodes)].reverse(), entries: OutlineEntry[] = [];\n\twhile (pending.length) {\n\t\tconst node = pending.pop()!;\n\t\tif (node.kind === 'heading' && node.content) {\n\t\t\tlet end = Math.min(node.content.to, node.content.from + 160), label: string;\n\t\t\ttry { label = source.read(node.content.from, end); }\n\t\t\tcatch { end--; label = source.read(node.content.from, end); } // Avoid cutting a UTF-16 surrogate pair at the preview boundary.\n\t\t\tlabel = label.replace(/\\s+/g, ' ').trim();\n\t\t\tif (end < node.content.to) label += '…';\n\t\t\tentries.push(Object.freeze({ label: label || '未命名章節', span: node.span,\n\t\t\t\tlevel: ({ title: 0, section: 0, subsection: 1, subsubsection: 2 } as Record<string, number>)[node.name.replace(/\\*$/, '')] ?? 0 }));\n\t\t} else pending.push(...[...node.children].reverse());\n\t}\n\treturn Object.freeze(entries);\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/comp/TableOfContents.svelte","lineStart":15,"lineEnd":55,"lang":"svelte","isImplemented":true,"snippet":"\t\t\tonOpenFile(item.file, item.line ?? 1);\n\t\t\treturn;\n\t\t}\n\t\tif (mode === 'source') {\n\t\t\tconst view = $sourceCmView;\n\t\t\tif (!view) return;\n\t\t\tconst p = Math.min(item.pos, view.state.doc.length);\n\t\t\tview.dispatch({ selection: { anchor: p }, effects: EditorView.scrollIntoView(p, { y: 'start', yMargin: 20 }) });\n\t\t\tview.focus();\n\t\t} else {\n\t\t\tconst view = $editorViewStore;\n\t\t\tif (!view) return;\n\t\t\tconst sel = TextSelection.near(view.state.doc.resolve(Math.min(item.pos + 1, view.state.doc.content.size)));\n\t\t\tview.dispatch(view.state.tr.setSelection(sel).scrollIntoView());\n\t\t\tview.focus();\n\t\t}\n\t}\n\n\tfunction display(item: TocItem): string {\n\t\tconst text = (item.text || '').slice(0, 80);\n\t\tif (item.kind === 'figure') return `${m.toc_label_figure()} ${item.number ?? ''}${text ? `: ${text}` : ''}`;\n\t\tif (item.kind === 'table') return `${m.toc_label_table()} ${item.number ?? ''}${text ? `: ${text}` : ''}`;\n\t\tif (item.kind === 'frame') return text || m.toc_label_frame();\n\t\treturn item.number ? `${item.number}  ${text || m.toc_label_untitled()}` : text || m.toc_label_untitled();\n\t}\n<\/script>\n\n<nav class=\"text-sm\">\n\t<div class=\"text-surface-400 mb-2 text-xs font-semibold tracking-wide uppercase\">{m.toc_heading()}</div>\n\t{#if items.length === 0}\n\t\t<p class=\"text-surface-400 text-xs\">{m.toc_empty()}</p>\n\t{:else}\n\t\t<div class=\"flex flex-col gap-0.5\">\n\t\t\t{#each items as item, i (i)}\n\t\t\t\t<button\n\t\t\t\t\ttype=\"button\"\n\t\t\t\t\tclass=\"text-surface-600-300 hover:text-primary-600 block w-full max-w-full truncate rounded-base px-1 py-0.5 text-left transition-colors {item.kind\n\t\t\t\t\t\t? 'opacity-80'\n\t\t\t\t\t\t: ''}\"\n\t\t\t\t\tstyle=\"padding-left: {(Math.max(1, item.level) - 1) * 0.7 + 0.25}rem\"\n\t\t\t\t\ttitle={item.text}"}},{"id":"op-29","dimension":"維度 4：工作台、檔案系統與編譯預覽互動","name":"儲存管線與修訂版本衝突保護","status":"操作流程改變","definition":"觸發文件存檔並透過內容指紋檢驗磁碟修訂版本，防範外部覆寫衝突之安全儲存流程。","location":"新版：apps/frontend/src/features/files/desktop.ts:60-95；舊版：apps/editor-legacy/src/lib/workspace/savePipeline.svelte.ts:28-70","purpose":"新版攜帶 expectedRevision 版本指紋，後端建立臨時檔同步寫入並比對 inode/mtime，原子性重命名防搶寫；外部變更以橫幅通知提供保護。舊版採用防抖自動覆寫與衝突彈窗。","edgeCases":"寫入嚴格限定 .tex 副檔名；禁止符號連結防範路徑遍歷；暫存檔與目標位於同目錄保證重命名原子性。","newCode":{"file":"apps/frontend/src/features/files/desktop.ts","lineStart":60,"lineEnd":95,"lang":"typescript","isImplemented":true,"snippet":"export function desktopFiles(signal?: AbortSignal): FileDesktopPort | null {\n\tconst native = (window as Window & { modutexFiles?: NativeFiles }).modutexFiles;\n\tif (!native) return null;\n\tconst assertActive = () => { if (signal?.aborted) throw new Error('STALE_WORKSPACE'); };\n\tinterface LocalWatch {\n\t\treadonly workspaceId: string;\n\t\treadonly subscriptionId: string;\n\t\tactive: boolean;\n\t\tdisposed: boolean;\n\t\tstartRequested: boolean;\n\t\tfailure: FileWatchFailure | null;\n\t\tsuppressFailure: boolean;\n\t\tremoveEvent: () => void;\n\t\tremoveError: () => void;\n\t\tabort?: () => void;\n\t\tstopping: Promise<void> | null;\n\t}\n\tconst watches = new Set<LocalWatch>();\n\tconst disposeWatch = (watch: LocalWatch, suppressFailure = true): Promise<void> => {\n\t\tif (suppressFailure) watch.suppressFailure = true;\n\t\tif (watch.disposed) return watch.stopping ?? Promise.resolve();\n\t\twatch.disposed = true;\n\t\twatch.active = false;\n\t\twatches.delete(watch);\n\t\twatch.removeEvent();\n\t\twatch.removeError();\n\t\tif (watch.abort) signal?.removeEventListener('abort', watch.abort);\n\t\twatch.stopping = watch.startRequested\n\t\t\t? Promise.resolve().then(() => native.stopWatch(watch.subscriptionId)).then(() => {}, () => {})\n\t\t\t: Promise.resolve();\n\t\treturn watch.stopping;\n\t};\n\tconst stopWorkspaceWatches = async (workspaceId: string): Promise<void> => {\n\t\tawait Promise.all([...watches].filter((watch) => watch.workspaceId === workspaceId)\n\t\t\t.map((watch) => disposeWatch(watch)));\n\t};"},"legacyCode":{"file":"apps/editor-legacy/src/lib/workspace/savePipeline.svelte.ts","lineStart":28,"lineEnd":70,"lang":"typescript","isImplemented":true,"snippet":"export class SavePipeline {\n\tsaving = $state(false);\n\tprivate timer: ReturnType<typeof setTimeout> | null = null;\n\tprivate _pending: { path: string; content: string } | null = null;\n\tprivate chain: Promise<void> = Promise.resolve();\n\n\tconstructor(private deps: SaveDeps) {}\n\n\t/** the queued debounced write, if any (read-only; use reattach/detach/discard to mutate). */\n\tget pending(): { path: string; content: string } | null {\n\t\treturn this._pending;\n\t}\n\n\t/** resolves once every queued write has landed. */\n\twhenIdle(): Promise<void> {\n\t\treturn this.chain;\n\t}\n\n\tcancelTimer() {\n\t\tif (this.timer) {\n\t\t\tclearTimeout(this.timer);\n\t\t\tthis.timer = null;\n\t\t}\n\t}\n\n\t/** queue a debounced write; a save already queued for a DIFFERENT file flushes first so\n\t * switching files can never drop the previous file's edit. */\n\tschedule(path: string | null, content: string) {\n\t\tif (!path) return;\n\t\tif (this._pending && this._pending.path !== path) this.flush();\n\t\tthis._pending = { path, content };\n\t\t// autosave off: track the edit (so Save / the switch-guard have it) but don't auto-write\n\t\tif (!this.deps.autosaveActive()) return;\n\t\tthis.cancelTimer();\n\t\tthis.timer = setTimeout(() => this.flush(), AUTOSAVE_MS);\n\t}\n\n\tflush() {\n\t\tthis.cancelTimer();\n\t\tif (!this._pending) return;\n\t\tconst { path, content } = this._pending;\n\t\tthis._pending = null;\n\t\tvoid this.enqueue(path, content, false);"}},{"id":"op-30","dimension":"維度 4：工作台、檔案系統與編譯預覽互動","name":"Tectonic 編譯進度條與狀態流","status":"操作升級/重構","definition":"調用 Tectonic 引擎編譯文件產生 PDF，管理編譯生命週期與提供即時狀態反饋之控制流程。","location":"新版：apps/frontend/src/components/WorkbenchActions.svelte:1-33；舊版：apps/editor-legacy/src/lib/editor/comp/CompileButton.svelte:10-45","purpose":"新版由 CompileHandle 掌管具名生命週期，狀態列即時呈現編譯中、取消中、完成反饋，支援隨時取消。舊版依賴全域終端機底座與檔案時間戳輪詢。","edgeCases":"啟動等待期發起取消時自動登記，在握手完成後立即取消 handle；編譯失敗自動切換至文件面板檢視錯誤。","newCode":{"file":"apps/frontend/src/components/WorkbenchActions.svelte","lineStart":1,"lineEnd":33,"lang":"svelte","isImplemented":true,"snippet":"<script lang=\"ts\">\n\timport { text, type Language } from '../i18n/text.ts';\n\tlet { locale, desktop, hasSource, opening, saving, compiling, dirty, missing, cancellationPending,\n\t\tonFolder, onOpen, onNew, onSave, onSaveAs, onCompile, onCancel }: {\n\t\tlocale: Language; desktop: boolean; hasSource: boolean; opening: boolean; saving: boolean;\n\t\tcompiling: boolean; dirty: boolean; missing: boolean; cancellationPending: boolean;\n\t\tonFolder: () => void; onOpen: () => void; onNew: () => void; onSave: () => void;\n\t\tonSaveAs: () => void; onCompile: () => void; onCancel: () => void;\n\t} = $props();\n\tconst t = (zh: string, en: string) => text(locale, zh, en);\n<\/script>\n\n<div class=\"action-group\" role=\"group\" aria-label={t('檔案操作', 'File actions')}>\n\t{#if desktop}<button onclick={onFolder} disabled={opening || saving}>{t('開啟資料夾', 'Open folder')}</button>{/if}\n\t<button onclick={onOpen} disabled={opening || saving}>{t('開啟文件', 'Open document')}</button>\n\t<button onclick={onNew} disabled={opening || saving || compiling}>{t('新文件', 'New document')}</button>\n\t{#if desktop && hasSource}\n\t\t<button onclick={onSave} disabled={opening || saving || !dirty || missing}>{saving ? t('儲存中…', 'Saving…') : t('儲存', 'Save')}</button>\n\t\t<button onclick={onSaveAs} disabled={opening || saving || compiling}>{t('另存新檔', 'Save as')}</button>\n\t{/if}\n</div>\n{#if desktop && hasSource && !missing}\n\t<div class=\"action-group compile-actions\" role=\"group\" aria-label={t('編譯操作', 'Compile actions')}>\n\t\t{#if compiling}<button onclick={onCancel} disabled={cancellationPending}>{cancellationPending ? t('正在取消…', 'Cancelling…') : t('取消編譯', 'Cancel compilation')}</button>\n\t\t{:else}<button class=\"primary\" onclick={onCompile} disabled={opening || saving}>{t('編譯 PDF', 'Compile PDF')}</button>{/if}\n\t</div>\n{/if}\n\n<style>\n\t.action-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }\n\t.compile-actions { padding-inline-start: 12px; border-inline-start: 1px solid var(--line); }\n</style>\n"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/comp/CompileButton.svelte","lineStart":10,"lineEnd":45,"lang":"svelte","isImplemented":true,"snippet":"\t * a pale fill reads as a highlight ring rather than an edge. At 30% it is enough to separate\n\t * the button from the toolbar behind it and nothing more.\n\t *\n\t * `filter-none` on hover overrides Skeleton's own `.btn` hover, which is\n\t * `filter: brightness(125%)` in light mode (and 75% in dark). Brightening a tonal preset whose\n\t * light-mode fill is already the 50 shade pushes it to white and takes the label and the\n\t * hairline up with it, since a filter applies to the whole element - that is the glow. One\n\t * step deeper in the same hue is what a hover should do at both ends.\n\t */\n\texport type CompileTone = 'primary' | 'success' | 'warning' | 'error' | 'stop';\n\texport const COMPILE_TONE: Record<CompileTone, string> = {\n\t\tprimary: 'workbench-compile-status workbench-compile-idle',\n\t\tsuccess: 'workbench-compile-status workbench-compile-success',\n\t\twarning: 'workbench-compile-status workbench-compile-warning',\n\t\terror: 'workbench-compile-status workbench-compile-error',\n\t\tstop: 'workbench-compile-status workbench-compile-stop'\n\t};\n<\/script>\n\n<script lang=\"ts\">\n\t// The left half of the topbar's compile split-button. One element wearing whichever state the\n\t// toolbar is in - Compile, Preview, Live, Paused, Stop - because those differed only in colour,\n\t// icon, label and click, and five near-identical <button> blocks drifted apart every time one\n\t// of them was touched. The chevron beside it is the caller's (it belongs to the menu, not to a\n\t// state) and reads its colour from COMPILE_TONE above, so the pair always matches.\n\timport type { Component } from 'svelte';\n\n\tinterface Props {\n\t\ttone: CompileTone;\n\t\tlabel: string;\n\t\ttitle: string;\n\t\tonclick: () => void;\n\t\t/** lucide icon for the leading slot; omit when `dot` marks a running state instead */\n\t\ticon?: Component | null;\n\t\t/** the filled status dot the live/running states use in place of an icon */\n\t\tdot?: boolean;"}},{"id":"op-31","dimension":"維度 4：工作台、檔案系統與編譯預覽互動","name":"有界編譯錯誤詳細面板與跳轉","status":"操作升級/重構","definition":"截取編譯日誌錯誤資訊，呈現診斷清單並提供點擊精確定位至出錯程式碼行之除錯輔助功能。","location":"新版：apps/frontend/src/components/CompileFeedback.svelte:12-30；舊版：apps/editor-legacy/src/lib/editor/comp/ProblemsPanel.svelte:27-65","purpose":"新版截取日誌最後 256KB、上限 256 筆診斷，審查路徑防遍歷；比對文件版本一致後提供跳轉按鈕定位出錯行。舊版無界儲存 Log 並依賴字串比對。","edgeCases":"文件在編譯後已被修改時自動禁用跳轉按鈕，防範游標定位漂移；日誌區塊含錯誤時預設自動展開。","newCode":{"file":"apps/frontend/src/components/CompileFeedback.svelte","lineStart":12,"lineEnd":30,"lang":"svelte","isImplemented":true,"snippet":"\t{#if diagnostics.length}\n\t\t<section class=\"compile-problems\" aria-label={t('編譯問題', 'Compilation problems')}>\n\t\t\t<h2>{t('編譯問題', 'Compilation problems')} ({diagnostics.length})</h2>\n\t\t\t<ul>\n\t\t\t\t{#each diagnostics as diagnostic}\n\t\t\t\t\t<li class=\"diagnostic-row\">\n\t\t\t\t\t\t<span class=\"diagnostic-severity\" data-severity={diagnostic.severity}>\n\t\t\t\t\t\t\t{diagnostic.severity === 'error' ? t('錯誤', 'Error') : diagnostic.severity === 'warning' ? t('警告', 'Warning') : t('資訊', 'Info')}\n\t\t\t\t\t\t</span>\n\t\t\t\t\t\t<span class=\"diagnostic-text\">{diagnostic.message}</span>\n\t\t\t\t\t\t{#if diagnostic.line !== null}\n\t\t\t\t\t\t\t<button class=\"text-button\" disabled={!canNavigateDiagnostic(diagnostic)} onclick={() => navigateToDiagnostic(diagnostic)}>\n\t\t\t\t\t\t\t\t{diagnostic.path}:{diagnostic.line} · {t('前往原始碼', 'Go to source')}\n\t\t\t\t\t\t\t</button>\n\t\t\t\t\t\t{/if}\n\t\t\t\t\t</li>\n\t\t\t\t{/each}\n\t\t\t</ul>\n\t\t</section>"},"legacyCode":{"file":"apps/editor-legacy/src/lib/editor/comp/ProblemsPanel.svelte","lineStart":27,"lineEnd":65,"lang":"svelte","isImplemented":true,"snippet":"<div class=\"flex h-full min-h-0 flex-col text-xs\">\n\t{#if !log}\n\t\t<div class=\"text-surface-500-400 flex flex-1 items-center justify-center gap-2 p-4\">\n\t\t\t<Info class=\"size-4\" />\n\t\t\t{m.problems_empty_state()}\n\t\t</div>\n\t{:else}\n\t\t<div class=\"border-surface-200-800 flex h-7 shrink-0 items-center gap-3 border-b px-2\">\n\t\t\t{#if log.status.fatal || (log.errors.length > 0 && log.status.pages === undefined)}\n\t\t\t\t<span class=\"text-error-500 flex items-center gap-1 font-medium\">\n\t\t\t\t\t<CircleAlert class=\"size-3.5\" />\n\t\t\t\t\t{log.status.fatal ? m.problems_status_failed_no_pdf() : m.problems_status_failed()}\n\t\t\t\t</span>\n\t\t\t{:else if log.errors.length === 0 && log.warnings.length === 0}\n\t\t\t\t<span class=\"text-success-600-400 flex items-center gap-1 font-medium\">\n\t\t\t\t\t<FileCheck2 class=\"size-3.5\" />\n\t\t\t\t\t{m.problems_status_clean()}{log.status.pages\n\t\t\t\t\t\t? ` (${\n\t\t\t\t\t\t\t\tlog.status.pages === 1\n\t\t\t\t\t\t\t\t\t? m.problems_page_count_one({ count: log.status.pages })\n\t\t\t\t\t\t\t\t\t: m.problems_page_count_other({ count: log.status.pages })\n\t\t\t\t\t\t\t})`\n\t\t\t\t\t\t: ''}\n\t\t\t\t</span>\n\t\t\t{:else}\n\t\t\t\t<span class=\"text-surface-600-300\">\n\t\t\t\t\t{log.errors.length === 1\n\t\t\t\t\t\t? m.problems_error_count_one({ count: log.errors.length })\n\t\t\t\t\t\t: m.problems_error_count_other({ count: log.errors.length })}, {log.warnings.length === 1\n\t\t\t\t\t\t? m.problems_warning_count_one({ count: log.warnings.length })\n\t\t\t\t\t\t: m.problems_warning_count_other({ count: log.warnings.length })}{log.status.pages\n\t\t\t\t\t\t? ` (${\n\t\t\t\t\t\t\t\tlog.status.pages === 1\n\t\t\t\t\t\t\t\t\t? m.problems_page_count_one({ count: log.status.pages })\n\t\t\t\t\t\t\t\t\t: m.problems_page_count_other({ count: log.status.pages })\n\t\t\t\t\t\t\t})`\n\t\t\t\t\t\t: ''}\n\t\t\t\t</span>\n\t\t\t{/if}"}},{"id":"op-32","dimension":"維度 4：工作台、檔案系統與編譯預覽互動","name":"PDF 預覽視窗縮放與自適應重繪","status":"操作升級/重構","definition":"在預覽窗格渲染 PDF 頁面，隨視窗寬度自適應重新計算畫布解析度之視覺呈現功能。","location":"新版：apps/frontend/src/features/pdf/PdfView.svelte:36-60；舊版：apps/editor-legacy/src/lib/pdf-view/PdfRenderer.svelte:50-85","purpose":"新版透過 ResizeObserver 監聽容器寬度動態調整比例，配合 devicePixelRatio 設定清晰畫布，PdfRenderQueue 佇列排程支援渲染取消防重疊。舊版動態計算捲動與重建 Canvas。","edgeCases":"單邊解析度上限限制為 4096 像素，防範超大頁面耗盡 GPU 記憶體；PDF 檔案大小上限限制為 32MB。","newCode":{"file":"apps/frontend/src/features/pdf/PdfView.svelte","lineStart":36,"lineEnd":60,"lang":"svelte","isImplemented":true,"snippet":"\t\tconst queue = new PdfRenderQueue<{ page: number; zoom: string }>(async (request, current) => {\n\t\t\tif (!document || !current()) return;\n\t\t\tlet page: PDFPageProxy | undefined;\n\t\t\ttry {\n\t\t\t\tpage = await document.getPage(request.page);\n\t\t\t\tif (!current()) return;\n\t\t\t\tconst base = page.getViewport({ scale: 1 });\n\t\t\t\tif (!Number.isFinite(base.width) || !Number.isFinite(base.height) || base.width <= 0 || base.height <= 0)\n\t\t\t\t\tthrow new Error('PDF_SIZE');\n\t\t\t\tconst ratio = Math.min(window.devicePixelRatio || 1, 2);\n\t\t\t\tconst requestedScale = request.zoom === 'fit' ? Math.max(1, target.clientWidth - 48) / base.width : Number(request.zoom) / 100;\n\t\t\t\tconst scale = Math.min(requestedScale, 4096 / (base.width * ratio), 4096 / (base.height * ratio));\n\t\t\t\tconst viewport = page.getViewport({ scale });\n\t\t\t\tcanvas.width = Math.ceil(viewport.width * ratio); canvas.height = Math.ceil(viewport.height * ratio);\n\t\t\t\tcanvas.style.width = viewport.width + 'px'; canvas.style.height = viewport.height + 'px';\n\t\t\t\tconst context = canvas.getContext('2d');\n\t\t\t\tif (!context) throw new Error('CANVAS');\n\t\t\t\trender = page.render({ canvas, canvasContext: context, viewport, transform: [ratio, 0, 0, ratio, 0, 0] });\n\t\t\t\tawait render.promise;\n\t\t\t\tif (current()) { displayedPage = request.page; busy = false; onRendered?.(); }\n\t\t\t} finally {\n\t\t\t\trender = undefined;\n\t\t\t\tpage?.cleanup();\n\t\t\t}\n\t\t}, () => render?.cancel(), () => { busy = false; onError('PDF_RENDER'); });"},"legacyCode":{"file":"apps/editor-legacy/src/lib/pdf-view/PdfRenderer.svelte","lineStart":50,"lineEnd":85,"lang":"svelte","isImplemented":true,"snippet":"\tlet src = $derived(srcProp ?? context.src);\n\n\tlet hostEl: HTMLDivElement | undefined = $state();\n\tlet shadowRoot: ShadowRoot | null = null;\n\tlet containerEl: HTMLDivElement | null = $state(null);\n\tlet scrollContainerEl: HTMLDivElement | null = null;\n\tlet mounted = $state(false);\n\n\tlet viewer: import('./pdf-viewer/PDFViewerCore').PDFViewerCore | null = null;\n\tlet findController: import('./pdf-viewer/FindController').FindController | null = null;\n\t// the document loaded into `viewer`; when the next load carries the same key it's a reload of\n\t// the same file (a recompile) and we keep the scroll position instead of jumping to the top\n\tlet loadedKey: string | number | undefined;\n\n\tconst presentationMode = new PdfPresentationMode({\n\t\tonStateChange: (newState) => {\n\t\t\tviewerState.presentationMode = newState;\n\t\t},\n\t\tonPageChange: (pageNumber) => {\n\t\t\t// sync page changes in presentation mode back to the main viewer\n\t\t\tviewer?.scrollToPage(pageNumber);\n\t\t}\n\t});\n\n\t// one viewer for the pane's lifetime: each load parses the new document off-screen, then\n\t// setDocument swaps it into the same container in place, so on a recompile the old pages\n\t// stay up (scroll intact) until the new ones land. Loads are serialized through a queue;\n\t// a load scheduled while an older one is still parsing supersedes it.\n\tlet loadGen = 0;\n\tlet rendererDestroyed = false;\n\tlet loadQueue: Promise<void> = Promise.resolve();\n\tlet pendingLoadTask: PdfDocumentTask | null = null;\n\n\tfunction queueLoad(source: PdfSource) {\n\t\tconst gen = ++loadGen;\n\t\tif (pendingLoadTask) {"}},{"id":"op-33","dimension":"維度 4：工作台、檔案系統與編譯預覽互動","name":"編譯失敗/取消時保留舊 PDF 預覽","status":"操作流程改變","definition":"在編譯失敗或中途取消時維持既有 PDF 預覽畫面，防範閱讀中斷之預覽防護機制。","location":"新版：apps/frontend/src/features/compile/preview-status.ts:4-7；舊版：apps/editor-legacy/src/lib/pdf-view/PdfViewer.svelte:30-60","purpose":"新版僅在編譯成功時替換 pdfBytes，失敗或取消時標註 stale 狀態並完整留存舊 PDF，杜絕白屏中斷。舊版依賴 pdfStore 指標變動，出錯時可能丟失預覽。","edgeCases":"狀態列明確標註「文件已變更，顯示上次編譯 PDF」提示使用者畫面已過期；重新編譯成功後即時清除過期標籤。","newCode":{"file":"apps/frontend/src/features/compile/preview-status.ts","lineStart":4,"lineEnd":7,"lang":"typescript","isImplemented":true,"snippet":"export function previewStatus(source: SourceDocument | null, path: string, identity: CompileIdentity | null): 'external' | 'current' | 'stale' {\n\tif (!identity) return 'external';\n\treturn source?.documentId === identity.documentId && source.version === identity.documentVersion && path === identity.entryPath ? 'current' : 'stale';\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/pdf-view/PdfViewer.svelte","lineStart":30,"lineEnd":60,"lang":"svelte","isImplemented":true,"snippet":"\t\tchildren?: Snippet;\n\t}\n\n\tlet { src, documentKey, scale: initialScale = 1.0, downloadFilename, onerror, class: className = '', children }: Props = $props();\n\n\t// download needs its own copy of binary source data (PDF.js detaches ArrayBuffers);\n\t// set by PdfRenderer before it hands the data to PDF.js\n\tlet srcDataForDownload = $state<ArrayBuffer | null>(null);\n\n\tlet viewerState = $state<PdfViewerState>({\n\t\tloading: true,\n\t\terror: null,\n\t\ttotalPages: 0,\n\t\tcurrentPage: 1,\n\t\tscale: untrack(() => initialScale),\n\t\trotation: 0,\n\t\tsearchQuery: '',\n\t\tsearchCurrent: 0,\n\t\tsearchTotal: 0,\n\t\tisSearching: false,\n\t\tpresentationMode: PresentationModeState.NORMAL\n\t});\n\n\tlet rendererActions: PdfViewerActions | null = null;\n\n\tasync function downloadPdf(filenameOverride?: string) {\n\t\tconst downloadName =\n\t\t\tfilenameOverride || downloadFilename || (typeof src === 'string' ? src.split('/').pop() : 'document.pdf') || 'document.pdf';\n\n\t\tlet blob: Blob;\n"}},{"id":"op-34","dimension":"維度 4：工作台、檔案系統與編譯預覽互動","name":"SyncTeX 雙向跳轉機制","status":"舊版具備但新版尚未實作","definition":"在原始碼游標位置與 PDF 預覽頁面座標之間進行正向與反向雙向定位跳轉之機制。","location":"新版：packages/frontend-contracts/src/types.ts:94-110（合約層邊界，前端尚未實作）；舊版：apps/editor-legacy/src/lib/workspace/syncTexNav.ts:38-56","purpose":"舊版具備正向搜尋游標捲動 PDF 與反向雙擊 PDF 跳轉原始碼行並播放 1.4 秒高亮動畫。新版前端聚焦於受管編譯與結構化診斷，尚未實作 SyncTeX 雙向跳轉機制。","edgeCases":"舊版在無 .synctex.gz 檔案時平滑忽略跳轉；新版在合約層未暴露相關端點。","newCode":{"file":"packages/frontend-contracts/src/types.ts","lineStart":94,"lineEnd":110,"lang":"typescript","isImplemented":false,"snippet":"export interface DesktopPort {\n\topenWorkspace(kind: 'folder' | 'file'): Promise<WorkspaceInfo | null>;\n\tlistRecent(): Promise<readonly RecentDocument[]>;\n\topenRecent(id: string): Promise<WorkspaceInfo>;\n\tremoveRecent(id: string): Promise<void>;\n\tlistFiles(workspaceId: string): Promise<readonly FileEntry[]>;\n\treadFile(file: FileRef): Promise<ReadReceipt>;\n\twriteFile(request: WriteRequest): Promise<WriteReceipt>;\n\tsaveAs(request: SaveAsRequest): Promise<SaveAsReceipt | null>;\n\twatchFiles(\n\t\tworkspaceId: string,\n\t\tlistener: (event: FileEvent) => void,\n\t\tonError?: (failure: FileWatchFailure) => void\n\t): Promise<Unsubscribe>;\n\tcompile(request: CompileRequest): Promise<CompileHandle>;\n\tcloseWorkspace(workspaceId: string): Promise<void>;\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/workspace/syncTexNav.ts","lineStart":38,"lineEnd":56,"lang":"typescript","isImplemented":true,"snippet":"\t/** forward: a source line -> the matching place in the PDF (scroll + flash a highlight) */\n\tasync forwardToLine(line: number): Promise<void> {\n\t\tconst d = this.deps;\n\t\tconst live = get(settings).draftMode;\n\t\tconst pdf = live ? d.getDraftRoot() + '/_draft/draft.pdf' : d.expectedPdfPath();\n\t\tconst path = d.getLoadedPath();\n\t\tif (!path || !d.isTex() || !pdf) return;\n\t\tconst res = await synctexForward(pdf, path, line);\n\t\tconsole.debug('[synctex] forward', { tex: path, line, pdf, res });\n\t\tif (!res.ok) {\n\t\t\ttoaster.error({ title: 'SyncTeX', description: res.error ?? m.wsview_toast_synctex_no_match() });\n\t\t\treturn;\n\t\t}\n\t\td.setPdfPaneOpen(true);\n\t\t// highlight the enclosing box: origin (h, v) = line-start + baseline, size (W, H). NOT (x, y),\n\t\t// the matched node's point: pairing that with W/H drew the box shifted and ~a line too low.\n\t\tif (live) d.syncDraftTo(res.page, res.h, res.v, res.width, res.height);\n\t\telse d.scrollPdfTo(res.page, res.h, res.v, res.width, res.height);\n\t}"}},{"id":"op-35","dimension":"維度 4：工作台、檔案系統與編譯預覽互動","name":"全域快捷鍵調度與輸入法防護","status":"操作升級/重構","definition":"統一管理全域鍵盤快捷鍵觸發，過濾輸入法組字與表單輸入衝突之調度流程。","location":"新版：apps/frontend/src/features/shortcuts/keyboard.ts:4-17；舊版：apps/editor-legacy/src/lib/workspace/shortcuts.ts:15-55","purpose":"新版集中解析快捷鍵，過濾輸入法組字中狀態（keyCode 229）與 Alt 複合鍵，一般表單焦點時阻擋編譯快捷鍵。舊版直接監聽全域 keydown 並分流。","edgeCases":"Mac（Meta）與 Windows（Ctrl）修飾鍵相容適配；快捷鍵處理後呼叫 preventDefault 阻擋瀏覽器預設行為。","newCode":{"file":"apps/frontend/src/features/shortcuts/keyboard.ts","lineStart":4,"lineEnd":17,"lang":"typescript","isImplemented":true,"snippet":"export function documentCommand(event: KeyboardEvent, binding: Preferences['compileShortcut']): DocumentCommand | null {\n\tif (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.repeat || event.altKey || event.ctrlKey === event.metaKey) return null;\n\tconst key = event.key.toLowerCase();\n\tif (!event.shiftKey && key === 'o') return 'open';\n\tif (!event.shiftKey && key === 's') return 'save';\n\tif (binding === 'mod-enter' && key === 'enter' && !event.shiftKey || binding === 'mod-shift-b' && key === 'b' && event.shiftKey) {\n\t\t// Editors own their text keys; application form fields must retain their own input behavior.\n\t\tconst target = event.target;\n\t\tif (target && 'closest' in target && typeof target.closest === 'function' &&\n\t\t\ttarget.closest('input, textarea, select, [contenteditable=\"true\"]') && !target.closest('.cm-editor, .ProseMirror')) return null;\n\t\treturn 'compile';\n\t}\n\treturn null;\n}"},"legacyCode":{"file":"apps/editor-legacy/src/lib/workspace/shortcuts.ts","lineStart":15,"lineEnd":55,"lang":"typescript","isImplemented":true,"snippet":"\nexport function setUiZoom(factor: number): void {\n\tconst f = Math.min(UI_ZOOM_MAX, Math.max(UI_ZOOM_MIN, Math.round(factor * 100) / 100));\n\tnative()?.setZoomFactor?.(f);\n\tupdateSettings({ uiZoom: f });\n}\nexport const uiZoomIn = () => setUiZoom((get(settings).uiZoom ?? 1) + UI_ZOOM_STEP);\nexport const uiZoomOut = () => setUiZoom((get(settings).uiZoom ?? 1) - UI_ZOOM_STEP);\nexport const uiZoomReset = () => setUiZoom(1);\n\nexport interface ShortcutDeps {\n\tgetLoadedPath(): string | null;\n\tcloseTab(path: string): void;\n\tsave(): void;\n\topenGlobalSearch(): void;\n\tterminalAvailable(): boolean;\n\tisCompiling(): boolean;\n\trunCompile(): void;\n\tstopCompile(): void;\n}\n\nexport function createKeydownHandler(deps: ShortcutDeps): (e: KeyboardEvent) => void {\n\treturn (e: KeyboardEvent) => {\n\t\tconst mod = e.metaKey || e.ctrlKey;\n\t\tif (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'w') {\n\t\t\te.preventDefault();\n\t\t\tconst path = deps.getLoadedPath();\n\t\t\tif (path) deps.closeTab(path);\n\t\t} else if (e.ctrlKey && e.key === 'Tab') {\n\t\t\te.preventDefault();\n\t\t\tconst next = tabs.cycle(get(activeFilePath), e.shiftKey ? -1 : 1);\n\t\t\tif (next) activeFilePath.set(next);\n\t\t} else if (mod && e.key.toLowerCase() === 's') {\n\t\t\te.preventDefault(); // block the browser save dialog\n\t\t\tdeps.save();\n\t\t} else if (mod && e.shiftKey && e.key.toLowerCase() === 'f') {\n\t\t\te.preventDefault();\n\t\t\tdeps.openGlobalSearch();\n\t\t} else if (mod && (e.key === '=' || e.key === '+')) {\n\t\t\te.preventDefault(); // '=' is the unshifted '+' key, so this is Ctrl/Cmd+Plus\n\t\t\tuiZoomIn();"}},{"id":"op-36","dimension":"維度 4：工作台、檔案系統與編譯預覽互動","name":"未儲存關閉視窗保護流程","status":"新版新增","definition":"在文件含有未儲存變更時攔截視窗關閉事件，提示儲存、捨棄或取消之安全防護機制。","location":"新版：apps/frontend/src/components/CloseDialog.svelte:1-38；舊版：apps/editor-legacy/src/lib/workspace/unsavedGuard.svelte.ts:31-70","purpose":"新版監聽 beforeunload 事件，dirty 狀態下彈出原生 dialog CloseDialog，提供儲存並關閉、捨棄並關閉、取消等三向分支，鎖定焦點與遮罩。舊版僅具備靜態快捷鍵說明彈窗，缺乏整合式關閉攔截狀態機。","edgeCases":"儲存中狀態禁用 Escape 取消鍵與所有操作按鈕防範中斷；取消操作安全還原焦點至最後啟用的編輯器。","newCode":{"file":"apps/frontend/src/components/CloseDialog.svelte","lineStart":1,"lineEnd":38,"lang":"svelte","isImplemented":true,"snippet":"<script lang=\"ts\">\n\timport { onMount } from 'svelte';\n\tlet { t, name, saving, error, save, discard, cancel }: {\n\t\tt: (zh: string, en: string) => string; name: string; saving: boolean; error: string;\n\t\tsave: () => void; discard: () => void; cancel: () => void;\n\t} = $props();\n\tlet dialog: HTMLDialogElement;\n\tonMount(() => {\n\t\tconst previous = document.activeElement;\n\t\tdialog.showModal();\n\t\treturn () => {\n\t\t\tconst target = previous instanceof HTMLElement && previous !== document.body && previous.isConnected ? previous :\n\t\t\t\t[...document.querySelectorAll<HTMLElement>('.cm-content, .ProseMirror')].find(element => !element.closest('[hidden], [inert]'));\n\t\t\ttarget?.focus();\n\t\t};\n\t});\n<\/script>\n\n<dialog bind:this={dialog} aria-labelledby=\"close\" oncancel={(event) => { event.preventDefault(); if (!saving) cancel(); }}>\n\t<h2 id=\"close\">{t('儲存變更？', 'Save changes?')}</h2>\n\t<p>{t(`「${name}」有未儲存的變更。`, `“${name}” has unsaved changes.`)}</p>\n\t{#if error}<p class=\"error\" role=\"alert\">{error}</p>{/if}\n\t<div class=\"actions\">\n\t\t<button type=\"button\" onclick={cancel} disabled={saving}>{t('取消', 'Cancel')}</button>\n\t\t<button type=\"button\" onclick={discard} disabled={saving}>{t('捨棄變更並關閉', 'Discard changes and close')}</button>\n\t\t<button type=\"button\" class=\"primary\" onclick={save} disabled={saving}>{saving ? t('儲存中…', 'Saving…') : t('儲存後關閉', 'Save and close')}</button>\n\t</div>\n</dialog>\n\n<style>\n\tdialog { width: min(440px, calc(100vw - 32px)); padding: 24px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }\n\tdialog::backdrop { background: rgb(0 0 0 / 45%); }\n\th2 { margin: 0 0 12px; font-size: 18px; }\n\tp { color: var(--muted); line-height: 1.5; }\n\tp.error { color: var(--error); }\n\t.actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 20px; }\n</style>\n"},"legacyCode":{"file":"apps/editor-legacy/src/lib/workspace/unsavedGuard.svelte.ts","lineStart":31,"lineEnd":70,"lang":"typescript","isImplemented":true,"snippet":"export class UnsavedGuard {\n\t/** the modal's outgoing snapshot; non-null while the dialog is up */\n\tprompt = $state<{\n\t\tname: string;\n\t\toutgoing: { path: string; content: string };\n\t\teol: Eol;\n\t\tresolve?: (choice: Choice) => void;\n\t} | null>(null);\n\n\t/** a switch held back by the dialog: the store reverts to the outgoing file (tabs and tree stay\n\t * visually on it) and this carries where the user was headed */\n\theld: { target: string | null } | null = null;\n\n\tconstructor(private deps: UnsavedGuardDeps) {}\n\n\tprivate get saver(): SavePipeline {\n\t\treturn this.deps.saver();\n\t}\n\n\t/** true while a workspace-level prompt owns the pending edit */\n\tget parksAllSwitches(): boolean {\n\t\treturn !!this.prompt?.resolve;\n\t}\n\n\t/** does switching away from the current file need to ask first? */\n\tneedsPromptFor(nextPath: string | null): boolean {\n\t\tconst loaded = this.deps.getLoadedPath();\n\t\treturn !this.deps.autosaveActive() && !!loaded && nextPath !== loaded && this.saver.pending?.path === loaded;\n\t}\n\n\t/** park the switch and raise the dialog; the caller has already decided it is needed */\n\tbeginFileSwitch(target: string | null): void {\n\t\tconst loaded = this.deps.getLoadedPath();\n\t\tif (!loaded) return;\n\t\tconst eol = this.deps.getEol(); // the outgoing file's EOL, before the switch changes it\n\t\tconst outgoing = this.saver.detach()!; // so the new file's queue can't touch it\n\t\tthis.held = { target };\n\t\tactiveFilePath.set(loaded);\n\t\tthis.prompt = { name: basename(loaded), outgoing, eol };\n\t}"}}]};
+    }
+  </script>
+  <script>
+    // ==========================================================================
+    // 輕量本地語法高亮引擎（零外部庫、防 XSS 實體轉義）
+    // ==========================================================================
+    function escapeHtml(text) {
+      if (!text) return '';
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function highlightSyntax(code) {
+      if (!code) return '';
+      var lines = code.split('\n');
+      return lines.map(function(line) {
+        var escaped = escapeHtml(line);
+        // Comments
+        if (/^(\s*)(\/\/|%|#)(.*)$/.test(escaped)) {
+          return escaped.replace(/^(\s*)(\/\/|%|#)(.*)$/, '$1<span class="tok-com">$2$3</span>');
+        }
+        // Strings ('...', "...", `...`)
+        escaped = escaped.replace(/(['"`])(?:\\.|(?!\1)[^\\\r\n])*\1/g, '<span class="tok-str">$&</span>');
+        // LaTeX Macros
+        escaped = escaped.replace(/(\\[a-zA-Z@]+)/g, '<span class="tok-tex">$1</span>');
+        // Keywords
+        var kwRegex = /\b(const|let|var|function|return|if|else|for|while|import|export|from|class|extends|new|try|catch|finally|throw|typeof|instanceof|default|switch|case|break|continue|null|undefined|true|false|async|await|interface|type)\b/g;
+        escaped = escaped.replace(kwRegex, '<span class="tok-kw">$1</span>');
+        // Functions
+        escaped = escaped.replace(/\b([a-zA-Z_$][a-zA-Z0-9_$]*)(?=\()/g, '<span class="tok-fn">$1</span>');
+        // Numbers
+        escaped = escaped.replace(/\b(\d+)\b/g, '<span class="tok-num">$1</span>');
+        return escaped;
+      }).join('\n');
+    }
+
+    // ==========================================================================
+    // DOM 互動狀態機與事件繫結
+    // ==========================================================================
+    (function () {
+      var data = window.COMPARISON_DATA;
+      if (!data || !data.items) {
+        console.error('COMPARISON_DATA not found!');
+        return;
+      }
+
+      var cardList = document.getElementById('card-list');
+      var searchInput = document.getElementById('search-input');
+      var statusFilter = document.getElementById('status-filter');
+      var dimTabs = document.querySelectorAll('.tab-btn');
+      var visibleCountEl = document.getElementById('visible-count');
+      var emptyStateEl = document.getElementById('empty-state');
+      var expandAllBtn = document.getElementById('expand-all-btn');
+      var collapseAllBtn = document.getElementById('collapse-all-btn');
+      var themeToggleBtn = document.getElementById('theme-toggle');
+      var themeIcon = document.getElementById('theme-icon');
+      var themeText = document.getElementById('theme-text');
+
+      var currentDim = 'all';
+      var currentStatus = 'all';
+      var searchQuery = '';
+
+      function getStatusClass(status) {
+        switch (status) {
+          case '操作升級/重構': return 'status-upgrade';
+          case '操作流程改變': return 'status-flow';
+          case '新版新增': return 'status-new';
+          case '舊版具備但新版尚未實作': return 'status-unimplemented';
+          case '新版刻意移除': return 'status-removed';
+          default: return 'status-upgrade';
+        }
+      }
+
+      function renderCodeTable(snippet, startLine) {
+        if (!snippet) return '';
+        var lines = snippet.split('\n');
+        var rows = lines.map(function(line, idx) {
+          var lineNum = startLine + idx;
+          var highlighted = highlightSyntax(line);
+          return '<tr><td class="line-number">' + lineNum + '</td><td class="line-content">' + highlighted + '</td></tr>';
+        }).join('');
+        return '<table>' + rows + '</table>';
+      }
+
+      function renderCard(item) {
+        var card = document.createElement('article');
+        card.className = 'comparison-card operation-item card op-card';
+        card.id = item.id;
+        card.dataset.id = item.id;
+        card.dataset.operationId = item.id;
+        card.setAttribute('data-operation-id', item.id);
+        card.dataset.dim = item.dimension;
+        card.dataset.status = item.status;
+
+        var newCodeSnippet = item.newCode.snippet;
+        var legacyCodeSnippet = item.legacyCode.snippet;
+
+        var html = [
+          '<div class="card-header expand-btn toggle-btn" role="button" tabindex="0" aria-expanded="false" aria-controls="' + item.id + '-body">',
+          '  <div class="header-left">',
+          '    <span class="card-id-badge">' + item.id.toUpperCase() + '</span>',
+          '    <h2 class="card-title">' + escapeHtml(item.name) + '</h2>',
+          '    <div class="header-badges">',
+          '      <span class="status-tag ' + getStatusClass(item.status) + '">' + escapeHtml(item.status) + '</span>',
+          '      <span class="dim-tag">' + escapeHtml(item.dimension.split('：')[0]) + '</span>',
+          '    </div>',
+          '  </div>',
+          '  <div class="header-right">',
+          '    <span class="chevron">▼</span>',
+          '  </div>',
+          '</div>',
+          '<div class="card-body" id="' + item.id + '-body">',
+          '  <div class="section-grid">',
+          '    <div class="section-item">',
+          '      <div class="section-label">📌 定義</div>',
+          '      <div class="section-content">' + escapeHtml(item.definition) + '</div>',
+          '    </div>',
+          '    <div class="section-item">',
+          '      <div class="section-label">📍 程式位置</div>',
+          '      <div class="section-content location-path">' + escapeHtml(item.location) + '</div>',
+          '    </div>',
+          '    <div class="section-item">',
+          '      <div class="section-label">🎯 操作 / 計算目的</div>',
+          '      <div class="section-content">' + escapeHtml(item.purpose) + '</div>',
+          '    </div>',
+          '    <div class="section-item">',
+          '      <div class="section-label">🛡️ 邊界情況</div>',
+          '      <div class="section-content">' + escapeHtml(item.edgeCases) + '</div>',
+          '    </div>',
+          '  </div>',
+          '  <div class="code-evidence-title">',
+          '    <span>💻 新舊版真實原始碼證據 (Side-by-Side Code Evidence)</span>',
+          '  </div>',
+          '  <div class="code-comparison-grid">',
+          '    <div class="code-pane">',
+          '      <div class="code-pane-header">',
+          '        <div class="pane-title">',
+          '          <span class="pane-badge-new">新版實作</span>',
+          '          <span class="pane-file-meta" title="' + escapeHtml(item.newCode.file) + ':' + item.newCode.lineStart + '-' + item.newCode.lineEnd + '">',
+          '            ' + escapeHtml(item.newCode.file) + ' (' + item.newCode.lineStart + '-' + item.newCode.lineEnd + ')',
+          '          </span>',
+          '        </div>',
+          '        <div class="pane-actions">',
+          '          <button class="copy-btn btn-copy" data-copy="new" data-id="' + item.id + '" title="複製新版代碼">複製代碼</button>',
+          '        </div>',
+          '      </div>',
+          '      <div class="code-view code-snippet code-comparison side-by-side">',
+          '        <pre class="code-snippet code-comparison side-by-side">' + renderCodeTable(newCodeSnippet, item.newCode.lineStart) + '</pre>',
+          '      </div>',
+          '    </div>',
+          '    <div class="code-pane">',
+          '      <div class="code-pane-header">',
+          '        <div class="pane-title">',
+          '          <span class="pane-badge-legacy">舊版實作</span>',
+          '          <span class="pane-file-meta" title="' + escapeHtml(item.legacyCode.file) + ':' + item.legacyCode.lineStart + '-' + item.legacyCode.lineEnd + '">',
+          '            ' + escapeHtml(item.legacyCode.file) + ' (' + item.legacyCode.lineStart + '-' + item.legacyCode.lineEnd + ')',
+          '          </span>',
+          '        </div>',
+          '        <div class="pane-actions">',
+          '          <button class="copy-btn btn-copy" data-copy="legacy" data-id="' + item.id + '" title="複製舊版代碼">複製代碼</button>',
+          '        </div>',
+          '      </div>',
+          '      <div class="code-view code-snippet code-comparison side-by-side">',
+          '        <pre class="code-snippet code-comparison side-by-side">' + renderCodeTable(legacyCodeSnippet, item.legacyCode.lineStart) + '</pre>',
+          '      </div>',
+          '    </div>',
+          '  </div>',
+          '</div>'
+        ].join('\n');
+
+        card.innerHTML = html;
+
+        var header = card.querySelector('.card-header');
+        var toggleCard = function() {
+          var isExpanded = card.classList.toggle('is-expanded');
+          header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+        };
+        header.addEventListener('click', toggleCard);
+        header.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleCard();
+          }
+        });
+
+        var copyBtns = card.querySelectorAll('.copy-btn');
+        copyBtns.forEach(function(btn) {
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var target = btn.dataset.copy === 'new' ? newCodeSnippet : legacyCodeSnippet;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(target).then(function() {
+                var originalText = btn.textContent;
+                btn.textContent = '已複製！';
+                btn.classList.add('copied');
+                setTimeout(function() {
+                  btn.textContent = originalText;
+                  btn.classList.remove('copied');
+                }, 2000);
+              });
+            }
+          });
+        });
+
+        return card;
+      }
+
+      function initCards() {
+        cardList.innerHTML = '';
+        data.items.forEach(function(item) {
+          cardList.appendChild(renderCard(item));
+        });
+        filterItems();
+      }
+
+      function filterItems() {
+        var query = searchQuery.trim().toLowerCase();
+        var visibleCount = 0;
+        var cards = cardList.querySelectorAll('.op-card');
+
+        cards.forEach(function(card) {
+          var id = card.dataset.id;
+          var dim = card.dataset.dim;
+          var status = card.dataset.status;
+          var item = data.items.find(function(i) { return i.id === id; });
+
+          var matchesDim = currentDim === 'all' || dim === currentDim;
+          var matchesStatus = currentStatus === 'all' || status === currentStatus;
+
+          var matchesSearch = true;
+          if (query) {
+            var searchable = [
+              item.name,
+              item.definition,
+              item.purpose,
+              item.edgeCases,
+              item.location,
+              item.newCode.file,
+              item.legacyCode.file,
+              item.newCode.snippet,
+              item.legacyCode.snippet
+            ].join(' ').toLowerCase();
+            matchesSearch = searchable.indexOf(query) !== -1;
+          }
+
+          if (matchesDim && matchesStatus && matchesSearch) {
+            card.style.display = 'block';
+            visibleCount++;
+          } else {
+            card.style.display = 'none';
+          }
+        });
+
+        visibleCountEl.textContent = visibleCount;
+        emptyStateEl.style.display = visibleCount === 0 ? 'block' : 'none';
+      }
+
+      dimTabs.forEach(function(tab) {
+        tab.addEventListener('click', function() {
+          dimTabs.forEach(function(t) {
+            t.classList.remove('active');
+            t.setAttribute('aria-selected', 'false');
+          });
+          tab.classList.add('active');
+          tab.setAttribute('aria-selected', 'true');
+          currentDim = tab.dataset.dim;
+          filterItems();
+        });
+      });
+
+      statusFilter.addEventListener('change', function(e) {
+        currentStatus = e.target.value;
+        filterItems();
+      });
+
+      searchInput.addEventListener('input', function(e) {
+        searchQuery = e.target.value;
+        filterItems();
+      });
+
+      expandAllBtn.addEventListener('click', function() {
+        var cards = cardList.querySelectorAll('.op-card');
+        cards.forEach(function(card) {
+          if (card.style.display !== 'none') {
+            card.classList.add('is-expanded');
+            card.querySelector('.card-header').setAttribute('aria-expanded', 'true');
+          }
+        });
+      });
+
+      collapseAllBtn.addEventListener('click', function() {
+        var cards = cardList.querySelectorAll('.op-card');
+        cards.forEach(function(card) {
+          card.classList.remove('is-expanded');
+          card.querySelector('.card-header').setAttribute('aria-expanded', 'false');
+        });
+      });
+
+      function toggleTheme() {
+        var root = document.documentElement;
+        var isDark = root.getAttribute('data-theme') === 'dark';
+        var nextTheme = isDark ? 'light' : 'dark';
+        root.setAttribute('data-theme', nextTheme);
+        themeIcon.textContent = isDark ? '🌙' : '☀️';
+        themeText.textContent = isDark ? '深色模式' : '淺色模式';
+        try { localStorage.setItem('modutex-theme', nextTheme); } catch (e) {}
+      }
+
+      themeToggleBtn.addEventListener('click', toggleTheme);
+
+      try {
+        var savedTheme = localStorage.getItem('modutex-theme');
+        if (savedTheme) {
+          document.documentElement.setAttribute('data-theme', savedTheme);
+          themeIcon.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+          themeText.textContent = savedTheme === 'dark' ? '淺色模式' : '深色模式';
+        }
+      } catch (e) {}
+
+      initCards();
+    })();
+  </script>
+</body>
+</html>
