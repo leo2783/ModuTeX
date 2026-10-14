@@ -3,6 +3,9 @@
 Run commands from the repository root with Node.js **24.19.0** and npm **11.17.0**, as pinned in `package.json`.
 請在儲存庫根目錄使用 `package.json` 指定的版本。
 
+The desktop product and active frontend are **0.2.0**. Shared private libraries such as `@modutex/document-core` and `@modutex/frontend-contracts` retain independent **0.1.0** versions. npm build banners show the individual library version; `scripts/set-version.mjs` synchronizes only the desktop and active frontend.
+桌面程式與新版前端為 **0.2.0**；共用函式庫採獨立版本，因此建置訊息中的 `document-core@0.1.0` 不代表桌面程式是舊版。
+
 ```powershell
 npm ci
 npm run electron:dev:frontend
@@ -18,7 +21,11 @@ Stop the existing process with Ctrl+C before switching.
 | `npm run frontend:test` | New frontend tests; pretest builds shared packages. / 新前端測試，pretest 先建置共用套件。 |
 | `npm run verify:modutex` | Shared build, frontend types/tests, core/contracts and retained host/editor checks. / 共用建置、新前端、核心／契約及保留的 host／編輯器檢查。 |
 | `npm run test:ci-policy` | Workflow policy and real frontend failure propagation. / CI 政策與真前端故障傳遞。 |
+| `npm run test:frontend-origin` | Rebuild the frontend, then test source boundaries, artifact containment and font notices. / 先重建前端，再驗證來源邊界、產物路徑及字型通知。 |
 | `npm run app:build` | Production frontend and Electron build. / 正式前端與 Electron 建置。 |
+
+`npm run verify:frontend-origin` writes a JSON evidence report and intentionally exits with status 1 while independent source/license reviews remain unresolved. It is an investigation tool, not a release approval. Its `not-cleared` verdict does not change the scope documented in `LICENSING.md`.
+`verify:frontend-origin` 是證據收集工具；獨立來源／授權審查未結案時會輸出 `not-cleared` 並以狀態 1 結束，不可將其解讀成桌面已脫離 AGPL 或自動授權放行。
 
 For standalone type checking on a clean checkout:
 
