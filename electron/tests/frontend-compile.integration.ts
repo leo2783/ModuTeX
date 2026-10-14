@@ -1,0 +1,239 @@
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { deflateSync, gunzipSync } from 'node:zlib';
+import { fileURLToPath } from 'node:url';
+import { FrontendFiles } from '../src/frontend-files';
+import { FrontendCompiler } from '../src/frontend-compile';
+import { createManagedCompileService, checkedCompilePath, MANAGED_FORMAT_SETUP_TIMEOUT_MS } from '../src/managed-compile';
+import { matrixSource, equationSource, equationAt, equationReplacement } from '../../apps/frontend/src/features/math/source';
+import { SourceDocument, parseSource } from '@modutex/document-core';
+import { createTable, tableSource } from '../../apps/frontend/src/features/tables/source';
+import { booktabsPlan, tableInsertionTransaction } from '../../apps/frontend/src/features/tables/preamble';
+import { createSourceState, sourceState, rangeInsertionTarget, historyTransaction } from '../../apps/frontend/src/features/source-editor/state';
+import { createDraft } from '../../apps/frontend/src/features/files/templates';
+
+const repository = fileURLToPath(new URL('../../', import.meta.url));
+const data = path.join(repository, '.verification-artifacts', 'frontend-runtime-2026-10-07');
+await checkedCompilePath(repository, true);
+for (const directory of [path.dirname(data), data]) {
+	try { await fs.mkdir(directory); }
+	catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+	await checkedCompilePath(directory, true);
+}
+const root = await fs.mkdtemp(path.join(os.tmpdir(), 'modutex-frontend-runtime-'));
+const files = new FrontendFiles();
+const engine = createManagedCompileService({ runtime: { isPackaged: false, appPath: repository,
+	resourcesPath: repository, userData: data }, authorize: () => files.compileOwner() });
+const compiler = new FrontendCompiler(engine, () => files);
+afterAll(async () => {
+	compiler.cancelOwner(1); engine.close(); files.close();
+	if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith('modutex-frontend-runtime-')) throw new Error('Unsafe cleanup');
+	await fs.rm(root, { recursive: true, force: true });
+});
+beforeEach(() => {
+	files.close();
+});
+afterEach(() => {
+	files.close();
+});
+async function request(text: string) {
+	await fs.writeFile(path.join(root, 'main.tex'), text);
+	const workspace = await files.open(root, 'folder');
+	const read = await files.read({ workspaceId: workspace.id, path: 'main.tex' });
+	return { workspaceId: workspace.id, entryPath: 'main.tex', documentId: 'real-document', documentVersion: 0,
+		savedRevision: read.revision, engine: 'managed' as const };
+}
+describe('actual bundled Tectonic frontend integration (no mock engine or PDF)', () => {
+	it('wraps long body identifiers in a genuine PDF without modifying saved source', async () => {
+		const run = '1234567890'.repeat(100), text = '\\documentclass{article}\n\\begin{document}\n' + run + '\n\\end{document}\n';
+		const payload = await request(text), original = await fs.readFile(path.join(root, 'main.tex'));
+		const identity = await compiler.start({}, 1, payload), result = await compiler.result(1, identity.runId);
+		expect(result.status).toBe('success'); if (result.status !== 'success') throw new Error(result.log);
+		const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+		const loading = getDocument({ data: new Uint8Array(result.pdf), disableFontFace: true, useSystemFonts: true });
+		try { const pdf = await loading.promise, page = await pdf.getPage(1), viewport = page.getViewport({ scale: 1 }), content = await page.getTextContent();
+			const items = content.items.filter((item): item is typeof item & { str: string; transform: number[]; width: number } => 'str' in item && /^\d+$/.test(item.str));
+			expect(new Set(items.map(item => Math.round(item.transform[5]!))).size).toBeGreaterThan(2);
+			expect(items.every(item => item.transform[4]! + item.width <= viewport.width - 30)).toBe(true);
+			expect(items.map(item => item.str).join('')).toContain(run);
+		} finally { await loading.destroy(); }
+		expect(await fs.readFile(path.join(root, 'main.tex'))).toEqual(original);
+		const sync = gunzipSync(await fs.readFile(path.join(root, 'output/main.synctex.gz'))).toString('utf8');
+		expect(sync).not.toContain('.modutex-compile-');
+		expect(sync.replaceAll('\\', '/')).toContain(root.replaceAll('\\', '/'));
+	});
+	it('maps syntax errors in wrapped main text back to the original source line', async () => {
+		const text = '\\documentclass{article}\n\\begin{document}\n' + '1234567890'.repeat(50) + '\n\\undefinedModutexCommand\n\\end{document}\n';
+		const payload = await request(text), identity = await compiler.start({}, 1, payload), result = await compiler.result(1, identity.runId);
+		expect(result.status).toBe('failure'); expect(result.diagnostics.some(diagnostic => diagnostic.path === 'main.tex' && diagnostic.line === 4)).toBe(true);
+		expect(await fs.readFile(path.join(root, 'main.tex'), 'utf8')).toBe(text);
+	});
+	it('persists a clipboard image through save-as and reopening, then embeds it in a genuine PDF', async () => {
+		function chunk(name: string, data: Buffer) { const type = Buffer.from(name); let crc = 0xffffffff; for (const byte of Buffer.concat([type, data])) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = crc >>> 1 ^ (crc & 1 ? 0xedb88320 : 0); } const size = Buffer.alloc(4), check = Buffer.alloc(4); size.writeUInt32BE(data.length); check.writeUInt32BE((crc ^ 0xffffffff) >>> 0); return Buffer.concat([size, type, data, check]); }
+		const header = Buffer.alloc(13); header.writeUInt32BE(1, 0); header.writeUInt32BE(1, 4); header[8] = 8; header[9] = 6;
+		const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(Buffer.from([0, 61, 97, 123, 255]))), chunk('IEND', Buffer.alloc(0))]);
+		const picture = 'modutex-image-abcd.png', documentId = 'image-document';
+		const tex = '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\nClipboard 123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890 image\n\\begin{figure}[htbp]\n\\centering\n\\includegraphics[width=0.8\\linewidth]{' + picture + '}\n\\end{figure}\n\\end{document}\n';
+		const saved = await files.saveAs(path.join(root, 'image.tex'), { workspaceId: null, bytes: Buffer.from(tex), documentId, documentVersion: 0, images: [{ path: picture, bytes: png }] });
+		files.close(saved.workspace.id);
+		const reopened = await files.open(path.join(root, 'image.tex'), 'file');
+		expect(Buffer.from((await files.read({ workspaceId: reopened.id, path: picture })).bytes)).toEqual(png);
+		const source = await files.read({ workspaceId: reopened.id, path: 'image.tex' });
+		const run = await compiler.start({}, 1, { workspaceId: reopened.id, entryPath: 'image.tex', documentId, documentVersion: 0, savedRevision: source.revision, engine: 'managed' });
+		const result = await compiler.result(1, run.runId);
+		expect(result.status, result.log).toBe('success'); if (result.status !== 'success') throw new Error(result.log);
+		expect(Buffer.from(result.pdf).subarray(0, 5).toString()).toBe('%PDF-');
+		expect(Buffer.from(result.pdf).toString('latin1')).toMatch(/\/Subtype\s*\/Image/);
+		await fs.writeFile(path.join(repository, '.verification-artifacts', 'image-compile.pdf'), result.pdf);
+	}, MANAGED_FORMAT_SETUP_TIMEOUT_MS + 15000);
+	it('compiles confirmed booktabs preamble and true three-line tables using the existing warm engine cache', async () => {
+		try {
+			const original = SourceDocument.open(Buffer.from('\uFEFF% keep\r\n\\documentclass{article}\r\n\\begin{document}\r\nBody\n\\end{document}\r'));
+			const plan = booktabsPlan(original, parseSource(original)); expect(plan).not.toBeNull(); if (!plan) throw new Error('Expected explicit package plan');
+			const tables = (['none', 'above', 'below'] as const).map((position, index) => tableSource({ ...createTable(3, 2), rules: 'booktabs', header: index !== 1,
+				cells: ['Metric', 'Value', 'A & B', '10%', 'raw', '\\end{tabular}'], weights: [2, 1], caption: { position, text: 'Results_#1' } })).join('\n');
+			const from = original.read().indexOf('Body'), span = { documentId: original.documentId, version: original.version, from, to: from + 4 };
+			const initial = createSourceState(original), state = tableInsertionTransaction(initial, rangeInsertionTarget(initial, span), tables, plan).state;
+			const changed = state.field(sourceState).projection.document;
+			expect(changed.read().match(/\\usepackage\{booktabs\}/g)?.length).toBe(1);
+			expect(changed.read().match(/\\toprule/g)?.length).toBe(3); expect(changed.read().match(/\\bottomrule/g)?.length).toBe(3);
+			expect(Buffer.from(historyTransaction(state, 'undo')!.state.field(sourceState).projection.document.toBytes())).toEqual(Buffer.from(original.toBytes()));
+			const identity = await request(Buffer.from(changed.toBytes()).toString('utf8'));
+			expect(await fs.readFile(path.join(root, 'main.tex'))).toEqual(Buffer.from(changed.toBytes()));
+			const run = await compiler.start({}, 1, identity), result = await compiler.result(1, run.runId);
+			expect(result.status, result.log).toBe('success'); if (result.status !== 'success') throw new Error(result.log);
+			expect(Buffer.from(result.pdf).subarray(0, 5).toString()).toBe('%PDF-');
+			expect(Buffer.from(result.pdf)).toEqual(await fs.readFile(path.join(root, 'output', 'main.pdf')));
+		} finally {
+			files.close();
+		}
+	}, MANAGED_FORMAT_SETUP_TIMEOUT_MS + 15000);
+	it.each(['blank', 'article', 'report'] as const)('compiles the original %s new-document template with genuine saved bytes and PDF', async (id) => {
+		files.close();
+		let savedWorkspaceId: string | null = null;
+		try {
+			const draft = createDraft(id);
+			const saved = await files.saveAs(path.join(root, id + '.tex'), { workspaceId: null, bytes: draft.toBytes(), documentId: draft.documentId, documentVersion: draft.version });
+			savedWorkspaceId = saved.workspace.id;
+			const disk = await fs.readFile(path.join(root, id + '.tex'));
+			expect(disk).toEqual(Buffer.from(draft.toBytes()));
+			const run = await compiler.start({}, 1, { workspaceId: saved.workspace.id, entryPath: saved.workspace.entryPath!, documentId: draft.documentId, documentVersion: draft.version, savedRevision: saved.write.revision, engine: 'managed' });
+			const result = await compiler.result(1, run.runId);
+			expect(result.status, result.log).toBe('success');
+			if (result.status !== 'success') throw new Error(result.log);
+			expect(result.identity.documentId).toBe(draft.documentId);
+			expect(result.identity.savedRevision).toBe(saved.write.revision);
+			expect(Buffer.from(result.pdf).subarray(0, 5).toString()).toBe('%PDF-');
+			expect(Buffer.from(result.pdf)).toEqual(await fs.readFile(path.join(root, 'output', id + '.pdf')));
+		} finally {
+			files.close();
+		}
+	}, MANAGED_FORMAT_SETUP_TIMEOUT_MS + 15000);
+	it('compiles all generated table styles, caption positions and escaped literal content without extra packages', async () => {
+		const tables = (['three-line', 'full', 'horizontal'] as const).map((style, index) => tableSource({
+			...createTable(3, 2), style, weights: [2, 1], width: 80, cells: ['Metric', 'Value', 'A & B', '10%', 'raw', '\\end{tabular}'],
+			caption: { position: index === 0 ? 'none' : index === 1 ? 'above' : 'below', text: 'Results_#1' }
+		})).join('\n');
+		const run = await compiler.start({}, 1, await request('\\documentclass{article}\n\\begin{document}\n' + tables + '\n\\end{document}\n'));
+		const result = await compiler.result(1, run.runId);
+		expect(result.status, result.log).toBe('success');
+		if (result.status !== 'success') throw new Error(result.log);
+		expect(Buffer.from(result.pdf).subarray(0, 5).toString()).toBe('%PDF-');
+	}, MANAGED_FORMAT_SETUP_TIMEOUT_MS + 15000);
+	it('re-edits all four real equation delimiters, saves their exact patched bytes and compiles genuine PDFs', async () => {
+		const delimiters = [['$', '$', true], ['$$', '$$', false], ['\\(', '\\)', true], ['\\[', '\\]', false]] as const;
+		for (const [index, [opening, closing, inline]] of delimiters.entries()) {
+			const name = `equation-reedit-${index}.tex`;
+			const prefix = '\uFEFF% original fixture\r\n\\documentclass{article}\r\n\\begin{document}\nBefore.\r\n';
+			const suffix = '\r\nAfter.\n\\end{document}\r\n';
+			const original = Buffer.from(prefix + opening + 'x^2' + closing + suffix);
+			await fs.writeFile(path.join(root, name), original);
+			const workspace = await files.open(root, 'folder');
+			const read = await files.read({ workspaceId: workspace.id, path: name });
+			const source = SourceDocument.open(read.bytes);
+			const located = equationAt(source, parseSource(source), source.read().indexOf('x^2'));
+			expect(located).not.toBeNull();
+			if (!located) throw new Error('Equation parser did not grant current delimiter authority');
+			const latex = '\\frac{1}{2}+\\sqrt{4}+\\alpha';
+			const replacement = equationReplacement(source, located, { latex, inline });
+			expect(replacement).toBe(opening + latex + closing);
+			const changed = source.apply({ expectedVersion: source.version, patches: [{ from: located.span.from, to: located.span.to,
+				insert: replacement, expected: source.read(located.span.from, located.span.to) }] }).document;
+			expect(Buffer.from(source.toBytes())).toEqual(original);
+			expect(Buffer.from(changed.toBytes())).toEqual(Buffer.from(prefix + opening + latex + closing + suffix));
+			const receipt = await files.write({ workspaceId: workspace.id, path: name, bytes: changed.toBytes(), expectedRevision: read.revision,
+				documentId: changed.documentId, documentVersion: changed.version });
+			expect(await fs.readFile(path.join(root, name))).toEqual(Buffer.from(changed.toBytes()));
+			expect(receipt.revision).not.toBe(read.revision);
+			const reopened = await files.read({ workspaceId: workspace.id, path: name });
+			expect(reopened.revision).toBe(receipt.revision);
+			expect(Buffer.from(reopened.bytes)).toEqual(Buffer.from(changed.toBytes()));
+			const reopenedSource = SourceDocument.open(reopened.bytes);
+			expect(equationAt(reopenedSource, parseSource(reopenedSource), reopenedSource.read().indexOf(latex))?.draft).toEqual({ latex, inline });
+			const run = await compiler.start({}, 1, { workspaceId: workspace.id, entryPath: name, documentId: changed.documentId,
+				documentVersion: changed.version, savedRevision: receipt.revision, engine: 'managed' });
+			const result = await compiler.result(1, run.runId);
+			expect(result.status, result.log).toBe('success');
+			if (result.status !== 'success') throw new Error(result.log);
+			expect(result.identity.documentId).toBe(changed.documentId);
+			expect(result.identity.documentVersion).toBe(changed.version);
+			expect(result.identity.savedRevision).toBe(receipt.revision);
+			expect(Buffer.from(result.pdf).subarray(0, 5).toString()).toBe('%PDF-');
+			expect(Buffer.from(result.pdf)).toEqual(await fs.readFile(path.join(root, 'output', `equation-reedit-${index}.pdf`)));
+		}
+	}, MANAGED_FORMAT_SETUP_TIMEOUT_MS + 60000);
+	it('compiles generated 1x1, rectangular and 10x10 matrices without adding amsmath', async () => {
+		const formulas = [[1, 1], [3, 2], [10, 10]].map(([rows, columns]) => equationSource(matrixSource({
+			rows: rows!, columns: columns!, cells: Array.from({ length: rows! * columns! }, (_, index) => String(index % 10))
+		}, 'parentheses'), false)).join('\n');
+		const run = await compiler.start({}, 1, await request('\\documentclass{article}\n\\begin{document}\n' + formulas + '\n\\end{document}\n'));
+		const result = await compiler.result(1, run.runId);
+		expect(result.status, result.log).toBe('success');
+		if (result.status !== 'success') throw new Error(result.log);
+		expect(Buffer.from(result.pdf).subarray(0, 5).toString()).toBe('%PDF-');
+	}, MANAGED_FORMAT_SETUP_TIMEOUT_MS + 15000);
+	it('generates a genuine PDF and preserves it after actual LaTeX failure', async () => {
+		const first = await compiler.start({}, 1, await request('\\documentclass{article}\n\\begin{document}Frontend compile.\\end{document}\n'));
+		const pending = compiler.result(1, first.runId);
+		await expect(compiler.result(1, first.runId)).rejects.toThrow('BUSY');
+		await expect(compiler.result(2, first.runId)).rejects.toThrow('STALE_WORKSPACE');
+		const result = await pending;
+		expect(result.status, result.log).toBe('success');
+		if (result.status !== 'success') throw new Error(result.log);
+		expect(Buffer.from(result.pdf).subarray(0, 5).toString()).toBe('%PDF-');
+		const previous = await fs.readFile(path.join(root, 'output', 'main.pdf'));
+		expect(Buffer.from(result.pdf)).toEqual(previous);
+		const second = await compiler.start({}, 1, await request('\\documentclass{article}\n\\begin{document}\\undefinedfrontendcommand\\end{document}\n'));
+		const failure = await compiler.result(1, second.runId);
+		expect(failure.status).toBe('failure');
+		expect(failure.diagnostics[0]?.line, failure.log).toBe(2);
+		expect(failure.diagnostics[0]?.path).toBe('main.tex');
+		expect(await fs.readFile(path.join(root, 'output', 'main.pdf'))).toEqual(previous);
+	}, MANAGED_FORMAT_SETUP_TIMEOUT_MS + 15000);
+	it('cancels a real nonterminating TeX run and allows a subsequent compile', async () => {
+		const run = await compiler.start({}, 1, await request('\\documentclass{article}\n\\begin{document}\\loop\\iftrue\\repeat\\end{document}\n'));
+		const finished = compiler.result(1, run.runId);
+		await new Promise((resolve) => setTimeout(resolve, 1500));
+		const peer = new FrontendFiles();
+		const workspace = await peer.open(root, 'folder');
+		const original = await peer.read({ workspaceId: workspace.id, path: 'main.tex' });
+		try {
+			await expect(peer.write({ workspaceId: workspace.id, path: 'main.tex', expectedRevision: original.revision,
+				documentId: 'peer-document', documentVersion: 1, bytes: Buffer.from('must not overwrite') })).rejects.toThrow('BUSY');
+			expect(await fs.readFile(path.join(root, 'main.tex'))).toEqual(Buffer.from(original.bytes));
+		} finally { peer.close(); }
+		await compiler.cancel(1, run.runId);
+		expect((await finished).status).toBe('cancelled');
+		const next = await compiler.start({}, 1, await request('\\documentclass{article}\n\\begin{document}After cancel.\\end{document}\n'));
+		const result = await compiler.result(1, next.runId);
+		expect(result.status, result.log).toBe('success');
+	}, 30000);
+	it('rejects stale disk revision before launching and foreign result identity', async () => {
+		const initial = await request('\\documentclass{article}\n\\begin{document}One.\\end{document}\n');
+		await fs.writeFile(path.join(root, 'main.tex'), 'external');
+		await expect(compiler.start({}, 1, initial)).rejects.toThrow('FILE_CONFLICT');
+		await expect(compiler.result(2, 'foreign')).rejects.toThrow('STALE_WORKSPACE');
+	});
+});

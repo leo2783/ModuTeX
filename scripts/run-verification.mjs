@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 
 const upstreamChecks = [
 	['editor typecheck', ['run', 'check', '--workspace=modutex-editor']],
+	['frontend shared package build', ['run', 'build:shared', '--workspace=modutex-frontend']],
 	['Electron typecheck', ['exec', '--no', '--', 'tsc', '-p', 'electron', '--noEmit']]
 ];
 
@@ -13,6 +14,10 @@ export const modutexChecks = [
 	['install policy', ['run', 'verify:install-policy']],
 	['vendor policy', ['run', 'verify:vendor']],
 	...upstreamChecks,
+	['frontend typecheck', ['run', 'frontend:check']],
+	['frontend unit and integration', ['run', 'frontend:test']],
+	['document core tests', ['run', 'test', '--workspace=@modutex/document-core']],
+	['frontend contract tests', ['run', 'test', '--workspace=@modutex/frontend-contracts']],
 	['Electron security tests', ['run', 'test:electron']],
 	['editor lint', ['run', 'lint', '--workspace=modutex-editor']],
 	['editor unit tests', ['run', 'testonce', '--workspace=modutex-editor']],

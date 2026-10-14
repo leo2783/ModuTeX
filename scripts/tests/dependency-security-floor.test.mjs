@@ -8,7 +8,15 @@ const SECURITY_FLOORS = new Map([
 	['axios', '1.20.0'],
 	['@xmldom/xmldom', '0.8.15'],
 	['fast-uri', '3.1.7'],
-	['js-yaml', '4.3.2']
+	['js-yaml', '4.3.2'],
+	['@modelcontextprotocol/sdk', '1.31.0'],
+	['concurrently', '9.2.5'],
+	['simple-git', '4.0.2'],
+	['shell-quote', '1.11.0'],
+	['proxy-addr', '2.0.8'],
+	['source-map-js', '1.2.2'],
+	['prosemirror-view', '1.42.3'],
+	['vitest', '4.1.11']
 ]);
 const BRACE_EXPANSION_FLOORS = new Map([
 	[1, '1.1.21'],
@@ -75,6 +83,10 @@ test('lockfile meets reviewed dependency security floors without adding excluded
 		[...FORBIDDEN_PACKAGES].some((name) => path === `node_modules/${name}` || path.endsWith(`/node_modules/${name}`))
 	);
 	assert.deepEqual(forbidden, [], 'dependency update must not reintroduce Wrangler, Miniflare, workerd, or sharp');
+	// The patched Vitest no longer requires Tinypool; do not force its reintroduction.
+	for (const [path, entry] of lockEntries(lock.packages ?? {}, 'tinypool')) {
+		assert.ok(compareVersions(entry.version, '2.1.2') >= 0, `${path} must not reintroduce vulnerable Tinypool`);
+	}
 });
 
 test('post-baseline advisory floors cover every affected lockfile path', async () => {

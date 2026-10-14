@@ -1,4 +1,4 @@
-// keeps the app version in lockstep across the root and editor package.json (electron-builder
+// keeps the app version in lockstep across the root and active frontend package.json (electron-builder
 // stamps it into installers, Vite injects it as __APP_VERSION__). Independent workspace
 // packages keep their own semver.
 //
@@ -19,7 +19,7 @@ if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(version)) {
 }
 
 // app-version files only; never add the independent libraries here
-const targets = ['package.json', 'apps/texpile-editor/package.json'];
+const targets = ['package.json', 'apps/frontend/package.json'];
 
 let changed = 0;
 for (const rel of targets) {

@@ -1,74 +1,94 @@
-<p align="center">
-  <img src="build/icons/128x128.png" alt="ModuTeX" width="80" height="80">
-</p>
-
+<p align="center"><img src="build/icons/128x128.png" alt="ModuTeX" width="80" height="80"></p>
 <h1 align="center">ModuTeX</h1>
-
 <p align="center">Visual LaTeX editing with a built-in compiler.</p>
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-TW.md">繁體中文</a></p>
 
-<p align="center">
-  <a href="README.md">English</a> · <a href="README.zh-TW.md">繁體中文</a>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0-526B87?style=flat-square" alt="Version 0.1.0">
-  <img src="https://img.shields.io/badge/Windows-x64-526B87?style=flat-square" alt="Windows x64">
-  <img src="https://img.shields.io/badge/Node.js-24.19.0-4D7756?style=flat-square&amp;logo=nodedotjs&amp;logoColor=white" alt="Node.js 24.19.0">
-  <img src="https://img.shields.io/badge/npm-11.17.0-AC5151?style=flat-square&amp;logo=npm&amp;logoColor=white" alt="npm 11.17.0">
-  <a href="LICENSING.md"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-76638A?style=flat-square" alt="License: AGPL-3.0-only"></a>
-</p>
-
-ModuTeX brings document editing and PDF compilation into one desktop workspace. Switch between visual editing and LaTeX source, work with equations and tables, and preview the compiled document alongside your text.
+ModuTeX combines visual editing, LaTeX source and PDF preview in one desktop workspace.
+Write text, build equations and tables, and compile with the bundled Tectonic engine.
 
 ## Features
 
-- **Visual and source editing** — edit supported document structures visually, with direct access to LaTeX source for custom commands and layouts.
-- **Equations and matrices** — insert mathematical content and edit matrices within the document.
-- **Editable tables** — manage rows and columns, adjust column widths, choose caption placement, and apply common academic table styles.
-- **Built-in PDF compilation** — use the bundled Tectonic engine without installing a separate TeX distribution. Missing resources are downloaded from a fixed source and cached locally.
-- **English and Traditional Chinese** — switch the interface language in preferences.
+- **Visual and source editing:** edit supported content directly, with shared undo and access to the original LaTeX for custom commands.
+- **Notebook cells:** drag cells with the mouse, insert at the current caret, and organize titles, abstracts and headings.
+- **Equations and matrices:** choose graphical templates for fractions, limits, calculus and other structures; mix matrices with ordinary math.
+- **Tables, code and images:** adjust table rows and widths, choose code languages with syntax highlighting, and insert or paste PNG/JPEG images.
+- **PDF preview:** compile beside your document, inspect errors and keep the previous successful preview when compilation fails.
+- **Two languages:** choose English or Traditional Chinese from the globe menu.
 
-## Getting started
+## Download and run
 
-The desktop build targets Windows x64 and uses the Node.js and npm versions shown above.
+The desktop package targets **Windows x64**. Choose a format from the [0.2.0 release](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.0):
 
-Download `modutex-desktop-0.1.0.tgz` from [GitHub Releases](https://github.com/leo2783/ModuTeX/releases), then run this command from the download folder:
+| Format | File | Requirements |
+|---|---|---|
+| Windows installer | `ModuTeX-Setup-0.2.0.exe` | No separate Node.js, npm or TeX installation. |
+| Local npx package | `modutex-desktop-0.2.0.tgz` | Node.js 24.19.0 and npm 11.17.0. |
+
+Download the chosen file and its matching `.sha256`. For the installer, verify it with
+`Get-FileHash .\ModuTeX-Setup-0.2.0.exe -Algorithm SHA256`, compare the result with the checksum file,
+then double-click it and follow the installation wizard.
+
+Download `modutex-desktop-0.2.0.tgz` and its matching `.tgz.sha256` from the
+[0.2.0 release](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.0).
+Open PowerShell in the download folder, verify the checksum, then launch:
 
 ```powershell
-npx --offline --yes --ignore-scripts --package .\modutex-desktop-0.1.0.tgz -- modutex
+$package = 'modutex-desktop-0.2.0.tgz'
+$expected = (Get-Content ".\$package.sha256").Split(' ')[0].ToLowerInvariant()
+$actual = (Get-FileHash ".\$package" -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw 'Checksum mismatch' }
+npx --offline --yes --ignore-scripts --package ".\$package" -- modutex
 ```
 
-This launches the desktop app. The npm `--offline` option applies to package resolution; Tectonic still needs internet access for the first compilation or when a document requires resources that are not cached.
+This launches the app through a local package; it does not install a permanent Windows application.
+Initial extraction can take several minutes. Tectonic may need internet access for the first compilation or uncached resources.
+See [installation and troubleshooting](docs/user/INSTALLATION.md).
+The [0.1.0 release](https://github.com/leo2783/ModuTeX/releases/tag/v0.1.0) remains available with the earlier editor.
 
-Open a project folder, select a `.tex` document, and choose **Managed Tectonic** as the compiler. System TeX is also supported when a local toolchain is configured.
+### Windows blocks the download or launch
+
+The installer is unsigned. Windows may show **Unknown publisher** or a SmartScreen reputation warning.
+First confirm the download is from this repository's Release and its SHA-256 matches.
+For an unrecognized-app SmartScreen warning, use **More info → Run anyway** only if Windows offers that option and you trust the verified file.
+For a file marked as downloaded, its **Properties → Unblock** option may be available.
+If antivirus reports malware, the checksum differs, or Smart App Control/organization policy prevents execution,
+stop and report the message or contact your administrator; do not disable system-wide protection.
+The `.tgz` format does not bypass Windows checks on the included executable.
+See [Windows troubleshooting](docs/user/INSTALLATION.md#windows-blocking--windows-封鎖),
+[Microsoft SmartScreen guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)
+and [file blocking guidance](https://support.microsoft.com/en-gb/windows/security/information-about-the-attachment-manager-in-microsoft-windows).
+
+## Start a document
+
+1. Choose **New document**, **Open file** or **Open folder**.
+2. Edit in Visual mode, or switch to Source for LaTeX commands.
+3. Choose **Compile PDF**. Unsaved changes are saved first; disk conflicts require attention.
+
+See [editing](docs/user/EDITING.md) and [compilation](docs/user/COMPILATION.md) for shortcuts, insertion and error handling.
 
 ## Development
 
-Run these commands from the repository root:
+From the repository root, with the exact Node/npm versions above:
 
 ```powershell
 npm ci
-npm run electron:dev
+npm run electron:dev:frontend
 ```
 
-Build the production app or run the verification suite:
+This opens the new frontend in Electron using Vite on port 5174.
+For a local static build, run `npm run electron:frontend`.
+`npm run electron:dev` starts the earlier editor on port 5173.
 
-```powershell
-npm run app:build
-npm run verify:modutex
-```
+Run `npm run verify:modutex` for shared packages, new frontend and retained host/editor checks.
+See [development and packaging](docs/user/DEVELOPMENT.md) for individual commands.
 
-The project uses Electron, Svelte, and TypeScript. Dependencies are pinned in `package-lock.json`.
+## Scope and license
 
-## Documentation
+The installer is unsigned. Draw.io, Mermaid and a Tauri host are not provided by the new interface.
+Custom System TeX configuration belongs to the earlier editor. See [known limitations](docs/user/KNOWN_LIMITATIONS.md).
 
-- [Installation and compiler setup](docs/INSTALLATION.md)
-- [Changelog](CHANGELOG.md)
-- [Known limitations](docs/KNOWN_LIMITATIONS.md)
-- [Licensing and third-party components](LICENSING.md)
+The complete desktop application is derived from Texpile and licensed under [AGPL-3.0-only](LICENSE).
+The original frontend and shared packages listed in [LICENSING.md](LICENSING.md) use Apache-2.0;
+third-party components retain their own licenses and notices.
 
-Draw.io, Mermaid, visual section folding, and signed installers are outside the 0.1.0 feature scope. See the known limitations for current table behavior and platform constraints.
-
-## License
-
-ModuTeX is derived from Texpile and licensed under [AGPL-3.0-only](LICENSE). The original utilities explicitly listed in [LICENSING.md](LICENSING.md) use Apache-2.0. Third-party components retain their respective licenses and notices.
+[Changelog](CHANGELOG.md) · [Installation](docs/user/INSTALLATION.md) · [Licensing](LICENSING.md)
