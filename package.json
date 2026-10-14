@@ -28,7 +28,7 @@
 		"test:npm-desktop": "node --test scripts/tests/npm-desktop-package.test.mjs",
 		"test:packaged": "node scripts/tests/frontend-packaged-smoke.mjs",
 		"test:verification-runner": "node --test scripts/tests/run-verification.test.mjs",
-		"test:ci-policy": "node --test scripts/tests/ci-policy.test.mjs scripts/tests/frontend-ci-failure.test.mjs",
+		"test:ci-policy": "node --test scripts/tests/ci-policy.test.mjs scripts/tests/frontend-ci-failure.test.mjs scripts/tests/packaged-preparation.test.mjs",
 		"test:electron": "npm exec --no -- vitest run --config electron/vitest.config.ts && node --test electron/tests/runtime-identity.test.mjs",
 		"test:dependency-security": "node --test scripts/tests/dependency-security-floor.test.mjs",
 		"test:fast-uri-consumer": "node --test scripts/tests/fast-uri-consumer.test.mjs",

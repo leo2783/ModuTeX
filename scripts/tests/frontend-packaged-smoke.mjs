@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, existsSync, readdirSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { chromium } from 'playwright';
+import { waitForPackagePreparation, APPLICATION_START_TIMEOUT_MS } from './packaged-preparation.mjs';
 
 // Test the real distributable, without Electron development selection or a Vite server.
 const target = resolve(process.argv[2] ?? 'release/win-unpacked/ModuTeX.exe');
@@ -38,7 +39,7 @@ const tarball = target.endsWith('.tgz');
 const npmCache = join(fixture, 'npm-cache');
 const npxCli = process.env.MODUTEX_TEST_NPX_CLI ?? (process.env.npm_execpath ? join(dirname(process.env.npm_execpath),'npx-cli.js') : undefined);
 assert.ok(!tarball || npxCli, 'Set MODUTEX_TEST_NPX_CLI to the pinned npm npx-cli.js');
-const child = spawn(tarball ? process.execPath : target, tarball ? [npxCli, '--offline','--yes','--ignore-scripts','--cache',npmCache,'--loglevel','verbose','--package',target,'--','modutex',...args] : args, {
+const child = spawn(tarball ? process.execPath : target, tarball ? [npxCli, '--offline','--yes','--ignore-scripts','--no-update-notifier','--cache',npmCache,'--loglevel','verbose','--timing','--package',target,'--','modutex',...args] : args, {
  cwd:tarball ? fixture : process.cwd(),
  windowsHide:true, env:{...process.env,TEXPILE_USER_DATA:fixture}, stdio:['ignore','pipe','pipe']
 });
@@ -50,17 +51,28 @@ child.on('error', e => { output += e.message; });
 child.stdout.on('data', b => {output += b.toString();});
 child.stderr.on('data', b => {output += b.toString();});
 let browser;
+const npmPreparationStarted = Date.now();
+function preparationDiagnostics() {
+ if(!tarball) return;
+ const logDir = join(npmCache, '_logs');
+ const logs = existsSync(logDir) ? readdirSync(logDir).filter(name=>/^[\w.-]+\.(?:log|json)$/.test(name)).map(name=>{
+  const text = readFileSync(join(logDir,name),'utf8').slice(-65536)
+   .replace(/((?:["']?)(?:_authToken|authorization|password|token)(?:["']?)\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s,]+)/gi,'$1[redacted]');
+  return {name,text};
+ }) : [];
+ const details = {stage:'cold npm preparation',elapsedMs:Date.now()-npmPreparationStarted,exitCode:child.exitCode,logs};
+ writeFileSync(resolve('.verification-artifacts/packaged-npm-preparation.json'),JSON.stringify(details,null,2));
+ for(const log of logs) if(log.name.endsWith('.log')) console.error('Owned cold npm debug tail:',log.text.slice(-8192));
+}
 try {
  if(tarball) {
   console.log('stage: preparing offline npm tarball from a separate download directory');
-  let timer;
-  // Cold extraction of the 226 MB archive takes several minutes on Windows.
-  // This preparation budget does not change the 45-second application startup check below.
-  const code=await Promise.race([launched,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('npm tarball preparation timed out')),300000);})]).finally(()=>clearTimeout(timer));
+  const code=await waitForPackagePreparation(launched,{onProgress:elapsedMs=>console.log(`stage: cold npm preparation still running (${Math.round(elapsedMs/1000)}s)`)});
+  preparationDiagnostics();
   assert.equal(code,0,'npm launcher failed: '+output);
   console.log('stage: npm package prepared and launcher exited successfully');
  }
- const deadline=Date.now()+45000;
+ const deadline=Date.now()+APPLICATION_START_TIMEOUT_MS;
  let endpoint;
  while(Date.now()<deadline) {
   try {const response=await fetch(`http://127.0.0.1:${port}/json/version`); endpoint=(await response.json()).webSocketDebuggerUrl; if(endpoint) break;} catch {}
@@ -108,6 +120,7 @@ try {
  await page.close();
  console.log(JSON.stringify({target,origin:'app://frontend/index.html',narrowIPC:true,saveReopen:true,englishMenu:true,compiledPdf:true,closed:true}));
 } catch(error) {
+ preparationDiagnostics();
  console.error('Packaged smoke failure:',error,output);
  if(browser) for(const page of browser.contexts()[0]?.pages()??[]) {
   console.error('Owned fixture window state:',await page.evaluate(()=>({

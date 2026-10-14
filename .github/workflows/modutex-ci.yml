@@ -169,5 +169,7 @@ jobs:
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: ModuTeX-Packaged-Frontend-Failure
-          path: .verification-artifacts/packaged-smoke-failure.png
+          path: |
+            .verification-artifacts/packaged-smoke-failure.png
+            .verification-artifacts/packaged-npm-preparation.json
           if-no-files-found: warn
