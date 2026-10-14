@@ -102,6 +102,22 @@ async function nextTurn(): Promise<void> {
 	await new Promise<void>((resolve) => setImmediate(() => resolve()));
 }
 
+/** Match the supported runtime, while exercising real failure lifetimes elsewhere. */
+async function assertPlatformResult(result: CompileResult, pdfPath: string): Promise<Buffer | null> {
+	if (process.platform === 'win32' && process.arch === 'x64') {
+		if (result.status !== 'success') throw new Error(`Expected a genuine PDF, got ${result.status}: ${result.log}`);
+		const pdf = Buffer.from(result.pdf);
+		assert.equal(pdf.subarray(0, 5).toString('ascii'), '%PDF-');
+		assert.deepEqual(await readFile(pdfPath), pdf);
+		return pdf;
+	}
+	assert.equal(result.status, 'failure', 'unsupported runtime must fail rather than claim a PDF');
+	assert.ok(result.diagnostics.some(item => item.severity === 'error'));
+	assert.equal(Object.hasOwn(result, 'pdf'), false);
+	await assert.rejects(readFile(pdfPath), { code: 'ENOENT' });
+	return null;
+}
+
 test('renderer compile lifetime revokes late results from the real host', { timeout: 660_000 }, async (t) => {
 	const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
 	let server: Awaited<ReturnType<typeof createServer>> | undefined;
@@ -140,6 +156,11 @@ test('renderer compile lifetime revokes late results from the real host', { time
 		const hostCompiler = new compilerModule.FrontendCompiler(hostEngine, () => hostFiles);
 		compiler = hostCompiler;
 		const request = await savedRequest(hostFiles, join(directory, 'main.tex'));
+		if (process.platform !== 'win32' || process.arch !== 'x64') {
+			const runtime = await vite.ssrLoadModule(fileURLToPath(new URL('../../../../electron/src/tectonic-runtime.ts', import.meta.url)));
+			assert.deepEqual(await runtime.prepareTectonicRuntime({ isPackaged: false, appPath: repository, resourcesPath: repository, userData: artifacts }),
+				{ ok: false, error: 'managed-engine-unavailable' });
+		}
 		const compileTimeout = managedModule.MANAGED_FORMAT_SETUP_TIMEOUT_MS + 15_000;
 		const loopingSource = '\\documentclass{article}\n\\begin{document}\\loop\\iftrue\\repeat\\end{document}\n';
 		let cancellationRequest: CompileRequest | undefined;
@@ -185,11 +206,8 @@ test('renderer compile lifetime revokes late results from the real host', { time
 				const actualResult = hostResult;
 				assert.ok(actualResult);
 				const genuine = await actualResult;
-				if (genuine.status !== 'success') throw new Error(`Expected a genuine PDF, got ${genuine.status}: ${genuine.log}`);
 				assert.deepEqual(genuine.identity, handle.identity);
-				const pdf = Buffer.from(genuine.pdf);
-				assert.equal(pdf.subarray(0, 5).toString('ascii'), '%PDF-');
-				assert.deepEqual(await readFile(join(directory!, 'output', 'main.pdf')), pdf);
+				await assertPlatformResult(genuine, join(directory!, 'output', 'main.pdf'));
 
 				controller.abort();
 				await cancelStarted.promise;
@@ -475,11 +493,8 @@ test('renderer compile lifetime revokes late results from the real host', { time
 				const actualResult = hostResult;
 				assert.ok(actualResult);
 				const genuine = await actualResult;
-				if (genuine.status !== 'success') throw new Error(`Expected a genuine PDF, got ${genuine.status}: ${genuine.log}`);
 				assert.deepEqual(genuine.identity, handle.identity);
-				const pdf = Buffer.from(genuine.pdf);
-				assert.equal(pdf.subarray(0, 5).toString('ascii'), '%PDF-');
-				assert.deepEqual(await readFile(join(directory!, 'output', 'delayed-result.pdf')), pdf);
+				const pdf = await assertPlatformResult(genuine, join(directory!, 'output', 'delayed-result.pdf'));
 
 				// The host consumed the genuine result, while renderer delivery remains held.
 				await assert.rejects(handle.cancel(), /STALE_WORKSPACE/);
@@ -489,9 +504,12 @@ test('renderer compile lifetime revokes late results from the real host', { time
 
 				releaseDelivery.resolve(undefined);
 				const delivered = await finished;
-				if (delivered.status !== 'success') throw new Error(`Expected delivered success, got ${delivered.status}`);
+				assert.equal(delivered.status, genuine.status);
 				assert.deepEqual(delivered.identity, handle.identity);
-				assert.deepEqual(Buffer.from(delivered.pdf), pdf);
+				if (pdf) {
+					assert.equal(delivered.status, 'success');
+					if (delivered.status === 'success') assert.deepEqual(Buffer.from(delivered.pdf), pdf);
+				} else assert.deepEqual(delivered.diagnostics, genuine.diagnostics);
 
 				await handle.cancel();
 				assert.equal(cancelCalls, 2);
