@@ -174,12 +174,7 @@ export function createDrawioHandler(
 }
 
 type Frame = Pick<WebFrameMain, 'url' | 'parent'>;
-export type Context = {
-	mainURL: string;
-	previewURL?: string;
-	dataPlaneOrigin?: string;
-	matchesHostURL?: (actual: string, expected: string) => boolean;
-};
+type Context = { mainURL: string; previewURL?: string; dataPlaneOrigin?: string };
 export type DrawioContextLookup = (webContentsId: number) => Context | undefined;
 
 function sameOrigin(left: string, right: string): boolean {
@@ -226,19 +221,18 @@ export function allowDrawioNetwork(
 	context?: Context,
 	bootstrap = false
 ): boolean {
-	const matchesHost = context?.matchesHostURL ?? matchesDiagramHostURL;
 	if (hasDrawioAncestor(details.frame) || !context) return false;
-	if (!details.frame) return bootstrap && details.resourceType === 'mainFrame' && matchesHost(details.url, context.mainURL);
+	if (!details.frame) return bootstrap && details.resourceType === 'mainFrame' && matchesDiagramHostURL(details.url, context.mainURL);
 	const urls = frameURLs(details.frame);
 	if (
 		bootstrap &&
 		details.resourceType === 'mainFrame' &&
-		matchesHost(details.url, context.mainURL) &&
+		matchesDiagramHostURL(details.url, context.mainURL) &&
 		urls?.length === 1 &&
 		['', 'about:blank'].includes(urls[0])
 	)
 		return true;
-	if (!urls || !matchesHost(urls.at(-1) ?? '', context.mainURL)) return false;
+	if (!urls || !matchesDiagramHostURL(urls.at(-1) ?? '', context.mainURL)) return false;
 	if (
 		context.previewURL &&
 		(urls[0] === context.previewURL || (details.resourceType === 'subFrame' && details.url === context.previewURL))
@@ -251,7 +245,7 @@ export function allowDrawioNetwork(
 	// A worker without a requesting frame is deliberately NOT authorized by referrer.
 	return (
 		urls.length === 1 &&
-		matchesHost(urls[0], context.mainURL) &&
+		matchesDiagramHostURL(urls[0], context.mainURL) &&
 		sameOrigin(details.url.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:'), context.mainURL)
 	);
 }
@@ -260,7 +254,6 @@ export function allowDrawioNavigation(
 	event: Pick<Electron.WebContentsWillFrameNavigateEventParams, 'url' | 'isMainFrame' | 'frame' | 'initiator'>,
 	context: Context
 ): boolean {
-	const matchesHost = context?.matchesHostURL ?? matchesDiagramHostURL;
 	// Only a wrapper's first blank child may load the fixed pinned editor URL.
 	try {
 		if (
@@ -279,8 +272,8 @@ export function allowDrawioNavigation(
 	if (hasDrawioAncestor(event.frame) || hasDrawioAncestor(event.initiator)) return false;
 	if (!event.frame || !event.initiator) return false;
 	const initiator = frameURLs(event.initiator);
-	if (!initiator || initiator.length !== 1 || !matchesHost(initiator[0], context.mainURL)) return false;
-	if (event.isMainFrame) return matchesHost(event.url, context.mainURL);
+	if (!initiator || initiator.length !== 1 || !matchesDiagramHostURL(initiator[0], context.mainURL)) return false;
+	if (event.isMainFrame) return matchesDiagramHostURL(event.url, context.mainURL);
 	return event.url === DRAWIO_RELAY || event.url === context.previewURL;
 }
 
@@ -325,7 +318,7 @@ export function installDrawioNetworkGuard(
 			bootstrap =
 				!!context &&
 				details.resourceType === 'mainFrame' &&
-				(context.matchesHostURL ?? matchesDiagramHostURL)(details.url, context.mainURL) &&
+				matchesDiagramHostURL(details.url, context.mainURL) &&
 				(!details.frame || details.frame === contents.mainFrame) &&
 				['', 'about:blank'].includes(contents.getURL());
 		} catch {

@@ -24,7 +24,7 @@ describe('What’s New version label', () => {
 		});
 		flushSync();
 
-		expect(host.querySelector('h2')?.textContent).toContain('v0.2.0-dev.0');
+		expect(host.querySelector('h2')?.textContent).toContain('v0.1.0');
 		expect(host.querySelector('h2')?.textContent).not.toContain('v0.17.0');
 	});
 });

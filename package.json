@@ -1,11 +1,11 @@
 {
 	"name": "modutex-desktop",
-	"version": "0.2.0-dev.0",
+	"version": "0.1.0",
 	"private": true,
 	"description": "ModuTeX desktop LaTeX editor",
 	"author": "ModuTeX contributors",
 	"license": "AGPL-3.0-only",
-	"homepage": "https://github.com/leo2783/ModuTeX",
+	"homepage": "https://github.com/leo2783/latex",
 	"main": "electron/dist/main.js",
 	"packageManager": "npm@11.17.0",
 	"engines": {
@@ -26,7 +26,6 @@
 		"verify:npm-desktop": "node scripts/verify-npm-desktop.mjs",
 		"stage:npm-desktop": "node scripts/stage-npm-desktop.mjs",
 		"test:npm-desktop": "node --test scripts/tests/npm-desktop-package.test.mjs",
-		"test:packaged": "node scripts/tests/frontend-packaged-smoke.mjs",
 		"test:verification-runner": "node --test scripts/tests/run-verification.test.mjs",
 		"test:ci-policy": "node --test scripts/tests/ci-policy.test.mjs",
 		"test:electron": "npm exec --no -- vitest run --config electron/vitest.config.ts && node --test electron/tests/runtime-identity.test.mjs",
@@ -35,43 +34,36 @@
 		"verify:install-policy": "node scripts/verify-install-policy.mjs",
 		"test:install-policy": "node --test scripts/tests/verify-install-policy.test.mjs",
 		"set-version": "node scripts/set-version.mjs",
-		"app:build": "npm run frontend:build && npm run electron:build:prod",
+		"app:build": "npm run build --workspace=modutex-editor && npm run electron:build:prod",
 		"electron": "npm run electron:build && electron .",
-		"electron:build": "npm run build:shared --workspace=modutex-frontend && tsc -p electron --noEmit && node scripts/build-electron.mjs --dev",
+		"electron:build": "tsc -p electron --noEmit && node scripts/build-electron.mjs --dev",
 		"_comment:electron:dev": "--host/--strictPort keep Vite on the IPv4 address wait-on polls.",
 		"electron:dev": "concurrently -k -n vite,electron \"npm run dev --workspace=modutex-editor -- --host 127.0.0.1 --strictPort\" \"npm run electron:build && wait-on -t 180000 http-get://127.0.0.1:5173 && cross-env ELECTRON_START_URL=http://127.0.0.1:5173 electron .\"",
 		"electron:rebuild": "electron-rebuild -f -w node-pty",
-		"electron:build:prod": "npm run build:shared --workspace=modutex-frontend && tsc -p electron --noEmit && node scripts/build-electron.mjs",
+		"electron:build:prod": "tsc -p electron --noEmit && node scripts/build-electron.mjs",
 		"dist": "npm run app:build && electron-builder --publish never",
 		"dist:dir": "npm run app:build && electron-builder --dir",
-		"format": "prettier --write .",
-		"frontend:check": "npm run check --workspace=modutex-frontend",
-		"frontend:build": "npm run build --workspace=modutex-frontend",
-		"frontend:test": "npm run test --workspace=modutex-frontend",
-		"frontend:test:runtime": "vitest run --config electron/vitest.frontend-runtime.config.ts",
-		"electron:dev:frontend": "concurrently -k -n frontend,electron \"npm run dev --workspace=modutex-frontend\" \"npm run electron:build && wait-on -t 180000 http-get://127.0.0.1:5174 && cross-env MODUTEX_RENDERER=frontend electron .\"",
-		"electron:frontend": "npm run frontend:build && npm run electron:build && cross-env MODUTEX_RENDERER=frontend-built electron ."
+		"format": "prettier --write ."
 	},
 	"dependencies": {
 		"node-pty": "1.1.0"
 	},
 	"devDependencies": {
 		"@electron/rebuild": "4.2.0",
-		"@modelcontextprotocol/sdk": "1.32.1",
+		"@modelcontextprotocol/sdk": "1.30.0",
 		"@types/node": "24.13.3",
 		"chokidar": "5.0.0",
-		"concurrently": "9.2.5",
+		"concurrently": "9.2.4",
 		"cross-env": "7.0.3",
 		"electron": "43.5.0",
 		"electron-builder": "27.0.0-alpha.9",
 		"esbuild": "0.28.1",
 		"js-yaml": "4.3.2",
-		"playwright": "1.61.1",
 		"prettier": "3.9.6",
 		"prettier-plugin-svelte": "4.1.1",
 		"prettier-plugin-tailwindcss": "0.8.0",
 		"shelljs": "0.8.5",
-		"simple-git": "4.0.2",
+		"simple-git": "3.36.0",
 		"typescript": "6.0.3",
 		"wait-on": "8.0.5",
 		"zod": "3.25.76"
@@ -89,10 +81,7 @@
 		"undici@^7": "7.29.1",
 		"wait-on@8.0.5": {
 			"axios": "1.20.0"
-		},
-		"source-map-js": "1.2.2",
-		"proxy-addr": "2.0.8",
-		"vitest": "4.1.11"
+		}
 	},
 	"allowScripts": {
 		"esbuild@0.28.1": true,
