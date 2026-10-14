@@ -49,4 +49,7 @@ The [Windows workflow](../../.github/workflows/modutex-ci.yml) validates the rea
 The [PR workflow](../../.github/workflows/test.yml) checks Windows and Linux without publishing.
 Windows 工作流程驗證真實應用、安裝程式及冷快取 npx，再整理下載物；PR 工作流程檢查兩個平台而不發布。
 
+Cold npx acceptance separates large-archive preparation (10-minute bound) from application startup (45 seconds). npm 11.17 extracts local tarballs while reading manifests; timing diagnostics distinguish preparation stalls from application failures. Save/reopen, language, PDF and close assertions remain required.
+冷快取 npx 驗收分開限制大型壓縮檔準備（10 分鐘）與應用啟動（45 秒）。npm 11.17 讀取本機 `.tgz` manifest 時會完整解壓；timing 紀錄用來區分準備停滯與應用故障，儲存／重開、語言、PDF 與關閉斷言仍須通過。
+
 [Installation / 安裝](INSTALLATION.md) · [Limitations / 限制](KNOWN_LIMITATIONS.md)
