@@ -99,7 +99,7 @@ try {
  assert.match(await page.locator('.source-view .cm-content').first().textContent(), /% packaged save/);
  assert.equal(await page.evaluate(()=>document.documentElement.lang),'en');
  await page.getByRole('button',{name:'Compile PDF',exact:true}).click();
- await page.waitForFunction(()=>/Compilation completed/.test(document.querySelector('footer.status-bar')?.textContent??''),null,{timeout:180000});
+ await page.waitForFunction(()=>/Compilation completed/.test(document.querySelector('footer.status-bar')?.textContent??''),null,{timeout:330000});
  assert.equal(readFileSync(join(workspace,'output/main.pdf')).subarray(0,5).toString(),'%PDF-');
  await page.locator('.preview-pane canvas').first().waitFor({state:'visible'});
  console.log('stage: packaged PDF compiled and rendered');

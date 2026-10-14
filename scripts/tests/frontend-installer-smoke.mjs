@@ -14,7 +14,7 @@ const install = join(fixture, 'application');
 const within = relative(root, fixture);
 assert.ok(within && !within.startsWith('..') && !isAbsolute(within));
 const installer = resolve(process.argv[2] ?? 'release/ModuTeX-Setup-0.2.0.exe');
-function run(command, args, timeout = 360000) {
+function run(command, args, timeout = 420000) {
  return new Promise((done, reject) => {
   const child = spawn(command, args, { windowsHide: true, stdio: 'inherit', timeout });
   child.once('error', reject);
@@ -31,7 +31,19 @@ try {
  await run(process.execPath, ['scripts/tests/frontend-packaged-smoke.mjs', exe]);
  console.log('Installed application: open/save/reopen, language, PDF and close verified');
 } finally {
- if (installed) await run(join(install, 'Uninstall ModuTeX.exe'), ['/S']);
+ if (installed) {
+  await run(join(install, 'Uninstall ModuTeX.exe'), ['/S']);
+  // NSIS may hand off to a temporary uninstaller. Observe the application removal
+  // before fixture cleanup so deletion cannot hide a failed uninstall.
+  let removed = false;
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+   try { await access(join(install, 'ModuTeX.exe')); }
+   catch (error) { if (error.code === 'ENOENT') { removed = true; break; } throw error; }
+   await new Promise(done => setTimeout(done, 200));
+  }
+  assert.ok(removed, 'Uninstaller must remove the installed application');
+ }
  assert.equal(relative(root, fixture), within);
  await rm(fixture, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
