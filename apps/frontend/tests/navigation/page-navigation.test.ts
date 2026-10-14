@@ -722,6 +722,6 @@ test('public service functions and real document operations satisfy navigation c
 	const notes = releaseNotes(rawChangelog);
 	assert.ok(notes.length >= 2);
 	assert.equal(notes[0]?.version, '0.2.0');
-	assert.equal(notes[1]?.version, '0.2.0');
+	assert.equal(notes[1]?.version, '0.2.0-dev.0');
 	assert.equal(notes[2]?.version, '0.1.0');
 });

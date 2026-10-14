@@ -37,8 +37,8 @@ test('real Svelte/Vite server render reads version documents and renders semanti
 		const module = await server.ssrLoadModule('/src/pages/ReleaseNotes.svelte');
 		const { render } = await server.ssrLoadModule('svelte/server');
 		const notes = render(module.default).body;
-		assert.match(notes, /版本紀錄/); assert.match(notes, /0\.2\.0-dev\.0/); assert.match(notes, /2026-10-13/);
-		assert.match(notes, /Development preview/);
+		assert.match(notes, /版本紀錄/); assert.match(notes, /0\.2\.0-dev\.0/); assert.match(notes, /2026-10-14/);
+		assert.match(notes, /unsigned installer and a local npx tarball/);
 		assert.match(notes, /0\.1\.0/); // Both actual version entries remain in the index.
 		assert.doesNotMatch(notes, /<script[ >]/i);
 		const limits = render(module.default, { props: { showLimitations: true } }).body;
