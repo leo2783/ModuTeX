@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { flushSync, mount, unmount } from 'svelte';
 import WhatsNewModal from '../../../../src/lib/components/WhatsNewModal.svelte';
 
@@ -24,7 +26,8 @@ describe('What’s New version label', () => {
 		});
 		flushSync();
 
-		expect(host.querySelector('h2')?.textContent).toContain('v0.2.0-dev.0');
+		const shippedVersion = JSON.parse(readFileSync(resolve(process.cwd(), '../../package.json'), 'utf8')).version;
+		expect(host.querySelector('h2')?.textContent).toContain(`v${shippedVersion}`);
 		expect(host.querySelector('h2')?.textContent).not.toContain('v0.17.0');
 	});
 });
