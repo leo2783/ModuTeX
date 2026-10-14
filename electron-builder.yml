@@ -45,10 +45,12 @@ asar:
 afterPack: scripts/after-pack.cjs
 
 extraResources:
-  - from: apps/texpile-editor/dist
+  - from: apps/frontend/dist
     to: app-dist
     filter:
       - '**/*'
+      - '!**/*.map'
+      - '!.vite/**'
   # Draft-mode engine (walker.lua / page-extract.lua). Ships OUTSIDE the asar so the
   # user's spawned lualatex can read them by absolute path (reads aren't sandboxed;
   # only writes are). Resolved at runtime via process.resourcesPath/lua.

@@ -2,7 +2,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 import tailwindcss from '@tailwindcss/vite';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
-import wasm from 'vite-plugin-wasm';
+import { windowsSafeWasm } from '../../packages/typst-syntax-wasm/scripts/windows-safe-wasm';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { readChangelog } from './scripts/changelog.mjs';
@@ -35,7 +35,7 @@ export default defineConfig(({ mode }) => ({
 		tailwindcss(),
 		// packages/typst-syntax-wasm is Typst's own parser built by wasm-pack; its glue imports the
 		// .wasm as an ES module, which Vite cannot do unaided
-		wasm(),
+		windowsSafeWasm,
 		svelte(),
 		paraglideVitePlugin({
 			project: './project.inlang',
@@ -60,6 +60,7 @@ export default defineConfig(({ mode }) => ({
 		)
 	},
 	test: {
+		maxWorkers: 2,
 		// unit tests live under tests/unit/ (mirroring src/); playwright's tests/integration/
 		// tree is deliberately outside this glob
 		include: ['tests/unit/**/*.{test,spec}.{js,ts}'],

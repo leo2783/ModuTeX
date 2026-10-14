@@ -18,6 +18,9 @@ const REQUIRED_PAYLOAD_FILES = [
 	'ModuTeX.exe',
 	'resources/app.asar',
 	'resources/app-dist/index.html',
+	'resources/app-dist/LICENSE',
+	'resources/app-dist/NOTICE',
+	'resources/app-dist/THIRD_PARTY_NOTICES.md',
 	'resources/lua/walker.lua',
 	'resources/lua/page-extract.lua',
 	'resources/lua/texd-loop.lua',
@@ -372,7 +375,7 @@ export function createNpmDesktopPackageMetadata(packageName, version, sourceComm
 		version: validateNpmPackageVersion(version),
 		description: 'Launch the ModuTeX Windows desktop application',
 		license: 'AGPL-3.0-only',
-		repository: { type: 'git', url: 'https://github.com/leo2783/latex.git' },
+		repository: { type: 'git', url: 'https://github.com/leo2783/ModuTeX.git' },
 		os: ['win32'],
 		cpu: ['x64'],
 		modutexSourceCommit: validateSourceCommit(sourceCommit),
@@ -389,7 +392,7 @@ export function createNpmDesktopReadme(packageName, version) {
 
 export function createNpmDesktopSourceOffer(sourceCommit) {
 	const commit = validateSourceCommit(sourceCommit);
-	return `# ModuTeX desktop source\n\nThis package's recorded source revision is available at:\n\nhttps://github.com/leo2783/latex/tree/${commit}\n\nThe source is licensed under AGPL-3.0-only; see LICENSE. The staging verifier checks package contents and checkout identity; it does not attest that the application payload was built from this revision. The release owner must retain a trusted build record binding the production build and payload hashes to the source revision.\n`;
+	return `# ModuTeX desktop source\n\nThis package's recorded source revision is available at:\n\nhttps://github.com/leo2783/ModuTeX/tree/${commit}\n\nThe desktop host and complete distribution retain AGPL-3.0-only; see LICENSE. The original apps/frontend, packages/document-core and packages/frontend-contracts have their own Apache-2.0 LICENSE and NOTICE files. Third-party components retain their respective licenses; see resources/app-dist/THIRD_PARTY_NOTICES.md and vendor notices. The staging verifier checks package contents and checkout identity; it does not attest that the application payload was built from this revision. The release owner must retain a trusted build record binding the production build and payload hashes to the source revision.\n`;
 }
 
 export function createNpmDesktopLauncher() {

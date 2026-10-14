@@ -87,7 +87,7 @@ const mountEditor = (node: PMNode, settings: ImagePluginSettings) => {
 	return {
 		view,
 		host,
-		image: view.dom.querySelector('img')!,
+		image: view.dom.querySelector<HTMLImageElement>('img.imagePluginImg')!,
 		replaceNode(next: PMNode) {
 			view.dispatch(view.state.tr.replaceWith(0, 1, next));
 		}
