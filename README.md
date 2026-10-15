@@ -17,23 +17,23 @@ Write text, build equations and tables, and compile with the bundled Tectonic en
 
 ## Download and run
 
-The desktop package targets **Windows x64**. Choose a format from the [0.2.0 release](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.0):
+The desktop package targets **Windows x64**. Choose a format from the [0.2.1 release](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.1):
 
 | Format | File | Requirements |
 |---|---|---|
-| Windows installer | `ModuTeX-Setup-0.2.0.exe` | No separate Node.js, npm or TeX installation. |
-| Local npx package | `modutex-desktop-0.2.0.tgz` | Node.js 24.19.0 and npm 11.17.0. |
+| Windows installer | `ModuTeX-Setup-0.2.1.exe` | No separate Node.js, npm or TeX installation. |
+| Local npx package | `modutex-desktop-0.2.1.tgz` | Node.js 24.19.0 and npm 11.17.0. |
 
 Download the chosen file and its matching `.sha256`. For the installer, verify it with
-`Get-FileHash .\ModuTeX-Setup-0.2.0.exe -Algorithm SHA256`, compare the result with the checksum file,
+`Get-FileHash .\ModuTeX-Setup-0.2.1.exe -Algorithm SHA256`, compare the result with the checksum file,
 then double-click it and follow the installation wizard.
 
-Download `modutex-desktop-0.2.0.tgz` and its matching `.tgz.sha256` from the
-[0.2.0 release](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.0).
+Download `modutex-desktop-0.2.1.tgz` and its matching `.tgz.sha256` from the
+[0.2.1 release](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.1).
 Open PowerShell in the download folder, verify the checksum, then launch:
 
 ```powershell
-$package = 'modutex-desktop-0.2.0.tgz'
+$package = 'modutex-desktop-0.2.1.tgz'
 $expected = (Get-Content ".\$package.sha256").Split(' ')[0].ToLowerInvariant()
 $actual = (Get-FileHash ".\$package" -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw 'Checksum mismatch' }

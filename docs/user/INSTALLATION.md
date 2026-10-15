@@ -1,13 +1,13 @@
 # Installation / 安裝
 
-## Windows x64 — 0.2.0
+## Windows x64 — 0.2.1
 
-Download from the [official Release](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.0). Choose:
+Download from the [official Release](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.1). Choose:
 
 | File | Use | Requirements |
 |---|---|---|
-| `ModuTeX-Setup-0.2.0.exe` | Install with a wizard; launch from the Start menu. | Windows x64; no separate Node/npm/TeX installation. |
-| `modutex-desktop-0.2.0.tgz` | Run the local package through npx. | Windows x64, Node.js 24.19.0, npm 11.17.0. |
+| `ModuTeX-Setup-0.2.1.exe` | Install with a wizard; launch from the Start menu. | Windows x64; no separate Node/npm/TeX installation. |
+| `modutex-desktop-0.2.1.tgz` | Run the local package through npx. | Windows x64, Node.js 24.19.0, npm 11.17.0. |
 
 請從官方 Release 下載檔案與同名 `.sha256`。EXE 提供安裝精靈及開始功能表捷徑；TGZ 透過 npx 執行，不會永久安裝 Windows 應用程式。兩者皆內建 Tectonic。
 
@@ -17,7 +17,7 @@ In PowerShell, set `$download` to the EXE or TGZ filename. Only proceed if the c
 在下載資料夾開啟 PowerShell，將檔名設為 EXE 或 TGZ；核對成功後才執行。
 
 ```powershell
-$download = 'ModuTeX-Setup-0.2.0.exe'
+$download = 'ModuTeX-Setup-0.2.1.exe'
 $expected = (Get-Content ".\$download.sha256").Split(' ')[0].ToLowerInvariant()
 $actual = (Get-FileHash ".\$download" -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw 'Checksum mismatch; do not run this file' }
@@ -26,11 +26,11 @@ if ($actual -ne $expected) { throw 'Checksum mismatch; do not run this file' }
 Double-click the verified EXE and follow the wizard. Uninstall through Windows Settings → Apps; document files and application settings are retained.
 EXE 核對後雙擊並依精靈安裝。可由 Windows「設定 → 應用程式」解除安裝；文件與應用程式設定會保留。
 
-For TGZ, verify `modutex-desktop-0.2.0.tgz` with the same steps, then run:
+For TGZ, verify `modutex-desktop-0.2.1.tgz` with the same steps, then run:
 TGZ 核對後執行：
 
 ```powershell
-npx --offline --yes --ignore-scripts --package .\modutex-desktop-0.2.0.tgz -- modutex
+npx --offline --yes --ignore-scripts --package .\modutex-desktop-0.2.1.tgz -- modutex
 ```
 
 Initial extraction can take several minutes. `--ignore-scripts` blocks package installation scripts. The TGZ is not published to the npm registry.

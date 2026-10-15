@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.1] — 2026-10-15
+
+### Fixed
+
+- Include file symlinks in frontend source-origin checks on Linux and reject directory aliases in file-only inputs.
+- Separate cold offline npm extraction from application startup during packaged acceptance; preserve bounded deadlines, progress and failure diagnostics.
+
+### Changed
+
+- Restore missing source-audit tools and documentation while retaining the existing application directories.
+- Document independent private-library versions and update Windows installer and local npx download instructions.
+
 ## [0.2.0] — 2026-10-14
 
 ### Added

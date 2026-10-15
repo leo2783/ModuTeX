@@ -17,23 +17,23 @@ ModuTeX 將視覺編輯、LaTeX 原始碼與 PDF 預覽整合在桌面工作區�
 
 ## 下載與啟動
 
-桌面套件支援 **Windows x64**，可從 [0.2.0 發行頁](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.0) 選擇：
+桌面套件支援 **Windows x64**，可從 [0.2.1 發行頁](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.1) 選擇：
 
 | 格式 | 檔案 | 需求 |
 |---|---|---|
-| Windows 安裝程式 | `ModuTeX-Setup-0.2.0.exe` | 不需另外安裝 Node.js、npm 或 TeX。 |
-| 本地 npx 套件 | `modutex-desktop-0.2.0.tgz` | Node.js 24.19.0 與 npm 11.17.0。 |
+| Windows 安裝程式 | `ModuTeX-Setup-0.2.1.exe` | 不需另外安裝 Node.js、npm 或 TeX。 |
+| 本地 npx 套件 | `modutex-desktop-0.2.1.tgz` | Node.js 24.19.0 與 npm 11.17.0。 |
 
 同時下載所選檔案與對應的 `.sha256`。
-使用安裝程式時，先以 `Get-FileHash .\ModuTeX-Setup-0.2.0.exe -Algorithm SHA256` 核對雜湊，
+使用安裝程式時，先以 `Get-FileHash .\ModuTeX-Setup-0.2.1.exe -Algorithm SHA256` 核對雜湊，
 再雙擊 `.exe` 並依安裝精靈操作。
 
-從 [0.2.0 發行頁](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.0)
-下載 `modutex-desktop-0.2.0.tgz` 與對應的 `.tgz.sha256`。
+從 [0.2.1 發行頁](https://github.com/leo2783/ModuTeX/releases/tag/v0.2.1)
+下載 `modutex-desktop-0.2.1.tgz` 與對應的 `.tgz.sha256`。
 在下載資料夾開啟 PowerShell，核對雜湊後再啟動：
 
 ```powershell
-$package = 'modutex-desktop-0.2.0.tgz'
+$package = 'modutex-desktop-0.2.1.tgz'
 $expected = (Get-Content ".\$package.sha256").Split(' ')[0].ToLowerInvariant()
 $actual = (Get-FileHash ".\$package" -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected) { throw 'Checksum mismatch' }
