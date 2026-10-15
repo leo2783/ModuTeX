@@ -3,8 +3,8 @@
 Run commands from the repository root with Node.js **24.19.0** and npm **11.17.0**, as pinned in `package.json`.
 請在儲存庫根目錄使用 `package.json` 指定的版本。
 
-The desktop product and active frontend are **0.2.0**. Shared private libraries such as `@modutex/document-core` and `@modutex/frontend-contracts` retain independent **0.1.0** versions. npm build banners show the individual library version; `scripts/set-version.mjs` synchronizes only the desktop and active frontend.
-桌面程式與新版前端為 **0.2.0**；共用函式庫採獨立版本，因此建置訊息中的 `document-core@0.1.0` 不代表桌面程式是舊版。
+The desktop product and active frontend are **0.2.1**. Shared private libraries such as `@modutex/document-core` and `@modutex/frontend-contracts` retain independent **0.1.0** versions. npm build banners show the individual library version; `scripts/set-version.mjs` synchronizes only the desktop and active frontend.
+桌面程式與新版前端為 **0.2.1**；共用函式庫採獨立版本，因此建置訊息中的 `document-core@0.1.0` 不代表桌面程式是舊版。
 
 ```powershell
 npm ci
@@ -41,7 +41,7 @@ npm run dist:dir -- --win --x64 --publish never
 npm exec --no -- electron-builder --win nsis --x64 --prepackaged release/win-unpacked --publish never
 ```
 
-The payload is `release/win-unpacked/`; the installer is `release/ModuTeX-Setup-0.2.0.exe`.
+The payload is `release/win-unpacked/`; the installer is `release/ModuTeX-Setup-0.2.1.exe`.
 These commands do not publish to GitHub or npm. Native dependencies may need C++ build tools if no compatible prebuilt binary exists.
 產物為未壓縮應用及 `.exe` 安裝程式；指令不發布到 GitHub 或 npm，缺少相容預建原生依賴時可能需要 C++ 建置工具。
 

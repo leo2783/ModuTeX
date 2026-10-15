@@ -13,7 +13,7 @@ const fixture = await mkdtemp(join(root, 'modutex-install-'));
 const install = join(fixture, 'application');
 const within = relative(root, fixture);
 assert.ok(within && !within.startsWith('..') && !isAbsolute(within));
-const installer = resolve(process.argv[2] ?? 'release/ModuTeX-Setup-0.2.0.exe');
+const installer = resolve(process.argv[2] ?? 'release/ModuTeX-Setup-0.2.1.exe');
 function run(command, args, timeout = 420000) {
  return new Promise((done, reject) => {
   const child = spawn(command, args, { windowsHide: true, stdio: 'inherit', timeout });
