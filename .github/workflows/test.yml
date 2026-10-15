@@ -84,6 +84,7 @@ jobs:
       - run: npm run test --workspace=texpile-typst-syntax-wasm
       - run: npm run build:shared --workspace=modutex-frontend
       - run: npm run frontend:check
+      - run: npm run test:frontend-origin
       - run: npm run frontend:test
       - run: npm run test --workspace=@modutex/document-core
       - run: npm run test --workspace=@modutex/frontend-contracts
@@ -150,6 +151,7 @@ jobs:
       - run: npm run test --workspace=texpile-typst-syntax-wasm
       - run: npm run build:shared --workspace=modutex-frontend
       - run: npm run frontend:check
+      - run: npm run test:frontend-origin
       - run: npm run frontend:test
       - run: npm run test --workspace=@modutex/document-core
       - run: npm run test --workspace=@modutex/frontend-contracts

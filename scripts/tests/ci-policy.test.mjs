@@ -143,6 +143,7 @@ const PR_GATES = [
 	'npm run test --workspace=texpile-typst-syntax-wasm',
 	'npm run build:shared --workspace=modutex-frontend',
 	'npm run frontend:check',
+	'npm run test:frontend-origin',
 	'npm run frontend:test',
 	'npm run test --workspace=@modutex/document-core',
 	'npm run test --workspace=@modutex/frontend-contracts',
@@ -293,7 +294,7 @@ function windowsContract(value) {
 	assert.match(steps[npx].run, /npm run test:packaged --/);
 	assert.doesNotMatch(steps[npx].run, /npm root --global/);
 	assert.match(steps[packaged].run, /win-unpacked\/ModuTeX\.exe/);
-	assert.match(steps[npx].run, /modutex-desktop-0\.2\.0\.tgz/);
+	assert.match(steps[npx].run, /modutex-desktop-0\.2\.1\.tgz/);
 	for (const index of [pack, checksum, stage, upload]) assert.equal(steps[index].if, undefined);
 	for (const command of ['stage-npm-desktop.mjs', 'verify-npm-desktop.mjs --package-dir', 'npm pack', '--ignore-scripts', '--json'])
 		assert.ok(steps[pack].run.includes(command), `missing npm staging gate ${command}`);
@@ -303,7 +304,7 @@ function windowsContract(value) {
 	assert.match(steps[pack].run, /finally \{\s+Pop-Location/);
 	assert.match(steps[pack].run, /if \(\$LASTEXITCODE -ne 0\)/);
 	assert.match(steps[checksum].run, /Get-FileHash.*-Algorithm SHA256/);
-	assert.match(steps[checksum].run, /modutex-desktop-0\.2\.0\.tgz\.sha256/);
+	assert.match(steps[checksum].run, /modutex-desktop-0\.2\.1\.tgz\.sha256/);
 	assert.match(steps[checksum].run, /verify-npm-desktop\.mjs --tarball .*--sha256 \$recordedHash/);
 	assert.match(steps[checksum].run, /tar -xzf \$tarballPath -C release\/tarball-verification/);
 	assert.match(steps[checksum].run, /verify-npm-desktop\.mjs --package-dir release\/tarball-verification\/package/);
@@ -318,12 +319,12 @@ function windowsContract(value) {
 		assert.equal(steps[index]['continue-on-error'], undefined);
 	}
 	assert.equal(steps[installer].run, 'npm exec --no -- electron-builder --win nsis --x64 --prepackaged release/win-unpacked --publish never');
-	assert.equal(steps[installed].run, 'node scripts/tests/frontend-installer-smoke.mjs release/ModuTeX-Setup-0.2.0.exe');
+	assert.equal(steps[installed].run, 'node scripts/tests/frontend-installer-smoke.mjs release/ModuTeX-Setup-0.2.1.exe');
 	assert.match(steps[installerHash].run, /Get-FileHash -LiteralPath \$installer -Algorithm SHA256/);
 	assert.match(steps[installerHash].run, /Set-Content -LiteralPath "\$installer.sha256"/);
 	for (const path of [
-		'ModuTeX-Setup-0.2.0.exe',
-		'ModuTeX-Setup-0.2.0.exe.sha256',
+		'ModuTeX-Setup-0.2.1.exe',
+		'ModuTeX-Setup-0.2.1.exe.sha256',
 		'LICENSE',
 		'build\\license.txt',
 		'TECTONIC-NOTICE.md',
@@ -335,11 +336,11 @@ function windowsContract(value) {
 		'SOURCE-OFFER.md',
 		'npm-desktop-inventory.json',
 		'npm-desktop-inventory.sha256',
-		'modutex-desktop-0.2.0.tgz'
+		'modutex-desktop-0.2.1.tgz'
 	]) {
 		assert.ok(steps[stage].run.includes(path), `missing artifact evidence ${path}`);
 	}
-	assert.equal(steps[upload].with.name, 'ModuTeX-Windows-x64-0.2.0');
+	assert.equal(steps[upload].with.name, 'ModuTeX-Windows-x64-0.2.1');
 	assert.equal(steps[upload].with.path, 'release/artifact');
 	assert.equal(steps[upload].with['if-no-files-found'], 'error');
 }
@@ -689,7 +690,7 @@ test('workflow contract rejects missing gates, swallowed failures and missing ev
 		},
 		(value) => {
 			value.jobs['verify-and-package'].steps.find((step) => step.name === 'Generate SHA-256 and verify npm tarball').run =
-				'Get-FileHash release/modutex-desktop-0.2.0.tgz -Algorithm SHA256';
+				'Get-FileHash release/modutex-desktop-0.2.1.tgz -Algorithm SHA256';
 		},
 		(value) => {
 			const step = value.jobs['verify-and-package'].steps.find((step) => step.name === 'Stage npm tarball and verification evidence');

@@ -15,6 +15,7 @@ export const modutexChecks = [
 	['vendor policy', ['run', 'verify:vendor']],
 	...upstreamChecks,
 	['frontend typecheck', ['run', 'frontend:check']],
+	['frontend source and asset evidence tests', ['run', 'test:frontend-origin']],
 	['frontend unit and integration', ['run', 'frontend:test']],
 	['document core tests', ['run', 'test', '--workspace=@modutex/document-core']],
 	['frontend contract tests', ['run', 'test', '--workspace=@modutex/frontend-contracts']],
