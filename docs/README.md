@@ -10,6 +10,9 @@
 
 ## 架構
 
+- [Tauri 後端與 Apache-2.0 遷移計畫（Windows；Draw.io 排除）](architecture/TAURI_APACHE_MIGRATION_PLAN_2026-10-17.md)
+- [Tauri 遷移 subagent 使用計畫（AGY 3＋Luna API 3）](architecture/TAURI_SUBAGENT_PLAN_2026-10-17.md)
+- [Tauri 遷移實作狀態](architecture/TAURI_IMPLEMENTATION_STATUS.md)
 - [現行分歧整合決策](reference/REPOSITORY_RECONCILIATION.md)
 - [歷史 Svelte 前端重寫計畫與頁面概念](architecture/FRONTEND_REWRITE_PLAN.md)
 - [實作清單](architecture/FRONTEND_REWRITE_STATUS.md)

@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "baseline": "b1e1d25d36c569a949723bdc2ca4da16fe026937",
+  "target": "Windows x64 Tauri runtime: original owner code Apache-2.0, third-party terms retained",
+  "records": [
+    {
+      "path": "apps/frontend",
+      "action": "reuse-original-scope",
+      "license": "Apache-2.0",
+      "rightsEvidence": "docs/licensing/FRONTEND_APACHE_SCOPE_2026-10-12.md",
+      "sourceEvidence": "docs/licensing/frontend-origin.json",
+      "status": "existing-owner-license; remaining-source-and-third-party-closure-review-required"
+    },
+    {
+      "path": "packages/document-core",
+      "action": "reuse-original-scope",
+      "license": "Apache-2.0",
+      "rightsEvidence": "docs/licensing/FRONTEND_APACHE_SCOPE_2026-10-12.md",
+      "sourceEvidence": "docs/licensing/frontend-origin.json",
+      "status": "existing-owner-license; remaining-source-review-required"
+    },
+    {
+      "path": "packages/frontend-contracts",
+      "action": "reuse-original-scope",
+      "license": "Apache-2.0",
+      "rightsEvidence": "docs/licensing/FRONTEND_APACHE_SCOPE_2026-10-12.md",
+      "sourceEvidence": "packages/frontend-contracts/LICENSE",
+      "status": "existing-owner-license; binary-transport-parity-required"
+    },
+    {
+      "path": "electron/src",
+      "action": "behavior-evidence-only; new-runtime-implementation",
+      "license": "AGPL-3.0-only unless separately evidenced",
+      "sourceEvidence": "docs/licensing/AGPL_APACHE_INVENTORY_2026-10-04.md",
+      "status": "excluded-from-new-runtime; any-code-reuse-requires-file-level-review"
+    },
+    {
+      "path": "electron/lua",
+      "action": "review-or-independent-implementation",
+      "license": "AGPL-3.0-only unless separately evidenced",
+      "sourceEvidence": "LICENSING.md",
+      "status": "open; Draft parity remains required"
+    },
+    {
+      "path": "packages/modutex-contracts",
+      "action": "do-not-import; define-required-new-contracts",
+      "license": "AGPL-3.0-only unless separately evidenced",
+      "sourceEvidence": "docs/licensing/AGPL_APACHE_INVENTORY_2026-10-04.md",
+      "status": "excluded-from-new-runtime"
+    },
+    {
+      "path": "vendor/drawio",
+      "action": "exclude; future-plugin",
+      "license": "constituent licenses retained",
+      "sourceEvidence": "vendor/vendor-lock.json",
+      "status": "out-of-scope-for-core-migration"
+    },
+    {
+      "path": "vendor/tectonic",
+      "action": "fixed-sidecar",
+      "license": "retain-upstream-and-binary-component-terms",
+      "sourceEvidence": "vendor/vendor-lock.json",
+      "status": "open; verify-version-hash-and-component-closure"
+    }
+  ],
+  "requiredNewRecords": [
+    "Each new Rust/TS/Lua/build/test/asset path: source URL or authoring basis, exact hash, rights evidence, constituent licenses, modifications, acceptance evidence",
+    "Cargo target/features, npm bundle, DLL, engines, TeX resources, fonts, WASM, icons and generated runtime closure",
+    "Positive runtime/source-export inventory and third-party LICENSE/NOTICE contents"
+  ]
+}
