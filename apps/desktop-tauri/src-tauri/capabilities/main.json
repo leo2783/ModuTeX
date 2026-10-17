@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Local main window: host health only. No plugin, shell or fs grants.",
+  "local": true,
+  "windows": ["main"],
+  "permissions": ["allow-host-health"]
+}

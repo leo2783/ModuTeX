@@ -1,6 +1,6 @@
 # Tauri 後端遷移計畫
 
-日期：2026-10-17｜基準：main `b1e1d25`｜狀態：規劃
+日期：2026-10-17｜基準：main `b1e1d25`｜狀態：實作中，進度見[狀態表](TAURI_IMPLEMENTATION_STATUS.md)
 
 ## 目標與範圍
 
@@ -69,7 +69,7 @@ CI 依序加入 Rust format／lint／unit、契約、真檔案、真引擎、PTY
 
 估算一位熟悉 Rust／Windows 與現有前端的全職工程師：G0–G1 5–8 日、G2 5–8 日、G3 5–8 日、G4 4–6 日、G5 8–12 日、G6–G7 6–10 日，合計 **33–52 工程日，約 7–11 週**。包含必要前端入口、來源盤點與回歸；排除 Draw.io、其他平台及外部權利／憑證等待。G1 原型完成後重估。
 
-執行順序：G0 → G1 → G2 → G3 → G4／G5 → G6 → G7。下一步是 G0 功能與來源盤點。
+執行順序：G0 → G1 → G2 → G3 → G4／G5 → G6 → G7。功能盤點與 G1 基礎模組已交付，按[狀態表](TAURI_IMPLEMENTATION_STATUS.md)推進原型及驗收。
 
 人力調度依 [subagent 使用計畫](TAURI_SUBAGENT_PLAN_2026-10-17.md)：AGY 3＋Luna API 3，最多六個 worker；保留主代理獨立整合與驗收。
 

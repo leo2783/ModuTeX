@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "scope": "Real release host launches bundled frontend and answers authorized host_health; binary IPC/PDF/IME/PTY/engine prototypes remain open",
+  "exeSha256": "2637b2779e870ac06fcb171cea190c906c95cfeb88dfe9ed66e63ffb5333c6f2",
+  "url": "http://tauri.localhost/",
+  "health": {
+    "protocolVersion": 1,
+    "hostVersion": "0.2.1",
+    "owner": "main"
+  },
+  "title": "ModuTeX",
+  "text": "ModuTeX 首頁 工作台 設定 版本紀錄 說明  繁體中文✓English   文件 開啟文件  新文件   從模板開始 空白文件最小 LaTeX 文件文章標題與章節報告標題與章 瀏覽器可編輯與預覽；儲存文件與編譯請使用桌面版。 開始使用 授權         尚未開啟文件",
+  "pageErrors": [],
+  "cargoLockSha256": "4e185a2c5b121cde79c028f2a97ed7805213bcd1d19f417331e4041120e05e95",
+  "frontendIndexSha256": "2acff70bdbabfe28ba0131b8db96d665070418876805705d4a243284ea6d2c91",
+  "checks": [
+    "cargo fmt --check: passed",
+    "cargo clippy --all-targets -- -D warnings: passed",
+    "cargo test: 32 passed, 0 failed, 0 ignored",
+    "node agent tests: 6 passed",
+    "tauri-surface --check: baseline unchanged",
+    "npm run frontend:build: passed",
+    "cargo build --release --locked: passed"
+  ],
+  "pending": [
+    "Tauri file adapter and services",
+    "binary IPC/PDF/IME/ConPTY/engine G1 prototypes",
+    "G0 remaining source review and G2-G7 acceptance"
+  ]
+}

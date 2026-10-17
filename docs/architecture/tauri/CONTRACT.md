@@ -1,6 +1,6 @@
 # Tauri 共用契約
 
-此契約固定後端與 adapter 的目標行為；對照基準為 [host-surface.json](host-surface.json)，來源 hash 隨基準保存。
+此契約固定後端與 adapter 的目標行為；對照基準為 [host-surface.json](host-surface.json)，來源 hash 隨基準保存。各區功能、來源與驗收案例見 [capability-inventory.json](capability-inventory.json)，其審查狀態與實作完成狀態分開記錄。
 
 ## 分層
 
