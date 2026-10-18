@@ -1,0 +1,50 @@
+[package]
+name = "modutex-desktop-tauri"
+version = "0.2.1"
+description = "ModuTeX Tauri desktop host"
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "modutex_desktop_tauri_lib"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+g1-prototypes = ["dep:portable-pty"]
+
+[[example]]
+name = "tectonic_probe"
+path = "examples/tectonic_probe.rs"
+required-features = ["g1-prototypes"]
+
+[[example]]
+name = "pty_probe"
+path = "examples/pty_probe.rs"
+required-features = ["g1-prototypes"]
+
+[build-dependencies]
+tauri-build = "=2.7.3"
+
+[dependencies]
+tauri = "=2.12.4"
+tauri-plugin-dialog = "=2.8.3"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.145"
+uuid = { version = "=1.18.1", features = ["v4", "serde"] }
+portable-pty = { version = "=0.9.0", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+sha2 = "=0.10.9"
+windows-sys = { version = "=0.61.2", features = [
+    "Wdk_Foundation",
+    "Wdk_Storage_FileSystem",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Threading",
+    "Win32_System_JobObjects",
+    "Win32_System_Pipes",
+] }

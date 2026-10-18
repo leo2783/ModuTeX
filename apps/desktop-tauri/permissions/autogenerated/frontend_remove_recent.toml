@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-frontend-remove-recent"
+description = "Enables the frontend_remove_recent command without any pre-configured scope."
+commands.allow = ["frontend_remove_recent"]
+
+[[permission]]
+identifier = "deny-frontend-remove-recent"
+description = "Denies the frontend_remove_recent command without any pre-configured scope."
+commands.deny = ["frontend_remove_recent"]

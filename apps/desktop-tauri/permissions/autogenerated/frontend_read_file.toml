@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-frontend-read-file"
+description = "Enables the frontend_read_file command without any pre-configured scope."
+commands.allow = ["frontend_read_file"]
+
+[[permission]]
+identifier = "deny-frontend-read-file"
+description = "Denies the frontend_read_file command without any pre-configured scope."
+commands.deny = ["frontend_read_file"]

@@ -47,6 +47,7 @@
 		"format": "prettier --write .",
 		"frontend:check": "npm run check --workspace=modutex-frontend",
 		"frontend:build": "npm run build --workspace=modutex-frontend",
+		"frontend:build:tauri": "npm run build --workspace=modutex-frontend -- --mode tauri",
 		"frontend:test": "npm run test --workspace=modutex-frontend",
 		"verify:frontend-origin": "node scripts/licensing/verify-frontend-origin.mjs",
 		"pretest:frontend-origin": "npm run frontend:build",

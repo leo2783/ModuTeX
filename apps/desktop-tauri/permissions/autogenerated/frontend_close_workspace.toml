@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-frontend-close-workspace"
+description = "Enables the frontend_close_workspace command without any pre-configured scope."
+commands.allow = ["frontend_close_workspace"]
+
+[[permission]]
+identifier = "deny-frontend-close-workspace"
+description = "Denies the frontend_close_workspace command without any pre-configured scope."
+commands.deny = ["frontend_close_workspace"]

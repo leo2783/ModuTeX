@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-frontend-list-files"
+description = "Enables the frontend_list_files command without any pre-configured scope."
+commands.allow = ["frontend_list_files"]
+
+[[permission]]
+identifier = "deny-frontend-list-files"
+description = "Denies the frontend_list_files command without any pre-configured scope."
+commands.deny = ["frontend_list_files"]

@@ -4,7 +4,7 @@
   "version": "0.2.1",
   "identifier": "io.github.leo2783.modutex.tauri",
   "build": {
-    "frontendDist": "../../frontend/dist",
+    "frontendDist": "../frontend/dist-tauri",
     "devUrl": "http://127.0.0.1:5174"
   },
   "app": {
@@ -12,6 +12,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "ModuTeX",
         "width": 1280,
         "height": 800,

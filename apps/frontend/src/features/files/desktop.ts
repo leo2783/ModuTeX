@@ -2,6 +2,7 @@
 import { parseWorkspaceInfo, parseFileEntries, parseFileEvent, parseReadReceipt, parseWriteReceipt, parseSaveAsReceipt, parseCompileIdentity, parseCompileResult, recentDocumentId } from '@modutex/frontend-contracts';
 import type { DesktopPort, FileEvent, FileRef, FileWatchFailure, WriteRequest, SaveAsRequest, CompileRequest } from '@modutex/frontend-contracts';
 import { recentDocuments } from './recent.ts';
+import { tauriDesktopFiles } from './tauri-files.ts';
 
 interface NativeFiles {
 	openWorkspace(kind: 'file' | 'folder'): Promise<unknown>;
@@ -58,6 +59,8 @@ function fileWatchFailure(value: unknown): FileWatchFailure | null {
 }
 
 export function desktopFiles(signal?: AbortSignal): FileDesktopPort | null {
+	const tauri = tauriDesktopFiles(signal);
+	if (tauri) return tauri;
 	const native = (window as Window & { modutexFiles?: NativeFiles }).modutexFiles;
 	if (!native) return null;
 	const assertActive = () => { if (signal?.aborted) throw new Error('STALE_WORKSPACE'); };

@@ -7,7 +7,7 @@
       "path": "apps/frontend",
       "action": "reuse-original-scope",
       "license": "Apache-2.0",
-      "rightsEvidence": "docs/licensing/FRONTEND_APACHE_SCOPE_2026-10-12.md",
+      "rightsEvidence": "docs/licensing/SOURCE_REVIEW.md",
       "sourceEvidence": "docs/licensing/frontend-origin.json",
       "status": "existing-owner-license; remaining-source-and-third-party-closure-review-required"
     },
@@ -15,7 +15,7 @@
       "path": "packages/document-core",
       "action": "reuse-original-scope",
       "license": "Apache-2.0",
-      "rightsEvidence": "docs/licensing/FRONTEND_APACHE_SCOPE_2026-10-12.md",
+      "rightsEvidence": "docs/licensing/SOURCE_REVIEW.md",
       "sourceEvidence": "docs/licensing/frontend-origin.json",
       "status": "existing-owner-license; remaining-source-review-required"
     },
@@ -23,7 +23,7 @@
       "path": "packages/frontend-contracts",
       "action": "reuse-original-scope",
       "license": "Apache-2.0",
-      "rightsEvidence": "docs/licensing/FRONTEND_APACHE_SCOPE_2026-10-12.md",
+      "rightsEvidence": "docs/licensing/SOURCE_REVIEW.md",
       "sourceEvidence": "packages/frontend-contracts/LICENSE",
       "status": "existing-owner-license; binary-transport-parity-required"
     },
@@ -31,7 +31,7 @@
       "path": "electron/src",
       "action": "behavior-evidence-only; new-runtime-implementation",
       "license": "AGPL-3.0-only unless separately evidenced",
-      "sourceEvidence": "docs/licensing/AGPL_APACHE_INVENTORY_2026-10-04.md",
+      "sourceEvidence": "docs/licensing/SOURCE_REVIEW.md",
       "status": "excluded-from-new-runtime; any-code-reuse-requires-file-level-review"
     },
     {
@@ -45,7 +45,7 @@
       "path": "packages/modutex-contracts",
       "action": "do-not-import; define-required-new-contracts",
       "license": "AGPL-3.0-only unless separately evidenced",
-      "sourceEvidence": "docs/licensing/AGPL_APACHE_INVENTORY_2026-10-04.md",
+      "sourceEvidence": "docs/licensing/SOURCE_REVIEW.md",
       "status": "excluded-from-new-runtime"
     },
     {
@@ -187,6 +187,677 @@
           "sha256": "72a570a51ac14b3e9248b4b8840f66c82be93746ecb2b656e1c3e6848eb191ef"
         }
       ]
+    },
+    {
+      "id": "g1-tauri-prototype-asset-boundary-2026-10-18",
+      "date": "2026-10-18",
+      "scope": "apps/desktop-tauri",
+      "license": "Apache-2.0 for owner-authored Tauri code",
+      "rightsEvidence": "User instruction: original owner code Apache-2.0",
+      "authoringBasis": "The prototype in apps/desktop-tauri/src-tauri/src/prototype.rs is the initial original implementation authored against the approved Apache frontend-contracts and Tauri target specification; no Electron source was used in its implementation packet. The MIME/CSP correction in apps/desktop-tauri/src-tauri/src/lib.rs and apps/desktop-tauri/src-tauri/tauri.conf.json was reviewed as the Argon owner correction. The two added asset-boundary tests in apps/desktop-tauri/src-tauri/src/lib.rs are root-authored. The supplied Cargo.toml keeps g1-prototypes opt-in and defaults to custom-protocol only; prototype setup and command registration are cfg-gated and are not active in the default feature selection.",
+      "sources": [
+        {
+          "path": "docs/licensing/tauri-origin.json",
+          "sha256": "f66df594c8901f54f001bd81cce608c8604e58ff7c47cdd9084a1ccfe27e5538",
+          "snapshot": "Task-supplied pre-append ledger; not a hash of the amended file"
+        }
+      ],
+      "dependencies": "Cargo dependency and component license closure is not established by the supplied files and remains open; no closure is claimed.",
+      "validation": {
+        "scope": "Root observed six JavaScript tests, Clippy, and 34+3 Rust tests before the added asset-boundary tests; these are prior observations, not fresh verification of the hashes in this record.",
+        "pending": [
+          "Fresh verification of the added asset-boundary tests remains pending.",
+          "Full corrected release PDF worker/canvas and PTY fault-path verification remains pending."
+        ]
+      },
+      "status": "Current-stage source provenance recorded; fresh asset tests and corrected release PDF/PTY verification remain pending.",
+      "files": [
+        {
+          "path": "apps/desktop-tauri/src-tauri/Cargo.toml",
+          "sha256": "589e3d0f8a3c03063fde2e408f3df00997256f6aedadd521765b3548940c059a"
+        },
+        {
+          "path": "apps/desktop-tauri/src-tauri/src/lib.rs",
+          "sha256": "dda9398cc641d128a89f2040778e23dcd2a6771f9b349232434f94218d80cb26"
+        },
+        {
+          "path": "apps/desktop-tauri/src-tauri/src/prototype.rs",
+          "sha256": "7a12d0c37ad7d3f4a9da18e1c9c187a3052df5eb3a1698b222f8748c1dab6743"
+        },
+        {
+          "path": "apps/desktop-tauri/src-tauri/tauri.conf.json",
+          "sha256": "1b1e5654852ba1d45f2577f969c60c5c03adaf7048d6b8d9c84dd333e15ae739"
+        }
+      ]
+    },
+    {
+      "id": "g1-frontend-pdf-csp-snapshots-2026-10-18",
+      "date": "2026-10-18",
+      "scope": "apps/frontend Tauri CSP and PDF source snapshots",
+      "license": "Apache-2.0 within the existing apps/frontend path scope",
+      "rightsEvidence": "Existing apps/frontend path record in this ledger; remaining source and third-party closure review is still required",
+      "authoringBasis": "The Tauri MIME/CSP transform in apps/frontend/scripts/tauri-csp.mjs is the reviewed Argon owner correction. The supplied PDF reader and frontend test files are recorded as current source snapshots; no additional individual author attribution is asserted.",
+      "validation": {
+        "scope": "Root observed six JavaScript tests, Clippy, and 34+3 Rust tests before the added asset-boundary tests; these are prior observations, not fresh verification of the hashes in this record.",
+        "pending": [
+          "Fresh verification of the added asset-boundary tests and affected frontend asset tests remains pending.",
+          "Full corrected release PDF worker/canvas and PTY fault-path verification remains pending."
+        ]
+      },
+      "status": "Current source hashes recorded; existing frontend source and third-party closure review, fresh asset tests, and corrected release PDF/PTY verification remain open.",
+      "files": [
+        {
+          "path": "apps/frontend/scripts/tauri-csp.mjs",
+          "sha256": "2b8ef78aa6ec84208d15f9eaab5421c98bd3dd8ed8196fa8d18884a371a95bce"
+        },
+        {
+          "path": "apps/frontend/src/features/files/pdf-read.ts",
+          "sha256": "b0d5ee61afdf84afe075335cd66bd730b54d1b35e6994ea8403f48c1afff3330"
+        },
+        {
+          "path": "apps/frontend/tests/pdf/pdf-read-contract.test.ts",
+          "sha256": "eacdb4c116bab22438702c7604778cfb99157a1cc81e12030cdf048bc923b575"
+        },
+        {
+          "path": "apps/frontend/tests/production/tauri-csp.test.mjs",
+          "sha256": "b13fddfa3e77ea9c4fbce140ed91a679ee3e0b8722e7d1bbd901322091df70bb"
+        }
+      ]
+    },
+    {
+      "id": "g2-g4-library-snapshot-2026-10-18",
+      "license": "Apache-2.0 for newly authored owner modules; third-party terms retained",
+      "authoringBasis": "New Rust library modules authored by authorized AGY/Luna workers against Apache frontend contracts, protocol/session foundations and target behavior contract. Root reviewed worker patches, mechanically integrated/formatted them, and wrote independent tests. No Electron implementation source was supplied in these implementation packets.",
+      "rightsEvidence": "User Apache-2.0 scope instruction; apps/desktop-tauri/LICENSE and NOTICE",
+      "workerEvidence": [
+        ".verification-artifacts/tauri/g2-lease-integration-owner.patch",
+        ".verification-artifacts/tauri/g2-lease-unicode-owner.response.txt",
+        ".verification-artifacts/api-subagents/18678eb0-f18f-4fdb-a0b2-e0fe4166fa8e.json",
+        ".verification-artifacts/api-subagents/19289a9a-6db5-4736-a297-4ef82121a2b7.json",
+        ".verification-artifacts/api-subagents/1da58405-c43f-4d84-b696-c89464f818df.json",
+        ".verification-artifacts/api-subagents/5fddc2ef-f1c9-4bab-b52b-7e0b7974ddeb.json",
+        ".verification-artifacts/api-subagents/20a1c924-50d0-4924-9b28-86e6ff055da4.json"
+      ],
+      "files": [
+        {
+          "path": "apps/desktop-tauri/src-tauri/src/workspace_leases.rs",
+          "sha256": "31b8aa7731c38272eb989a46aeee5fd456a1b3e8e11e80141cb1b79a80cadd86"
+        },
+        {
+          "path": "apps/desktop-tauri/src-tauri/src/recent.rs",
+          "sha256": "6edbd48a16426134262e1e2cff58322f1ac575a8f8d971617bf06552ef7bba9c"
+        },
+        {
+          "path": "apps/desktop-tauri/src-tauri/src/settings.rs",
+          "sha256": "833c1571f67de8e262f168ef061972276b52ec6bee4907f61ff360ca1f24874e"
+        },
+        {
+          "path": "apps/desktop-tauri/src-tauri/src/git_service.rs",
+          "sha256": "0b566ad373c6fb76cc4583cfa7269626ad99dafaaa11f811bb2c39ea3f6adf9c"
+        },
+        {
+          "path": "apps/desktop-tauri/src-tauri/src/watch_native.rs",
+          "sha256": "1d33750f763c943e3bdaa1fa45c0c0fcacad7878f233bb2e5a8a51f7ac1f85c3"
+        },
+        {
+          "path": "apps/desktop-tauri/src-tauri/src/lib.rs",
+          "sha256": "296da6efa0e5b8cd8c8450a8edad14084591df35560f28b4b73f4c0b238164d3"
+        }
+      ],
+      "snapshot": "Current bytes at library checkpoint before pending watch integration lint/ABI corrections. Later changes require a new snapshot; historical G1 records remain historical.",
+      "validationEvidence": ".verification-artifacts/tauri/g2-g4-library-checkpoint.json",
+      "status": "80 all-feature library tests passed; watch lint/ABI cleanup pending. Commands/UI parity, final source comparison, release inventory and dependency closure remain open."
+    },
+    {
+      "id": "g2-organized-runtime-publication-2026-10-18",
+      "license": "Apache-2.0 for original owner code; third-party terms retained",
+      "authoringBasis": "Authorized AGY/Luna implementation against the existing Apache frontend contracts and Tauri behavior contract; root reviewed and integrated worker deliveries and wrote regression tests.",
+      "scope": "G2 files and host integration; Git command planning only. Compile, terminal and MCP runtime candidates are excluded.",
+      "files": [
+        {
+          "path": "apps/desktop-tauri/src/schemas/mod.rs",
+          "sha256": "cd4c0a8b349ad0290444cec8b8659dea94fcac37e5389c51e28f32bbec1d4006"
+        },
+        {
+          "path": "apps/desktop-tauri/src/schemas/protocol.rs",
+          "sha256": "dee61ca135c8e2366ab319cf1d29373c192c34388d7f584d6a05b4cdaf392b80"
+        },
+        {
+          "path": "apps/desktop-tauri/src/shared/mod.rs",
+          "sha256": "6f418128587636d11d51697bde86d6c2c11041819d150e0ce45556bd9b28fb4a"
+        },
+        {
+          "path": "apps/desktop-tauri/src/shared/relative_path.rs",
+          "sha256": "642083cdb5edf534756eab5576eca1e1224b792342ad3102c09cf2b63e5b49bb"
+        },
+        {
+          "path": "apps/desktop-tauri/src/state/binary_tokens.rs",
+          "sha256": "2f57be8a39ca5cfc2598b79d6273a8440796aee6fbd93b2b79cbdaead18acf95"
+        },
+        {
+          "path": "apps/desktop-tauri/src/state/mod.rs",
+          "sha256": "75c9283f7d545cc2e19736c9da3b5f600ed7b14f0fd2b543976836680348eaea"
+        },
+        {
+          "path": "apps/desktop-tauri/src/state/recent.rs",
+          "sha256": "98994ab1f674668638252ea40e48c9af898ab1b66cb3ddeb41ed75bf73d6fa52"
+        },
+        {
+          "path": "apps/desktop-tauri/src/state/sessions.rs",
+          "sha256": "1b480ac6b265ed7b538fd94dfd709a03cf52196e98b49135192b15c47e532530"
+        },
+        {
+          "path": "apps/desktop-tauri/src/state/settings.rs",
+          "sha256": "8a73000abd8b024682e94956745cff7a39369e79006f76721365eb17ed0e2d63"
+        },
+        {
+          "path": "apps/desktop-tauri/src/state/workspace_leases.rs",
+          "sha256": "5d4b98254ed4740d8b3da296d8f6a869d8d9887289efc322fdd45b83acc9e6ce"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/protocol.rs",
+          "sha256": "e04c86274fd039963149d9852c4451f798e470a7c3098d64c2c3f66e89e8184f"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/relative_path.rs",
+          "sha256": "2d26c7029934256025fd83558a5d1d1c9fd389e667a6a4f5644874c0f2a35a49"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/sessions.rs",
+          "sha256": "e3ac9e92ccdf1433688775d684ea19ef70aabe02261ef5babd338dac7470ef1e"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/workspace_leases.rs",
+          "sha256": "6deb457bdef2c57d03c101ae3c21e1c6e5a5e1fae280ce500da59dda3ff92134"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/settings.rs",
+          "sha256": "b75577a96520aee99467604b3fdaa52a27c02c85dadc75c2a26de27351fb25e5"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/recent.rs",
+          "sha256": "cea38ecb58fb258f160d459c3d6d0d677e410a643d2255b3bd30a5cc18dc2258"
+        },
+        {
+          "path": "apps/desktop-tauri/src/platform/mod.rs",
+          "sha256": "9b8c01efa6244b5933587869ca0c5d6daf0ab09176e45ec7b7a6375104907317"
+        },
+        {
+          "path": "apps/desktop-tauri/src/platform/windows_files.rs",
+          "sha256": "cfad0c6925bc5c286d1c6ae1328babffc53db642bebd4b10a9505dcb9e31cf39"
+        },
+        {
+          "path": "apps/desktop-tauri/src/services/filesystem.rs",
+          "sha256": "87fb9aee56dd967d425773561b2c47d8eb6a89504d85ede7888b7bb88591aac7"
+        },
+        {
+          "path": "apps/desktop-tauri/src/services/watch_native.rs",
+          "sha256": "0fd19ce96d9f4aae2113e93e70ea52a3a97924718fa2e0df06388e5a6904bbf4"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/filesystem.rs",
+          "sha256": "7c578eea137d84015aedde11cb53a268f981103cd92941a6f337488f802cc767"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/windows_files.rs",
+          "sha256": "ddcd0c10884004d16c18445de94af99623d96945ebd3393e5b312063e9fc13cb"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/watch_native.rs",
+          "sha256": "660025c03bcfc51421a4179edd6df4ac2f6bee7fab360b160985ec513415835a"
+        },
+        {
+          "path": "apps/desktop-tauri/src/services/git_service.rs",
+          "sha256": "a4133ad95068aab1cd9bac3e0d4891a966b15b7be4832a1b08d103b0a7d10351"
+        },
+        {
+          "path": "apps/desktop-tauri/src/services/mod.rs",
+          "sha256": "83ab73b45ae7fe5b66accecdf939d32e35c4d6c26a8f781e8c452617cec8b43d"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/git_service.rs",
+          "sha256": "ae54f5175a437f2252ab6150e768c44fa8c657c44e7f52c1ab9947c8b22b2d5e"
+        },
+        {
+          "path": "apps/desktop-tauri/src/commands/frontend_files.rs",
+          "sha256": "9ba202f3c6ed9f6bf4233280e28c2f6da2fe6aa7da8353a3ce50091a23c9e834"
+        },
+        {
+          "path": "apps/desktop-tauri/src/commands/mod.rs",
+          "sha256": "44692d2bbe2224f09349405658b62078b7580806511d0ab49c8c2c4075de863f"
+        },
+        {
+          "path": "apps/desktop-tauri/src/commands/prototype.rs",
+          "sha256": "d90dbb6f620cd116e579b954468864ab69724317c969ceb4c5bb9ec7fc5e45b9"
+        },
+        {
+          "path": "apps/desktop-tauri/src/lib.rs",
+          "sha256": "11b673cb66be994a9f51dbbece9e2cfcd6b848df47c8ad3795b5d4931035aa34"
+        },
+        {
+          "path": "apps/desktop-tauri/src/main.rs",
+          "sha256": "f57b5bab07c48cbb7dcd790aec41b7713efb0e628b4d605aef282df75eae67b4"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/frontend_files.rs",
+          "sha256": "5db85691605437c9c5e5b47d7ea46e5abdd34e908aee161ea5c03fa3becdf5f4"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/prototype.rs",
+          "sha256": "27947d9d93456788e9c76ed4332957def9a9d5437a2aadb17d72657eb5df8328"
+        },
+        {
+          "path": "apps/desktop-tauri/tests/unit/lib.rs",
+          "sha256": "6ca0c7c435fe0eefb1ad0176953651a472557c5720adb1ed1cdd00fe95fbed47"
+        },
+        {
+          "path": "apps/desktop-tauri/capabilities/main.json",
+          "sha256": "2effb8421ac9b0015b268229a27f0946ed9e2456ae000eea9faf1775808edf66"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/frontend_close_workspace.toml",
+          "sha256": "4f1f4f703729e5fe818fff0848ec73d669c73ff433ba91bcb6d1de45929dcb16"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/frontend_list_files.toml",
+          "sha256": "8632f4c391e7d1d148775015f315a977b2f8a73d1e7dfaf5f37c03b336e18636"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/frontend_list_recent.toml",
+          "sha256": "db431af1f378d2070ac39a862b397ccc34a8e2b1eb2228efb639626c4fa11e2e"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/frontend_open_recent.toml",
+          "sha256": "c2cf7ad0987b1c3a00f4412fce4201802dc4491b5a4c63ecd324bdd08b949bfc"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/frontend_open_workspace.toml",
+          "sha256": "a361c683abe8c0d59999b152cd763207bfaf0241bf0aec87d462fe3ac1a00635"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/frontend_read_file.toml",
+          "sha256": "99153b824319c7e21ab1a4b9a55427e7b9c6a23b7e9a1c1d5f167aac24363678"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/frontend_remove_recent.toml",
+          "sha256": "2d0eb6ac2df07615f3b8e3231d36a67d9aa692758e7185651ecfd57b7e40edde"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/frontend_save_as.toml",
+          "sha256": "7ea28e48443891d5159850eda242735b34cc547d177422475372f83d67e1d9bd"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/frontend_take_file_pdf.toml",
+          "sha256": "53cd5f78091087ee8bf5e17579cd87ce84c1db7efcd0a7999137d3248fe1aec6"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/frontend_watch_start.toml",
+          "sha256": "a6e5699dfa95b1b09143aabeb596d245a550977c0e7e66c431f69ce8f7fb15a1"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/frontend_watch_stop.toml",
+          "sha256": "b0c2747c4dfd40270cdfe2b9161ac097a852c698ce8e0b2c1d30e10573f9e7fd"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/frontend_write_file.toml",
+          "sha256": "b827de1780be7e3cfad9b8f524395ce124d225564acbb6a332276cfe761994c9"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/host_health.toml",
+          "sha256": "d74e3ccd13979b6c3d2628352c80e683eaca9fbc3d19dc851171ab7f19c692fa"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/prototype_bytes.toml",
+          "sha256": "22ac3b5b524b4312c2453b80a21b3b175252bf255437d225e064288c63ba6ac0"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/autogenerated/prototype_pdf.toml",
+          "sha256": "72265f2fcc1841c12460b24982f3f39b19540147f60deb6512e314e54ab804e5"
+        },
+        {
+          "path": "apps/desktop-tauri/permissions/frontend_files.toml",
+          "sha256": "d54aec015a8edd2da5fc6e2ac9ab8433333d42a52c3ec2075f0065b2f5fffb39"
+        },
+        {
+          "path": "apps/desktop-tauri/icons/icon.ico",
+          "sha256": "d5f092016d1c582285ade493a11b2423a7d20bae08aec1c16f1fb111d50825d5"
+        },
+        {
+          "path": "apps/desktop-tauri/icons/icon.png",
+          "sha256": "043ca773da0f1aefac07affef2bc5f2a10d8e8b1a0d832d7aa6cbfcdd9df8429"
+        },
+        {
+          "path": "apps/desktop-tauri/examples/pty_probe.rs",
+          "sha256": "3afefed9b407cf883e4a6e1c8329dabc77ba03bf1ac73b6f93991079488e7784"
+        },
+        {
+          "path": "apps/desktop-tauri/examples/tectonic_probe.rs",
+          "sha256": "92cfd242e0d7b8e76643a3643e57ed7908954654f57ac0a939dbb1d5b5cb0966"
+        },
+        {
+          "path": "apps/desktop-tauri/.gitignore",
+          "sha256": "d01c5d48a9c488f2cb7ce6d13703e9f9de71d920d135ce8589bf2fcf6fc62863"
+        },
+        {
+          "path": "apps/desktop-tauri/Cargo.toml",
+          "sha256": "055bb03f64fafa548d0b54caa161867b13e693917840ef169c745d3f3e22fe89"
+        },
+        {
+          "path": "apps/desktop-tauri/Cargo.lock",
+          "sha256": "095a9bb11c0508b0c0ee383214ee8035b86f870e387bb3f53a8c73607aab2a46"
+        },
+        {
+          "path": "apps/desktop-tauri/build.rs",
+          "sha256": "ec9a8e24ace8e8e934bcf81f62c5104cd6ca710a17aa0d37e42fbfa878a95630"
+        },
+        {
+          "path": "apps/desktop-tauri/tauri.conf.json",
+          "sha256": "df2a9c9cf975511d6fadcb5bcbce7fe0f2574494461e4ca7e407a53985fb21ff"
+        },
+        {
+          "path": "apps/desktop-tauri/README.md",
+          "sha256": "a1301a5dca39160308d27dc81393f6d58e4dbc2515fd1909c4700f86b7bc2bbf"
+        },
+        {
+          "path": "apps/desktop-tauri/G1_PROBES.md",
+          "sha256": "d029cbc720dbd59365e80863ed3ebc3b22c96ea0f79c7f298365bb37b6a1bfe8"
+        },
+        {
+          "path": "apps/desktop-tauri/scripts/generate-icon.mjs",
+          "sha256": "e78ae724a2b0b9d0764b5861d9b2992cf731a058ac7d2190e77d8d6edcdb5c8e"
+        },
+        {
+          "path": ".gitignore",
+          "sha256": "9807952d382bb542ae6274e33c7a2533256cdb6e79df6c1de6495e625347cf80"
+        },
+        {
+          "path": "apps/frontend/package.json",
+          "sha256": "0a26b2da427f79b426fcefb9297202bbd7101ce324d4e21b5f2f3dfccc1f22bc"
+        },
+        {
+          "path": "apps/frontend/vite.config.ts",
+          "sha256": "e42ea22dd566331e0390af8bb1c7cc8c7661ddd9a99a26bd7d61c22ab872431b"
+        },
+        {
+          "path": "apps/frontend/scripts/tauri-csp.mjs",
+          "sha256": "9a32cc1b00ecb4685e9dab430417e4029c016037a671af98a43d4fe57ebbe001"
+        },
+        {
+          "path": "apps/frontend/scripts/tauri-csp.d.mts",
+          "sha256": "631f81d33fae07e2dc31978ec475408520ad9621c5b72cfaf78318ead71520d8"
+        },
+        {
+          "path": "apps/frontend/src/features/files/desktop.ts",
+          "sha256": "86a0ecf21c9d5e41582e60207740b322740627c77177d84fdfbb9d825ce8980c"
+        },
+        {
+          "path": "apps/frontend/src/features/files/tauri-files.ts",
+          "sha256": "03e10bf0c462f37f8cd11f95a245e080045fd759b50b3539fef58fa18fb5e752"
+        },
+        {
+          "path": "apps/frontend/src/features/files/pdf-read.ts",
+          "sha256": "b0d5ee61afdf84afe075335cd66bd730b54d1b35e6994ea8403f48c1afff3330"
+        },
+        {
+          "path": "apps/frontend/tests/tauri-files.test.mjs",
+          "sha256": "2bfd8ca5a5f2fdf411b31a53d35c4669a92ccd2a23acc631929b3ad1bd9c0f7b"
+        },
+        {
+          "path": "apps/frontend/tests/production/tauri-csp.test.mjs",
+          "sha256": "4a8b7d42316c34716b460fa92931cfac1598764d69ab065dea558eabfa5920c7"
+        },
+        {
+          "path": "apps/frontend/tests/pdf/pdf-read-contract.test.ts",
+          "sha256": "3fb3cbf089b1f1a545a40d1de4770475f047fba69335d738a71224b56bfed2a2"
+        },
+        {
+          "path": "package.json",
+          "sha256": "13187aee67b354fb8cd2fe8fe8a2986f9bd5339786cc60e44febff725ef2e769"
+        },
+        {
+          "path": "package-lock.json",
+          "sha256": "507cb7d7882b8cf86913b539d1e43568485a2625564efb04dcb5d8c4123dadb5"
+        }
+      ],
+      "validation": {
+        "target": "x86_64-pc-windows-msvc",
+        "nativeLibraryTests": {
+          "passed": 107,
+          "failed": 0,
+          "command": "cargo test --locked --manifest-path apps/desktop-tauri/Cargo.toml --lib -- --test-threads=1",
+          "environment": "native Windows host; sandbox execution is not acceptance evidence"
+        },
+        "frontendTests": {
+          "passed": 13,
+          "failed": 0,
+          "scope": "Tauri adapter, CSP plugin and PDF byte contract"
+        },
+        "releaseBuild": "passed",
+        "releaseSha256": "50afe3c5af7f9cfe0b1a6c8a077fa126099238c114dd45e76d303d9c9604c408",
+        "releaseSmoke": "host health, recent listing and unadmitted file/PDF/watch rejection; full workspace CRUD and compile are not covered"
+      },
+      "status": "reviewed module checkpoint; G0-G7 migration and release acceptance remain incomplete"
+    }
+  ],
+  "layoutTransitions": [
+    {
+      "date": "2026-10-18",
+      "from": "apps/desktop-tauri/src-tauri",
+      "to": "apps/desktop-tauri",
+      "action": "mechanical-flatten-crate-and-extract-inline-tests",
+      "license": "Apache-2.0; third-party unchanged",
+      "evidence": ".verification-artifacts/tauri/desktop-layout-verification.json",
+      "note": "Historical records remain dated; source/test extraction preserves code ownership. Final distribution closure remains open."
+    },
+    {
+      "date": "2026-10-18",
+      "from": "apps/desktop-tauri/src flat modules and src/tests",
+      "to": "apps/desktop-tauri/src/{commands,platform,schemas,services,shared,state} and tests/unit",
+      "action": "mechanical-module-classification-and-centralized-unit-tests",
+      "license": "Apache-2.0; third-party unchanged",
+      "evidence": ".verification-artifacts/tauri/rust-layout-map.json",
+      "validation": ".verification-artifacts/tauri/g2-organized-layout-native.log",
+      "fileActions": [
+        {
+          "old_path": null,
+          "new_path": "apps/desktop-tauri/src/commands/mod.rs",
+          "pre_sha256": null,
+          "post_sha256": "44692d2bbe2224f09349405658b62078b7580806511d0ab49c8c2c4075de863f"
+        },
+        {
+          "old_path": null,
+          "new_path": "apps/desktop-tauri/src/platform/mod.rs",
+          "pre_sha256": null,
+          "post_sha256": "9b8c01efa6244b5933587869ca0c5d6daf0ab09176e45ec7b7a6375104907317"
+        },
+        {
+          "old_path": null,
+          "new_path": "apps/desktop-tauri/src/schemas/mod.rs",
+          "pre_sha256": null,
+          "post_sha256": "cd4c0a8b349ad0290444cec8b8659dea94fcac37e5389c51e28f32bbec1d4006"
+        },
+        {
+          "old_path": null,
+          "new_path": "apps/desktop-tauri/src/services/mod.rs",
+          "pre_sha256": null,
+          "post_sha256": "83ab73b45ae7fe5b66accecdf939d32e35c4d6c26a8f781e8c452617cec8b43d"
+        },
+        {
+          "old_path": null,
+          "new_path": "apps/desktop-tauri/src/shared/mod.rs",
+          "pre_sha256": null,
+          "post_sha256": "6f418128587636d11d51697bde86d6c2c11041819d150e0ce45556bd9b28fb4a"
+        },
+        {
+          "old_path": null,
+          "new_path": "apps/desktop-tauri/src/state/mod.rs",
+          "pre_sha256": null,
+          "post_sha256": "75c9283f7d545cc2e19736c9da3b5f600ed7b14f0fd2b543976836680348eaea"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/frontend_files.rs",
+          "new_path": "apps/desktop-tauri/src/commands/frontend_files.rs",
+          "pre_sha256": "b3bf7f7dc40e3012a7edd8a2cb62a51e6577ca45b315c39b41226543fc8d0733",
+          "post_sha256": "9ba202f3c6ed9f6bf4233280e28c2f6da2fe6aa7da8353a3ce50091a23c9e834"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/prototype.rs",
+          "new_path": "apps/desktop-tauri/src/commands/prototype.rs",
+          "pre_sha256": "52838103ba76ec9e461ef5ebbf6e24998de070f0810e067fe8d97fcee8ec40cf",
+          "post_sha256": "d90dbb6f620cd116e579b954468864ab69724317c969ceb4c5bb9ec7fc5e45b9"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/windows_files.rs",
+          "new_path": "apps/desktop-tauri/src/platform/windows_files.rs",
+          "pre_sha256": "ff0422d49dcdea67b9d647fd8ffe2540ef42eaa1eb5005ab00bdf3d93cbebb8c",
+          "post_sha256": "cfad0c6925bc5c286d1c6ae1328babffc53db642bebd4b10a9505dcb9e31cf39"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/protocol.rs",
+          "new_path": "apps/desktop-tauri/src/schemas/protocol.rs",
+          "pre_sha256": "8795e40441daf693bcf75f68f6ea22cffb1d4cca3add23f2efd85903aa7cf940",
+          "post_sha256": "dee61ca135c8e2366ab319cf1d29373c192c34388d7f584d6a05b4cdaf392b80"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/filesystem.rs",
+          "new_path": "apps/desktop-tauri/src/services/filesystem.rs",
+          "pre_sha256": "5c04d1811473c630e30d4b073eca5d1c5092758b9dceda768bc19f62cb1aa3c2",
+          "post_sha256": "87fb9aee56dd967d425773561b2c47d8eb6a89504d85ede7888b7bb88591aac7"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/git_service.rs",
+          "new_path": "apps/desktop-tauri/src/services/git_service.rs",
+          "pre_sha256": "697b0540b2ed49d464542791b9ef3d9553474ede812af2a02855944af3f35c29",
+          "post_sha256": "a4133ad95068aab1cd9bac3e0d4891a966b15b7be4832a1b08d103b0a7d10351"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/watch_native.rs",
+          "new_path": "apps/desktop-tauri/src/services/watch_native.rs",
+          "pre_sha256": "2298e13e6756687c4f2c8e3607a8575d460ff97cb79a80da2368904768b94111",
+          "post_sha256": "0fd19ce96d9f4aae2113e93e70ea52a3a97924718fa2e0df06388e5a6904bbf4"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/relative_path.rs",
+          "new_path": "apps/desktop-tauri/src/shared/relative_path.rs",
+          "pre_sha256": "acf3d210732c562f4d78a60f99b9e52522cd01da9f68ced2119686018f9fa71a",
+          "post_sha256": "642083cdb5edf534756eab5576eca1e1224b792342ad3102c09cf2b63e5b49bb"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/binary_tokens.rs",
+          "new_path": "apps/desktop-tauri/src/state/binary_tokens.rs",
+          "pre_sha256": "3257a3138f5557d53bc4de6587f2380444e5dc9a8302259d291796e19097c80e",
+          "post_sha256": "2f57be8a39ca5cfc2598b79d6273a8440796aee6fbd93b2b79cbdaead18acf95"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/recent.rs",
+          "new_path": "apps/desktop-tauri/src/state/recent.rs",
+          "pre_sha256": "db46f854ba3430cc7f9e6b46a9b4821bb70ae6e26d22d2a0f9e4842a1b90ba80",
+          "post_sha256": "98994ab1f674668638252ea40e48c9af898ab1b66cb3ddeb41ed75bf73d6fa52"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/sessions.rs",
+          "new_path": "apps/desktop-tauri/src/state/sessions.rs",
+          "pre_sha256": "1e5e65286c3965588c251553d2d9e0ce2115034ad77b121ef555b528c8bb85b9",
+          "post_sha256": "1b480ac6b265ed7b538fd94dfd709a03cf52196e98b49135192b15c47e532530"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/settings.rs",
+          "new_path": "apps/desktop-tauri/src/state/settings.rs",
+          "pre_sha256": "e556b3683086fe649dca5d19b5166538fed5003670666f415afbd25bed8bac2d",
+          "post_sha256": "8a73000abd8b024682e94956745cff7a39369e79006f76721365eb17ed0e2d63"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/workspace_leases.rs",
+          "new_path": "apps/desktop-tauri/src/state/workspace_leases.rs",
+          "pre_sha256": "2a380c6b1872b790cff7fd31c510ae2b79f1b2130ca1398516d468da832a95b3",
+          "post_sha256": "5d4b98254ed4740d8b3da296d8f6a869d8d9887289efc322fdd45b83acc9e6ce"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/filesystem.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/filesystem.rs",
+          "pre_sha256": "0c238567195a4fc5a0ec40b0df53d6d967d13068a467d7b39e6cbbabcc5fae53",
+          "post_sha256": "7c578eea137d84015aedde11cb53a268f981103cd92941a6f337488f802cc767"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/frontend_files.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/frontend_files.rs",
+          "pre_sha256": "457afafb4932ccc7b5833e30b7c59e3c897da0b28ec088d2ee749e2c2ced18c0",
+          "post_sha256": "5db85691605437c9c5e5b47d7ea46e5abdd34e908aee161ea5c03fa3becdf5f4"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/git_service.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/git_service.rs",
+          "pre_sha256": "ae54f5175a437f2252ab6150e768c44fa8c657c44e7f52c1ab9947c8b22b2d5e",
+          "post_sha256": "ae54f5175a437f2252ab6150e768c44fa8c657c44e7f52c1ab9947c8b22b2d5e"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/lib.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/lib.rs",
+          "pre_sha256": "6ca0c7c435fe0eefb1ad0176953651a472557c5720adb1ed1cdd00fe95fbed47",
+          "post_sha256": "6ca0c7c435fe0eefb1ad0176953651a472557c5720adb1ed1cdd00fe95fbed47"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/protocol.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/protocol.rs",
+          "pre_sha256": "e04c86274fd039963149d9852c4451f798e470a7c3098d64c2c3f66e89e8184f",
+          "post_sha256": "e04c86274fd039963149d9852c4451f798e470a7c3098d64c2c3f66e89e8184f"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/prototype.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/prototype.rs",
+          "pre_sha256": "27947d9d93456788e9c76ed4332957def9a9d5437a2aadb17d72657eb5df8328",
+          "post_sha256": "27947d9d93456788e9c76ed4332957def9a9d5437a2aadb17d72657eb5df8328"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/recent.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/recent.rs",
+          "pre_sha256": "6c225555d2d1d9aec4cbce19c589e23350db10d180f13a12977231ea4f88117d",
+          "post_sha256": "cea38ecb58fb258f160d459c3d6d0d677e410a643d2255b3bd30a5cc18dc2258"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/relative_path.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/relative_path.rs",
+          "pre_sha256": "2d26c7029934256025fd83558a5d1d1c9fd389e667a6a4f5644874c0f2a35a49",
+          "post_sha256": "2d26c7029934256025fd83558a5d1d1c9fd389e667a6a4f5644874c0f2a35a49"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/sessions.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/sessions.rs",
+          "pre_sha256": "e3ac9e92ccdf1433688775d684ea19ef70aabe02261ef5babd338dac7470ef1e",
+          "post_sha256": "e3ac9e92ccdf1433688775d684ea19ef70aabe02261ef5babd338dac7470ef1e"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/settings.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/settings.rs",
+          "pre_sha256": "b75577a96520aee99467604b3fdaa52a27c02c85dadc75c2a26de27351fb25e5",
+          "post_sha256": "b75577a96520aee99467604b3fdaa52a27c02c85dadc75c2a26de27351fb25e5"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/watch_native.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/watch_native.rs",
+          "pre_sha256": "660025c03bcfc51421a4179edd6df4ac2f6bee7fab360b160985ec513415835a",
+          "post_sha256": "660025c03bcfc51421a4179edd6df4ac2f6bee7fab360b160985ec513415835a"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/windows_files.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/windows_files.rs",
+          "pre_sha256": "ddcd0c10884004d16c18445de94af99623d96945ebd3393e5b312063e9fc13cb",
+          "post_sha256": "ddcd0c10884004d16c18445de94af99623d96945ebd3393e5b312063e9fc13cb"
+        },
+        {
+          "old_path": "apps/desktop-tauri/tests/unit/workspace_leases.rs",
+          "new_path": "apps/desktop-tauri/tests/unit/workspace_leases.rs",
+          "pre_sha256": "6deb457bdef2c57d03c101ae3c21e1c6e5a5e1fae280ce500da59dda3ff92134",
+          "post_sha256": "6deb457bdef2c57d03c101ae3c21e1c6e5a5e1fae280ce500da59dda3ff92134"
+        },
+        {
+          "old_path": "apps/desktop-tauri/src/lib.rs",
+          "new_path": "apps/desktop-tauri/src/lib.rs",
+          "pre_sha256": "e2276d4000168c1d3bb2feeacb53b89e763a874d80b6ed0bd2f2e9ce242f3c63",
+          "post_sha256": "11b673cb66be994a9f51dbbece9e2cfcd6b848df47c8ad3795b5d4931035aa34"
+        }
+      ],
+      "note": "107 actual library tests passed; historical file snapshots retained. Responsibility extraction and full distribution closure remain open."
     }
   ]
 }

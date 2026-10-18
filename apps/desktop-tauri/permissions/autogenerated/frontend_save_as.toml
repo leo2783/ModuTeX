@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-frontend-save-as"
+description = "Enables the frontend_save_as command without any pre-configured scope."
+commands.allow = ["frontend_save_as"]
+
+[[permission]]
+identifier = "deny-frontend-save-as"
+description = "Denies the frontend_save_as command without any pre-configured scope."
+commands.deny = ["frontend_save_as"]

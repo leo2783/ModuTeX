@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Generates the original neutral G1 build icon: a white "M" on dark blue,
 // 32x32 RGBA. Deterministic, Node built-ins only, no network. Writes only
-// src-tauri/icons/icon.png and src-tauri/icons/icon.ico.
+// icons/icon.png and icons/icon.ico under apps/desktop-tauri.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { deflateSync, inflateSync } from 'node:zlib';
@@ -97,7 +97,7 @@ function encodeIco(png) {
 }
 
 const png = encodePng(rawScanlines());
-const iconsUrl = new URL('../src-tauri/icons/', import.meta.url);
+const iconsUrl = new URL('../icons/', import.meta.url);
 mkdirSync(fileURLToPath(iconsUrl), { recursive: true });
 writeFileSync(new URL('icon.png', iconsUrl), png);
 writeFileSync(new URL('icon.ico', iconsUrl), encodeIco(png));
