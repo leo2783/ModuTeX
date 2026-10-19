@@ -35,7 +35,7 @@ pub struct ProtocolError {
 }
 
 impl ProtocolError {
-    fn new(field: &'static str, reason: &'static str) -> Self {
+    pub(crate) fn new(field: &'static str, reason: &'static str) -> Self {
         Self { field, reason }
     }
 

@@ -322,7 +322,7 @@ pub fn map_fs_error_to_watch_failure(err: &FsError) -> FileWatchFailure {
 }
 
 #[cfg(windows)]
-use crate::state::recent::{ByHandleFileInformation, GetFileInformationByHandle};
+use crate::platform::file_identity::{ByHandleFileInformation, GetFileInformationByHandle};
 
 #[cfg(windows)]
 #[repr(C)]

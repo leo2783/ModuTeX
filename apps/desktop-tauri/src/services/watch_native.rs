@@ -42,7 +42,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 #[cfg(windows)]
-use crate::state::recent::{ByHandleFileInformation, GetFileInformationByHandle};
+use crate::platform::file_identity::{ByHandleFileInformation, GetFileInformationByHandle};
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle, RawHandle};
 

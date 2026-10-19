@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use crate::platform::file_identity::{is_symlink_or_reparse, open_file_no_follow};
 use crate::schemas::protocol::{WorkspaceId, MAX_SAFE_INTEGER};
 use serde_json::{json, Value};
 use std::sync::{atomic::AtomicUsize, mpsc};

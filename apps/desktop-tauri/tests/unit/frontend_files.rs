@@ -10,12 +10,11 @@ use std::{
 use crate::{
     state::binary_tokens::{BinaryTokenStore, TokenDenied, TokenLimits},
     services::filesystem::{FilesystemError, FilesystemService},
-    commands::frontend_files::{
-        DialogSeam, FrontendFilesState,
-    },
+    platform::dialogs::DialogSeam,
+    state::desktop::FrontendFilesState,
     schemas::protocol::{
         DocumentId, DocumentVersion, FileRef, OwnerId, Revision, SaveAsRequest,
-        Timestamp, WorkspaceId, WriteRequest, MAX_PDF_BYTES, MAX_READ_BYTES,
+        Timestamp, WriteRequest, MAX_PDF_BYTES, MAX_READ_BYTES,
     },
     shared::relative_path::RelativePath,
     services::watch_native::NativeWatchRegistry,
