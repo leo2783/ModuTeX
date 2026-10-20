@@ -21,7 +21,7 @@ for (const count of [1, 8, 128, 1024]) test(`one transaction joins ${count} CR/L
 	assert.deepEqual([edited.document.version, undone.document.version, redone.document.version], [1, 2, 3]);
 });
 
-for (const fixture of ['', 'a\nb\n', 'a\r\nb\r\n', 'a\rb\r', '\uFEFFa\r\n雪\n😀\rfinal', '\r\n\r\n', 'a\r\nb\nc\rd']) {
+for (const fixture of ['', 'a\nb\n', 'a\r\nb\r\n', 'a\rb\r', '\uFEFFa\r\n雪\n\ud840\udc00\rfinal', '\r\n\r\n', 'a\r\nb\nc\rd']) {
 	test('editor projection preserves original bytes: ' + JSON.stringify(fixture), () => {
 		const initial = open(fixture);
 		assert.equal(initial.text, normalize(fixture.replace(/^\uFEFF/, '')));
@@ -68,7 +68,7 @@ test('undo restores exact mixed newline bytes, redo restores edited bytes, versi
 });
 
 test('invalid, stale and Unicode-splitting edits fail without changing the projection', () => {
-	const initial = open('😀\r\ntext').projection;
+	const initial = open('\ud840\udc00\r\ntext').projection;
 	const original = initial.document.toBytes();
 	assert.throws(() => initial.apply([{ from: 1, to: 1, insert: 'x' }], 0));
 	assert.throws(() => initial.apply([{ from: 0, to: 0, insert: '\r\n' }], 0));

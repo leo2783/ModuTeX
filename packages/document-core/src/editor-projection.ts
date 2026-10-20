@@ -1,6 +1,6 @@
 // Original lossless editor coordinate mapping; no renderer or legacy dependency.
 import { SourceDocument } from './source.ts';
-import { SourceError } from './utf8.ts';
+import { SourceError } from './shared/utf8.ts';
 import type { SourcePatch } from './changes.ts';
 
 export interface EditorPatch {

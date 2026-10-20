@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { SourceError } from './utf8.ts';
+import { SourceError } from './shared/utf8.ts';
 
 export interface SourcePatch {
   readonly from: number;

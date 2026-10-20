@@ -18,7 +18,7 @@ function partition(document: SourceDocument, nodes: readonly SyntaxNode[], from 
 }
 const corpus = [
 	'',
-	'中文 😀 e\u0301\r\nNext.',
+	'中文 \ud840\udc00 e\u0301\r\nNext.',
 	'% comment $ { \\begin{opaque}\n\\section{A}',
 	'\\section*{A {nested} \\textbf{B}}\ntext $x+1$ and $$x^2$$.',
 	'\\begin{document}\n\\title{Title}\n\\section{Section}\n\\textit{A}\n\\end{document}',
@@ -66,7 +66,7 @@ test('short heading option is preserved separately from the editable full title'
 	partition(document, parseSource(document).nodes);
 });
 test('non-BMP control symbols and verb delimiters never split Unicode scalars', () => {
-	for (const text of ['\\😀 tail', '\\verb😀% { literal😀 after']) {
+	for (const text of ['\\\ud840\udc00 tail', '\\verb\ud840\udc00% { literal\ud840\udc00 after']) {
 		const document = open(text);
 		const result = parseSource(document);
 		partition(document, result.nodes);
@@ -136,9 +136,9 @@ test('one parsed argument can be patched without changing unrelated comments or 
 	const heading = parseSource(document).nodes.find((n) => n.kind === 'heading')!;
 	const next = document.apply({
 		expectedVersion: document.version,
-		patches: [{ from: heading.content!.from, to: heading.content!.to, insert: 'New 😀', expected: 'Old' }]
+		patches: [{ from: heading.content!.from, to: heading.content!.to, insert: 'New \ud840\udc00', expected: 'Old' }]
 	}).document;
-	assert.equal(next.read(), '% keep\r\n\\section{New 😀}\r\n\\opaque{a}{b}\r\n');
+	assert.equal(next.read(), '% keep\r\n\\section{New \ud840\udc00}\r\n\\opaque{a}{b}\r\n');
 });
 
 test('node and scanning budgets preserve the complete source as Raw without rewriting', () => {

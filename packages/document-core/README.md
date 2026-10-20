@@ -7,6 +7,8 @@ projections map edits back to the source rather than regenerating the document.
 
 This package does not read files, compile TeX, or implement an editor UI.
 
+Shared UTF-8 helpers live in `src/shared/`; document services stay in `src/` and tests in `tests/`.
+
 ## Development
 
 Run from the repository root with Node.js 24.19.0 and npm 11.17.0:

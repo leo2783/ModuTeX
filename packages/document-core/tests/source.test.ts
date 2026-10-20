@@ -19,7 +19,7 @@ const corpus = [
   '\\newcommand{\\unrecognized}[2]{#2#1}% keep me\n\\unrecognized{a}{b}\n',
   '\\begin{unknownEnvironment}[ odd = value ]\n{opaque \\macro}% comment\n\\end{unknownEnvironment}',
   '\\verb|% { } \\|\n\\begin{verbatim}\n\\notAnInstruction{}\n\\end{verbatim}',
-  '中文與 emoji 😀、e\u0301、\u0000，保留空格。\n',
+  '中文與 emoji \ud840\udc00、e\u0301、\u0000，保留空格。\n',
   '\\begin{tabular}{lr}\nA & B \\\\ \n\\hline\n1 & 2 \\\\ \n\\end{tabular}\n',
   '\\catcode\`\\%=12\n% source is opaque to the byte buffer\n'
 ];
@@ -62,8 +62,8 @@ test('local edits preserve unknown macros, comments, CRLF and BOM', () => {
   const prefix = '\\begin{opaque} % preserve exact bytes\r\n';
   const suffix = '\r\n\\end{opaque}\r\n';
   const document = open(prefix + 'editable' + suffix, true);
-  const update = replace(document, prefix.length, prefix.length + 8, '中文😀');
-  assert.deepEqual(update.document.toBytes(), bytes(prefix + '中文😀' + suffix, true));
+  const update = replace(document, prefix.length, prefix.length + 8, '中文\ud840\udc00');
+  assert.deepEqual(update.document.toBytes(), bytes(prefix + '中文\ud840\udc00' + suffix, true));
   assert.equal(document.read(), prefix + 'editable' + suffix);
   assert.equal(update.document.version, 1);
   assert.equal(update.document.pieceCount, 3);
@@ -109,7 +109,7 @@ test('late validation failures leave every source byte untouched', () => {
 });
 
 test('Unicode scalar boundaries are respected in source and inserted text', () => {
-  const document = open('A😀中B');
+  const document = open('A\ud840\udc00中B');
   assert.throws(() => replace(document, 2, 2, 'x'), error('RANGE'));
   assert.throws(() => document.read(0, 2), error('RANGE'));
   assert.throws(() => replace(document, 0, 1, '\udc00'), error('ENCODING'));
@@ -140,7 +140,7 @@ test('stale edits and parse results cannot overwrite a newer version', () => {
 });
 
 test('undo/redo restores exact bytes without rewinding document versions', () => {
-  const initial = open('A\r\n😀\r\n', true);
+  const initial = open('A\r\n\ud840\udc00\r\n', true);
   const changed = replace(initial, 0, 1, 'changed').document;
   const undo = changed.restore(initial, 1);
   assert.equal(undo.version, 2);
@@ -164,7 +164,7 @@ test('span anchors outside a patch move; dirty nodes are invalidated', () => {
 });
 
 test('insertion boundary affinity excludes inserted text from adjacent old nodes', () => {
-  const update = replace(open('abcd'), 2, 2, '😀');
+  const update = replace(open('abcd'), 2, 2, '\ud840\udc00');
   const documentId = update.document.documentId;
   assert.deepEqual(remapSpan(update.change, { documentId, from: 0, to: 2, version: 0 }), { documentId, from: 0, to: 2, version: 1 });
   assert.deepEqual(remapSpan(update.change, { documentId, from: 2, to: 4, version: 0 }), { documentId, from: 4, to: 6, version: 1 });
@@ -180,9 +180,9 @@ test('deterministic edit corpus agrees with an independent string oracle', () =>
     state ^= state << 13; state ^= state >>> 17; state ^= state << 5;
     return (state >>> 0) % bound;
   };
-  let reference = '😀 original 中文\r\n\\unknown{x}% keep\n';
+  let reference = '\ud840\udc00 original 中文\r\n\\unknown{x}% keep\n';
   let document = open(reference, true);
-  const inserted = ['', 'a', '中文', '😀', '\r\n', '\\macro{?}'];
+  const inserted = ['', 'a', '中文', '\ud840\udc00', '\r\n', '\\macro{?}'];
   for (let step = 0; step < 500; step++) {
     const boundaries = [0];
     for (const scalar of reference) boundaries.push(boundaries.at(-1)! + scalar.length);

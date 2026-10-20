@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-import { byteBoundary, profile, segment, SourceError } from './utf8.ts';
-import type { Segment, SourceProfile } from './utf8.ts';
+import { byteBoundary, profile, segment, SourceError } from './shared/utf8.ts';
+import type { Segment, SourceProfile } from './shared/utf8.ts';
 import type { SourceChange, SourcePatch } from './changes.ts';
 
 interface Piece { readonly source: Segment; readonly from: number; readonly to: number }
