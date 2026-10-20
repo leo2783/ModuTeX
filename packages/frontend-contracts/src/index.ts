@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-export type * from './types.ts';
-export { IMAGE_BYTES_LIMIT, imageType, validateImageFile } from './images.ts';
+export type * from './schemas/types.ts';
+export { IMAGE_BYTES_LIMIT, imageType, validateImageFile } from './schemas/images.ts';
 export {
 	ContractError,
 	parseRecentDocuments,
@@ -14,6 +14,6 @@ export {
 	parseCompileRequest,
 	parseCompileIdentity,
 	parseCompileResult
-} from './validate.ts';
-export { parseWorkspaceInfo, parseFileEntries, parseFileEvent } from './validate.ts';
-export type { CompileLimits } from './validate.ts';
+} from './schemas/validate.ts';
+export { parseWorkspaceInfo, parseFileEntries, parseFileEvent } from './schemas/validate.ts';
+export type { CompileLimits } from './schemas/validate.ts';
