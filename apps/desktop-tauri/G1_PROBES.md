@@ -21,8 +21,8 @@ cargo build --locked --release --manifest-path apps/desktop-tauri/Cargo.toml --f
 在儲存庫根目錄執行下列命令；輸出目錄須不存在，其父目錄須存在：
 ```powershell
 $taskRoot = (Resolve-Path .).Path
-cargo run --locked --manifest-path apps/desktop-tauri/Cargo.toml --features g1-prototypes --example tectonic_probe -- "$taskRoot\vendor\tectonic\windows-x64\tectonic.exe" "$taskRoot\.verification-artifacts\tauri\engine-new"
-cargo run --locked --manifest-path apps/desktop-tauri/Cargo.toml --features g1-prototypes --example pty_probe -- "$taskRoot\.verification-artifacts\tauri\pty-new"
+cargo run --locked --release --manifest-path apps/desktop-tauri/Cargo.toml --features g1-prototypes --bin tectonic_smoke -- "$taskRoot\vendor\tectonic\windows-x64\tectonic.exe" "$taskRoot\.verification-artifacts\tauri\engine-new"
+cargo run --locked --release --manifest-path apps/desktop-tauri/Cargo.toml --features g1-prototypes --bin terminal_smoke -- "$taskRoot\.verification-artifacts\tauri\pty-new"
 ```
 
 ## G1 關卡檢驗
@@ -31,4 +31,4 @@ cargo run --locked --manifest-path apps/desktop-tauri/Cargo.toml --features g1-p
 3. 視窗隔離：驗證 g1-untrusted 視窗因未授權與 non-main 遭 host 拒絕。
 4. 引擎／PTY：核對實際 PDF、取消回收、Unicode marker、resize、child reaped 與 reader joined 收據。
 
-`g1-prototypes` 僅供原型驗證；預設建置只註冊 host_health。
+`g1-prototypes` 僅供原型驗證。預設建置提供已准入的 G2 檔案與設定能力；兩個 smoke 工具不參與預設建置。

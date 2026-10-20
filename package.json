@@ -54,7 +54,9 @@
 		"test:frontend-origin": "node --test scripts/licensing/*.test.mjs",
 		"frontend:test:runtime": "vitest run --config electron/vitest.frontend-runtime.config.ts",
 		"electron:dev:frontend": "concurrently -k -n frontend,electron \"npm run dev --workspace=modutex-frontend\" \"npm run electron:build && wait-on -t 180000 http-get://127.0.0.1:5174 && cross-env MODUTEX_RENDERER=frontend electron .\"",
-		"electron:frontend": "npm run frontend:build && npm run electron:build && cross-env MODUTEX_RENDERER=frontend-built electron ."
+		"electron:frontend": "npm run frontend:build && npm run electron:build && cross-env MODUTEX_RENDERER=frontend-built electron .",
+		"tauri": "\"apps\\desktop-tauri\\target\\release\\modutex-desktop-tauri.exe\"",
+		"tauri:build": "npm run frontend:build:tauri && cargo build --locked --release --manifest-path apps/desktop-tauri/Cargo.toml"
 	},
 	"dependencies": {
 		"node-pty": "1.1.0"

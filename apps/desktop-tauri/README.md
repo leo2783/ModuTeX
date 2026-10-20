@@ -13,7 +13,17 @@ Windows x64；Rust／Tauri 2 後端，前端使用 WebView2。自有程式碼採
 | `src/shared` | 共用路徑工具 |
 | `src/state` | 設定、工作階段、近期紀錄與能力狀態 |
 | `tests/unit` | 集中單元及原生測試；保留私有模組存取 |
-| `examples` | 引擎與 ConPTY 原型 |
+| `tests/tools` | 引擎與終端機 smoke 工具，僅在 `g1-prototypes` 啟用 |
+
+## 啟動
+
+在儲存庫根目錄執行，使用專案指定的 Node.js 24.19.0／npm 11.17.0：
+
+```powershell
+npm run tauri
+```
+
+此指令直接啟動已建置的 Rust release App。首次使用或修改原始碼後先執行 `npm run tauri:build`；日常啟動不重建。
 
 ## 驗證
 
@@ -21,7 +31,7 @@ Windows x64；Rust／Tauri 2 後端，前端使用 WebView2。自有程式碼採
 
 ```powershell
 npm run frontend:build:tauri
-cargo test --locked --manifest-path apps/desktop-tauri/Cargo.toml --lib
+cargo test --locked --release --manifest-path apps/desktop-tauri/Cargo.toml --lib
 cargo build --locked --manifest-path apps/desktop-tauri/Cargo.toml --release
 ```
 

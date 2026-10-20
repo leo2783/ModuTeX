@@ -645,7 +645,7 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
     let mut resize_matched = false;
     let mut marker_detected = false;
 
-    let marker = "中文終端🙂";
+    let marker = "中文終端\u{20000}";
     let marker_bytes = marker.as_bytes();
 
     let sequence_result: Result<(), SequenceStepError> = (|| {
@@ -764,7 +764,7 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
             std::thread::sleep(Duration::from_millis(20));
         }
 
-        write_to_pty(&writer_arc, "set G1_B=終端🙂\r\n".as_bytes())
+        write_to_pty(&writer_arc, "set G1_B=終端\u{20000}\r\n".as_bytes())
             .map_err(SequenceStepError::RuntimeFailure)?;
         let set_b_deadline = Instant::now() + Duration::from_millis(100);
         while Instant::now() < set_b_deadline {
@@ -852,7 +852,6 @@ fn run() -> Result<i32, Box<dyn std::error::Error>> {
     ) = match &sequence_result {
         Ok(()) => (false, None, None, None),
         Err(SequenceStepError::InjectedFault(msg)) => {
-            eprintln!("pty_probe injected fault: {msg}");
             (true, Some(msg.clone()), None, Some(msg.clone()))
         }
         Err(SequenceStepError::RuntimeFailure(msg)) => {

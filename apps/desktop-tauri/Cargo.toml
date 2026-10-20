@@ -2,6 +2,7 @@
 name = "modutex-desktop-tauri"
 version = "0.2.1"
 description = "ModuTeX Tauri desktop host"
+default-run = "modutex-desktop-tauri"
 license = "Apache-2.0"
 edition = "2021"
 publish = false
@@ -14,15 +15,23 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 g1-prototypes = ["dep:portable-pty"]
 
-[[example]]
-name = "tectonic_probe"
-path = "examples/tectonic_probe.rs"
-required-features = ["g1-prototypes"]
+[[bin]]
+name = "modutex-desktop-tauri"
+path = "src/main.rs"
 
-[[example]]
-name = "pty_probe"
-path = "examples/pty_probe.rs"
+[[bin]]
+name = "tectonic_smoke"
+path = "tests/tools/tectonic_smoke.rs"
 required-features = ["g1-prototypes"]
+test = false
+bench = false
+
+[[bin]]
+name = "terminal_smoke"
+path = "tests/tools/terminal_smoke.rs"
+required-features = ["g1-prototypes"]
+test = false
+bench = false
 
 [build-dependencies]
 tauri-build = "=2.7.3"
