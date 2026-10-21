@@ -83,6 +83,15 @@ fn append(target: &mut Vec<Piece>, piece: Piece) {
 
 impl SourceDocument {
     pub fn open(bytes: &[u8], document_id: String) -> Result<Self, SourceError> {
+        Self::open_with_version(bytes, document_id, 0)
+    }
+
+    /// Open bytes with an explicit snapshot identity and version.
+    pub fn open_with_version(
+        bytes: &[u8],
+        document_id: String,
+        version: u64,
+    ) -> Result<Self, SourceError> {
         let bom = bytes.starts_with(&[0xef, 0xbb, 0xbf]);
         let body = if bom { &bytes[3..] } else { bytes };
         let text = std::str::from_utf8(body).map_err(|_| SourceError::Encoding)?;
@@ -98,7 +107,13 @@ impl SourceDocument {
             }]
         };
 
-        Self::from_parts(pieces, profile(text, bom), document_id, 0, Arc::new(Origin))
+        Self::from_parts(
+            pieces,
+            profile(text, bom),
+            document_id,
+            version,
+            Arc::new(Origin),
+        )
     }
 
     fn from_parts(
@@ -156,6 +171,10 @@ impl SourceDocument {
 
     pub fn len(&self) -> usize {
         self.length
+    }
+
+    pub fn piece_count(&self) -> usize {
+        self.pieces.len()
     }
 
     pub fn is_empty(&self) -> bool {

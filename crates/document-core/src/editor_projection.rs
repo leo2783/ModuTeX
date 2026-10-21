@@ -2,9 +2,10 @@
 use crate::changes::SourcePatch;
 use crate::source::{SourceDocument, SourceTransaction};
 use crate::SourceError;
+use serde::Serialize;
 use std::collections::BTreeMap;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct EditorPatch {
     pub from: usize,
     pub to: usize,
