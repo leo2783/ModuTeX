@@ -637,6 +637,348 @@
         "releaseSmoke": "host health, recent listing and unadmitted file/PDF/watch rejection; full workspace CRUD and compile are not covered"
       },
       "status": "reviewed module checkpoint; G0-G7 migration and release acceptance remain incomplete"
+    },
+    {
+      "id": "rust-document-core-wasm-synctex-2026-10-22",
+      "scope": "crates/document-core",
+      "license": "Apache-2.0; third-party dependency terms retained",
+      "authoringBasis": "New Rust implementation authored by project subagents under the user-authorized Tauri migration. Implements owner-authored document-core behavior, UTF-16 transactions, editor projections, compact AST and bounded SyncTeX indexing. First-party source record; dependency notices are tracked separately.",
+      "rightsEvidence": "User instruction: own code Apache-2.0, third parties retain original licenses; crates/document-core/LICENSE and NOTICE.",
+      "sources": [
+        {
+          "path": "packages/document-core/src/changes.ts",
+          "sha256": "540d388fddcb8256a266efd4658947694358adefa52aef1d89644a98d665c9d1",
+          "role": "owner-authored Apache-2.0 behavior reference",
+          "rightsEvidence": "packages/document-core/LICENSE and NOTICE"
+        },
+        {
+          "path": "packages/document-core/src/editor-projection.ts",
+          "sha256": "e3ea47eaece2f27c840237e1fee8e4a0e0b0eb226370c2bdbaac3e42dce45ef6",
+          "role": "owner-authored Apache-2.0 behavior reference",
+          "rightsEvidence": "packages/document-core/LICENSE and NOTICE"
+        },
+        {
+          "path": "packages/document-core/src/index.ts",
+          "sha256": "d3ba6bf4d3a88378f9b2e6778b1f0129d1d8c5ecbe8030f9d9cb8dea0111b0b7",
+          "role": "owner-authored Apache-2.0 behavior reference",
+          "rightsEvidence": "packages/document-core/LICENSE and NOTICE"
+        },
+        {
+          "path": "packages/document-core/src/parser.ts",
+          "sha256": "e83bd4762b35fa4239cc2c802f42f11e8b059c27d33cb376c3eb952da9c43f8e",
+          "role": "owner-authored Apache-2.0 behavior reference",
+          "rightsEvidence": "packages/document-core/LICENSE and NOTICE"
+        },
+        {
+          "path": "packages/document-core/src/pdf-wrap.ts",
+          "sha256": "3e8757d2a69a645be8781404bea08c0a75960ee8a9ccdfe9b14a50a214b7337b",
+          "role": "owner-authored Apache-2.0 behavior reference",
+          "rightsEvidence": "packages/document-core/LICENSE and NOTICE"
+        },
+        {
+          "path": "packages/document-core/src/projection.ts",
+          "sha256": "af658318b5cffa7b304610759bec6a1f0ef608016aac8994a4caac03d023ff4e",
+          "role": "owner-authored Apache-2.0 behavior reference",
+          "rightsEvidence": "packages/document-core/LICENSE and NOTICE"
+        },
+        {
+          "path": "packages/document-core/src/shared/utf8.ts",
+          "sha256": "c50e25167a5ab2725db325ef291c866b104c9e227ca832ca44f3df22b8e84697",
+          "role": "owner-authored Apache-2.0 behavior reference",
+          "rightsEvidence": "packages/document-core/LICENSE and NOTICE"
+        },
+        {
+          "path": "packages/document-core/src/source.ts",
+          "sha256": "8414724078b5544f284aede96ab742ceaba2247b78575fbce0e157ceec5d2084",
+          "role": "owner-authored Apache-2.0 behavior reference",
+          "rightsEvidence": "packages/document-core/LICENSE and NOTICE"
+        },
+        {
+          "path": "docs/architecture/tauri/CONTRACT.md",
+          "role": "project behavior and ownership contract",
+          "sha256": "88ad11250e2a16eb1d20a1c074a2fb584affd9f8595336af3fdb6dbf5d4dd630"
+        }
+      ],
+      "constituentLicenses": [
+        {
+          "name": "adler2",
+          "version": "2.0.1",
+          "licenseExpression": "0BSD OR MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "bumpalo",
+          "version": "3.20.3",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "cfg-if",
+          "version": "1.0.5",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "crc32fast",
+          "version": "1.5.2",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "flate2",
+          "version": "1.1.10",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "itoa",
+          "version": "1.0.18",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "memchr",
+          "version": "2.8.3",
+          "licenseExpression": "Unlicense OR MIT",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "miniz_oxide",
+          "version": "0.9.1",
+          "licenseExpression": "MIT OR Zlib OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "once_cell",
+          "version": "1.21.4",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "proc-macro2",
+          "version": "1.0.107",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "quote",
+          "version": "1.0.47",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "rustversion",
+          "version": "1.0.23",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "ryu",
+          "version": "1.0.23",
+          "licenseExpression": "Apache-2.0 OR BSL-1.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "serde",
+          "version": "1.0.228",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "serde_core",
+          "version": "1.0.228",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "serde_derive",
+          "version": "1.0.228",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "serde_json",
+          "version": "1.0.145",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "simd-adler32",
+          "version": "0.3.10",
+          "licenseExpression": "MIT",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "syn",
+          "version": "2.0.119",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "unicode-ident",
+          "version": "1.0.27",
+          "licenseExpression": "(MIT OR Apache-2.0) AND Unicode-3.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "wasm-bindgen",
+          "version": "0.2.126",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "wasm-bindgen-macro",
+          "version": "0.2.126",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "wasm-bindgen-macro-support",
+          "version": "0.2.126",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        },
+        {
+          "name": "wasm-bindgen-shared",
+          "version": "0.2.126",
+          "licenseExpression": "MIT OR Apache-2.0",
+          "noticePath": "apps/frontend/src/features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md"
+        }
+      ],
+      "modifications": "Rust replacement plus optional wasm-bindgen interface; no historical Electron runtime is linked into this crate.",
+      "publication": {
+        "commit": "b9ff3724aa013f814c4d80e828edf2e61395f48f",
+        "branch": "refactor/tauri-apache-migration"
+      },
+      "validation": {
+        "command": "cargo test --locked --release --offline --manifest-path crates/document-core/Cargo.toml",
+        "exitCode": 0,
+        "scope": "Rust native core and separate actual WASM/browser acceptance",
+        "nativeTests": {
+          "passed": 42,
+          "failed": 0,
+          "ignored": 0
+        },
+        "wasmTests": {
+          "passed": 8,
+          "failed": 0
+        },
+        "clippy": "native and wasm strict checks passed",
+        "browser": "production Edge Rust WASM worker/Unicode/outline/undo test passed"
+      },
+      "status": "first-party-authorship-recorded; distribution dependency and asset closure tracked separately",
+      "files": [
+        {
+          "path": "crates/document-core/Cargo.lock",
+          "sha256": "cbe18b63580a20b50c8e9068cc1ccd6ea3112068b44348e32058a0a05fbe3bea",
+          "publishedSha256": "cbe18b63580a20b50c8e9068cc1ccd6ea3112068b44348e32058a0a05fbe3bea"
+        },
+        {
+          "path": "crates/document-core/Cargo.toml",
+          "sha256": "8309546a8a2d2a7d4ec650711850187a50186bebbe705c6c137f1ab0e14c5fa8",
+          "publishedSha256": "8309546a8a2d2a7d4ec650711850187a50186bebbe705c6c137f1ab0e14c5fa8"
+        },
+        {
+          "path": "crates/document-core/LICENSE",
+          "sha256": "aa96f93cf345d3419677ff9061de26e389ed511502ec2681e9d7e03fa980510d",
+          "publishedSha256": "aa96f93cf345d3419677ff9061de26e389ed511502ec2681e9d7e03fa980510d"
+        },
+        {
+          "path": "crates/document-core/NOTICE",
+          "sha256": "1e1ddea981009bd0e4781ae939ed5fc65ae2f0ef506e04df9deacb18a5ea71ef",
+          "publishedSha256": "9ea5e757eaa1499c914174e5a5aaba186ad35c9f3dffae2766a732d5fbaf9a47"
+        },
+        {
+          "path": "crates/document-core/README.md",
+          "sha256": "99469739b7a5bae151c400d3b8a9e45ccaaa1502c8218348b01dfe351411d0d5",
+          "publishedSha256": "99469739b7a5bae151c400d3b8a9e45ccaaa1502c8218348b01dfe351411d0d5"
+        },
+        {
+          "path": "crates/document-core/src/changes.rs",
+          "sha256": "fb5948e255080e854ae9096ff3f19184a2a7c9e6d3283aa46247feab520128c3",
+          "publishedSha256": "fb5948e255080e854ae9096ff3f19184a2a7c9e6d3283aa46247feab520128c3"
+        },
+        {
+          "path": "crates/document-core/src/editor_projection.rs",
+          "sha256": "a5d1c4aea00ddcb8d97e2c81e5eb87021088889805e8a6ca93119a4dd9ed345e",
+          "publishedSha256": "a5d1c4aea00ddcb8d97e2c81e5eb87021088889805e8a6ca93119a4dd9ed345e"
+        },
+        {
+          "path": "crates/document-core/src/lib.rs",
+          "sha256": "016b15a202a4b223aa26b015e1aaa4846945ee8fcac97cb4205fb8924d061f96",
+          "publishedSha256": "016b15a202a4b223aa26b015e1aaa4846945ee8fcac97cb4205fb8924d061f96"
+        },
+        {
+          "path": "crates/document-core/src/parser.rs",
+          "sha256": "4866d2061007d3c1201b8db410cf2b0c74aaffb1760fc38296eb5ea49ccd0c2a",
+          "publishedSha256": "4866d2061007d3c1201b8db410cf2b0c74aaffb1760fc38296eb5ea49ccd0c2a"
+        },
+        {
+          "path": "crates/document-core/src/pdf_wrap.rs",
+          "sha256": "a851423502d6bc92ca04a47fbc092e845e7c8ec6f339cef091fd6ec503fb5ad7",
+          "publishedSha256": "a851423502d6bc92ca04a47fbc092e845e7c8ec6f339cef091fd6ec503fb5ad7"
+        },
+        {
+          "path": "crates/document-core/src/source.rs",
+          "sha256": "e5c62368be64f4b7e6b91a9b920aaca9d775d53ab4413049f6f72bfda350b0f6",
+          "publishedSha256": "e5c62368be64f4b7e6b91a9b920aaca9d775d53ab4413049f6f72bfda350b0f6"
+        },
+        {
+          "path": "crates/document-core/src/synctex.rs",
+          "sha256": "6d2db8b05ca72e3c44ed9e793c102cc0a4c7042ba15607c26601ddcd481b0936",
+          "publishedSha256": "6d2db8b05ca72e3c44ed9e793c102cc0a4c7042ba15607c26601ddcd481b0936"
+        },
+        {
+          "path": "crates/document-core/src/utf8.rs",
+          "sha256": "1d11a8b019a4903de83698cf4f0443d7c8cb0bc4aebaf4778e5af20a0befa4ed",
+          "publishedSha256": "1d11a8b019a4903de83698cf4f0443d7c8cb0bc4aebaf4778e5af20a0befa4ed"
+        },
+        {
+          "path": "crates/document-core/src/wasm.rs",
+          "sha256": "39e3ef6bf9b348f7f42e9b632ad1f3c9ac14418e0701f7f555a7f57cf3ccf3e3",
+          "publishedSha256": "39e3ef6bf9b348f7f42e9b632ad1f3c9ac14418e0701f7f555a7f57cf3ccf3e3"
+        },
+        {
+          "path": "crates/document-core/tests/changes.rs",
+          "sha256": "38d635d1fb4ade3b9b4867d9f8088e29085dd1b04248d45a51f344f617d80ea7",
+          "publishedSha256": "38d635d1fb4ade3b9b4867d9f8088e29085dd1b04248d45a51f344f617d80ea7"
+        },
+        {
+          "path": "crates/document-core/tests/editor_projection.rs",
+          "sha256": "f509a65ac9a2daceb7b4dd61a938491d6b0b26c7a15897d2d968a169c580bc10",
+          "publishedSha256": "f509a65ac9a2daceb7b4dd61a938491d6b0b26c7a15897d2d968a169c580bc10"
+        },
+        {
+          "path": "crates/document-core/tests/latex_parity.rs",
+          "sha256": "4fc3c122c447e0d3b7b76d7c92a2da150cd8d696174937eb9afb5dc370b1a239",
+          "publishedSha256": "4fc3c122c447e0d3b7b76d7c92a2da150cd8d696174937eb9afb5dc370b1a239"
+        },
+        {
+          "path": "crates/document-core/tests/parser.rs",
+          "sha256": "31890ef0b194a6988769774a943290f6371515e423b88be5cd23fc41b280a349",
+          "publishedSha256": "31890ef0b194a6988769774a943290f6371515e423b88be5cd23fc41b280a349"
+        },
+        {
+          "path": "crates/document-core/tests/pdf_wrap.rs",
+          "sha256": "59980fc298bd8101bc5268561e205528ffcd6ecf3ab486f8605fb164a06c8ee6",
+          "publishedSha256": "59980fc298bd8101bc5268561e205528ffcd6ecf3ab486f8605fb164a06c8ee6"
+        },
+        {
+          "path": "crates/document-core/tests/source.rs",
+          "sha256": "454e98757656bd5b64bbd6a100cc8496abc0d023197ff966a6aacaef3243d5fb",
+          "publishedSha256": "454e98757656bd5b64bbd6a100cc8496abc0d023197ff966a6aacaef3243d5fb"
+        },
+        {
+          "path": "crates/document-core/tests/synctex.rs",
+          "sha256": "d9fa1e8815d55893f5cf51fe98daad7417b92fa43e9d6adcc0546815f072f174",
+          "publishedSha256": "d9fa1e8815d55893f5cf51fe98daad7417b92fa43e9d6adcc0546815f072f174"
+        },
+        {
+          "path": "crates/document-core/tests/wasm.test.mjs",
+          "sha256": "db670672a82ed5b880cb1be77a4baf3c12f4f8d1e46ddd806f7402866b2cd097",
+          "publishedSha256": "ca68e03d309fd968c4f3a8606153738835cdfb11858594bc95f1dd43c07db264"
+        }
+      ]
     }
   ],
   "layoutTransitions": [
@@ -858,6 +1200,132 @@
         }
       ],
       "note": "107 actual library tests passed; historical file snapshots retained. Responsibility extraction and full distribution closure remain open."
+    },
+    {
+      "id": "shared-schema-test-layout-2026-10-18",
+      "date": "2026-10-18",
+      "scope": "Shared Apache packages and verification tests; historical source snapshots retained",
+      "moves": [
+        {
+          "source": "packages/frontend-contracts/src/types.ts",
+          "target": "packages/frontend-contracts/src/schemas/types.ts",
+          "sourceSha256": "f9f2665c9c07a292e39307f2730e6e05ce70a7c0460bd22b4a559f5e350bd7fa",
+          "targetSha256": "f9f2665c9c07a292e39307f2730e6e05ce70a7c0460bd22b4a559f5e350bd7fa"
+        },
+        {
+          "source": "packages/frontend-contracts/src/validate.ts",
+          "target": "packages/frontend-contracts/src/schemas/validate.ts",
+          "sourceSha256": "ad9dabfcd1ce4c5d54bba274056c3e6049fa022412f857a1a2464bd67f8e1b8b",
+          "targetSha256": "ad9dabfcd1ce4c5d54bba274056c3e6049fa022412f857a1a2464bd67f8e1b8b"
+        },
+        {
+          "source": "packages/frontend-contracts/src/images.ts",
+          "target": "packages/frontend-contracts/src/schemas/images.ts",
+          "sourceSha256": "7f9bb7456eeb4514eaa95e5d87b8ed90a8c5b3673e2a8a2e3f0b41f81bc2b9a5",
+          "targetSha256": "7f9bb7456eeb4514eaa95e5d87b8ed90a8c5b3673e2a8a2e3f0b41f81bc2b9a5"
+        },
+        {
+          "source": "packages/document-core/src/utf8.ts",
+          "target": "packages/document-core/src/shared/utf8.ts",
+          "sourceSha256": "c50e25167a5ab2725db325ef291c866b104c9e227ca832ca44f3df22b8e84697",
+          "targetSha256": "c50e25167a5ab2725db325ef291c866b104c9e227ca832ca44f3df22b8e84697"
+        },
+        {
+          "source": "scripts/licensing/frontend-artifacts.test.mjs",
+          "target": "scripts/tests/licensing/frontend-artifacts.test.mjs",
+          "sourceSha256": "d548596e0cd43a9d18a159fa3a6dfbbecf9e7d636379efd3ae6b252beb934363",
+          "targetSha256": "6cc147c57971fea387decca03918ada57c92ba67b7da0d8376d2ab8a2409134c"
+        },
+        {
+          "source": "scripts/licensing/frontend-asset-origins.test.mjs",
+          "target": "scripts/tests/licensing/frontend-asset-origins.test.mjs",
+          "sourceSha256": "eb0f9a72dd99b9d86b3671f411057af4ccefc06095212f79eb7bb0e080d6e4ac",
+          "targetSha256": "b0f8e70f129137776f1274bf6ba4d975cae6c5c280f6159d1210983a0f9d427b"
+        },
+        {
+          "source": "scripts/licensing/frontend-boundaries.test.mjs",
+          "target": "scripts/tests/licensing/frontend-boundaries.test.mjs",
+          "sourceSha256": "0339a455efc623df6bf95929439e799a7b136c6264cfc284a53e8c0f95187aa4",
+          "targetSha256": "9ecac2ad486159f9942efbe479c8775d1f4fa93b266c7b96b38f3c494b216af9"
+        },
+        {
+          "source": "scripts/licensing/frontend-font-metadata.test.mjs",
+          "target": "scripts/tests/licensing/frontend-font-metadata.test.mjs",
+          "sourceSha256": "f663bab92c581ac3c0176c11fd4a47d914a846425b23b508b28c838841372a4a",
+          "targetSha256": "c36bedb3c03b562bef0581d6108fd083b1059a2652f891c6d7e3d419600abdfc"
+        },
+        {
+          "source": "scripts/licensing/frontend-font-notices.test.mjs",
+          "target": "scripts/tests/licensing/frontend-font-notices.test.mjs",
+          "sourceSha256": "e4fd509137a22aa45de238dfea494b2b796ebfd7e1dc26f0be3132a0630fe184",
+          "targetSha256": "0d4e8d361837b0f2ea2e6bef6f3e5ec0b8389fd7cff49a031ebb9f77de808031"
+        },
+        {
+          "source": "scripts/licensing/frontend-package-containment.test.mjs",
+          "target": "scripts/tests/licensing/frontend-package-containment.test.mjs",
+          "sourceSha256": "52c49696ff2b6a4d04679a8377ee3f86c864d3b37fb36ad7aa8b5257cf7b2cea",
+          "targetSha256": "c298622784dc0b63b48c879fdf3c8f0949b784d2ed64efe7a328143a63229b44"
+        },
+        {
+          "source": "scripts/licensing/frontend-resource-maps.test.mjs",
+          "target": "scripts/tests/licensing/frontend-resource-maps.test.mjs",
+          "sourceSha256": "9ed2bad163ca560bc9e48a884c269e618f509eb0b9904e745425ad3257919d46",
+          "targetSha256": "ff4b82b7aa94d43da0a3a1db65c47966b093aa6a4d13ab82ce9abaaf792e9f1a"
+        },
+        {
+          "source": "scripts/vendor/tectonic-vendor.test.mjs",
+          "target": "scripts/tests/vendor/tectonic-vendor.test.mjs",
+          "sourceSha256": "2e4096e5e70a54a86b1eb4ce5bfe869ed2309c1f88f07c285f65681b37d92cd5",
+          "targetSha256": "15b92b0c84100620978ace330867a99beac81e7ed89ffb12ab1401fcecad2e87"
+        },
+        {
+          "source": "scripts/vendor/vendor-artifact.test.mjs",
+          "target": "scripts/tests/vendor/vendor-artifact.test.mjs",
+          "sourceSha256": "a9d072a38de4a345777aebfea44ad182c80a96721b5f4af9836f225405f6ff9c",
+          "targetSha256": "a861abe889e442b520fbc69bac2ccd7bda8953c291cdbb4b6253a04f780481d6"
+        },
+        {
+          "source": "scripts/vendor/vendor-manifest.test.mjs",
+          "target": "scripts/tests/vendor/vendor-manifest.test.mjs",
+          "sourceSha256": "55a6c33e3c27249bc6e8008bad8550dbbc05a7da95cee9b15975ea86309444e6",
+          "targetSha256": "749ec2aa499471e8951b1002a7ca2ca49c73c34faf9f41b869a7af8a17c18b93"
+        },
+        {
+          "source": "scripts/agents/tauri-input.test.mjs",
+          "target": "scripts/tests/agents/tauri-input.test.mjs",
+          "sourceSha256": "8d01a627343b8947c02a1d16370b65dc2d7cc83cccc900276705a772af786a87",
+          "targetSha256": "125480b2d057c312318630d560a7a6295339adc092068a78c7d3e2beaba6e397",
+          "localOnly": true
+        },
+        {
+          "source": "scripts/agents/tauri-surface.test.mjs",
+          "target": "scripts/tests/agents/tauri-surface.test.mjs",
+          "sourceSha256": "93de33a7287a98d5eb89f5bcd8c4a9298419cb0aa85b3a37e8d352bbf5ac4d90",
+          "targetSha256": "97d40f49adfe1f9f921962a0549334dc57e1f6966f296efe2aafd6609ef271c5",
+          "localOnly": true
+        }
+      ],
+      "validation": {
+        "packageBuilds": "frontend-contracts and document-core TypeScript builds passed",
+        "packageTests": {
+          "passed": 156,
+          "failed": 0,
+          "log": "shared-layout-package-tests.log"
+        },
+        "licensingAndVendor": {
+          "passed": 129,
+          "failed": 0,
+          "environment": "actual Windows host",
+          "log": "shared-layout-tool-tests-host.log"
+        },
+        "ciAndLocalOrchestration": {
+          "passed": 31,
+          "failed": 0,
+          "log": "shared-layout-ci-and-local-tests-fixed.log"
+        },
+        "method": "preview copy, AST import/export resolution, exact source hashes, collision preflight and persistent rollback checkpoint"
+      },
+      "note": "Public package entrypoints and runtime behavior unchanged. Local agents tests/tool changes excluded from product publication."
     }
   ]
 }
