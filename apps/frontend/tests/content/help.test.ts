@@ -15,7 +15,7 @@ test('help routes allow only actual topics and instructions match connected feat
 	assert.match(helpText.compilation!, /固定官方來源/);
 	assert.match(helpText.shortcuts!, /Ctrl\+O/);
 	assert.doesNotMatch(helpText.shortcuts!, /自動儲存|MathLive/);
-	assert.match(helpText.licenses!, /AGPL-3\.0-only/);
+	assert.match(helpText.licenses!, /Apache-2\.0/);
 });
 test('bounded reading parser preserves code line breaks and literal HTML without executable output', () => {
 	const value = contentBlocks('## Guide\n```powershell\n<script>alert(1)</script>\n\n$actual = 1\n```\n- Next');
@@ -38,7 +38,7 @@ test('actual Svelte/Vite Help renders installation commands and unchanged licens
 			assert.match(code, /npx --offline --yes --ignore-scripts --package \.\\modutex-desktop-0\.2\.1\.tgz -- modutex/);
 			assert.equal(dom.window.document.querySelectorAll('script').length, 0);
 		} finally { dom.window.close(); }
-		for (const [topic, path] of [['agpl', '../../../../LICENSE'], ['apache', '../../../../LICENSES/Apache-2.0.txt']] as const) {
+		for (const [topic, path] of [['apache', '../../../desktop-tauri/LICENSE']] as const) {
 			const actual = await readFile(new URL(path, import.meta.url), 'utf8');
 			const dom = new JSDOM(render(module.default, { props: { topic } }).body);
 			try { assert.equal(dom.window.document.querySelector('.license-text')?.textContent, actual.replaceAll('\r\n', '\n')); } finally { dom.window.close(); }

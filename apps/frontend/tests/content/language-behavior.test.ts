@@ -100,8 +100,7 @@ test('Help and Settings SSR reflect locale and preserve source licenses', { time
 		}
 
 		for (const licenseCase of [
-			{ topic: 'agpl', file: '../../../../LICENSE', titles: { en: 'AGPL full text', 'zh-Hant': 'AGPL 全文' } },
-			{ topic: 'apache', file: '../../../../LICENSES/Apache-2.0.txt', titles: { en: 'Apache full text', 'zh-Hant': 'Apache 全文' } },
+			{ topic: 'apache', file: '../../../desktop-tauri/LICENSE', titles: { en: 'Apache full text', 'zh-Hant': 'Apache 全文' } },
 		] as const) {
 			const actual = (await readFile(new URL(licenseCase.file, import.meta.url), 'utf8')).replace(/\r\n?/g, '\n');
 			for (const locale of ['en', 'zh-Hant'] as const) {
