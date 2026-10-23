@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import type {
 	CompileIdentity,
+	CompileConfig,
+	CompileConfigUpdate,
+	CompileProfile,
 	CompileRequest,
 	CompileResult,
 	Diagnostic,
@@ -303,6 +306,88 @@ function diagnostic(value: unknown): Diagnostic {
 		path,
 		line,
 		column
+	});
+}
+
+function compileProfile(value: unknown): CompileProfile {
+	if (value !== 'managed' && value !== 'system' && value !== 'custom') {
+		throw new ContractError('profile', 'Unknown compile profile');
+	}
+	return value;
+}
+
+function nullableCompilePath(value: unknown, field: string, extension?: string): string | null {
+	if (value === null) return null;
+	const path = relativePath(value);
+	if (extension && !path.toLowerCase().endsWith(extension)) {
+		throw new ContractError(field, 'Unexpected compile configuration path extension');
+	}
+	return path;
+}
+
+export function parseCompileConfig(value: unknown, expectedWorkspaceId?: string): CompileConfig {
+	const input = record(value, [
+		'workspaceId', 'revision', 'mainFile', 'profile', 'engine',
+		'outputDir', 'pdf', 'log', 'customCommand', 'canSetCommand'
+	], 'compileConfig');
+	const workspaceId = id(input.workspaceId, 'workspaceId');
+	const revision = integer(input.revision, 'revision', 0);
+	const profile = compileProfile(input.profile);
+	if (input.engine !== 'managed' && input.engine !== 'system') {
+		throw new ContractError('engine', 'Unknown compile engine');
+	}
+	const engine = input.engine;
+	if ((profile === 'managed') !== (engine === 'managed')) {
+		throw new ContractError('engine', 'Engine does not match the selected profile');
+	}
+	const mainFile = nullableCompilePath(input.mainFile, 'mainFile', '.tex');
+	const outputDir = nullableCompilePath(input.outputDir, 'outputDir');
+	const pdf = nullableCompilePath(input.pdf, 'pdf', '.pdf');
+	const log = nullableCompilePath(input.log, 'log', '.log');
+	const customCommand = input.customCommand === null
+		? null
+		: text(input.customCommand, 'customCommand', 4096);
+	if (profile === 'custom' && customCommand === null) {
+		throw new ContractError('customCommand', 'A custom profile requires a command template');
+	}
+	if (profile !== 'custom' && customCommand !== null) {
+		throw new ContractError('customCommand', 'A command template is only valid for a custom profile');
+	}
+	if (typeof input.canSetCommand !== 'boolean') {
+		throw new ContractError('canSetCommand', 'Expected a boolean permission');
+	}
+	if (expectedWorkspaceId !== undefined && workspaceId !== expectedWorkspaceId) {
+		throw new ContractError('workspaceId', 'Configuration is for another workspace');
+	}
+	return Object.freeze({
+		workspaceId, revision, mainFile, profile, engine, outputDir, pdf, log,
+		customCommand, canSetCommand: input.canSetCommand
+	});
+}
+
+export function parseCompileConfigUpdate(value: unknown): CompileConfigUpdate {
+	const input = record(value, [
+		'workspaceId', 'expectedRevision', 'mainFile', 'profile',
+		'outputDir', 'pdf', 'log', 'customCommand'
+	], 'compileConfig.update');
+	const profile = compileProfile(input.profile);
+	const mainFile = nullableCompilePath(input.mainFile, 'mainFile', '.tex');
+	const outputDir = nullableCompilePath(input.outputDir, 'outputDir');
+	const pdf = nullableCompilePath(input.pdf, 'pdf', '.pdf');
+	const log = nullableCompilePath(input.log, 'log', '.log');
+	const customCommand = input.customCommand === null
+		? null
+		: text(input.customCommand, 'customCommand', 4096);
+	if ((profile === 'custom') !== (customCommand !== null)) {
+		throw new ContractError('customCommand', 'Custom profile and command template must be supplied together');
+	}
+	if (pdf !== null && log !== null && pdf.toLowerCase() === log.toLowerCase()) {
+		throw new ContractError('output', 'PDF and log paths must be different');
+	}
+	return Object.freeze({
+		workspaceId: id(input.workspaceId, 'workspaceId'),
+		expectedRevision: integer(input.expectedRevision, 'expectedRevision', 0),
+		mainFile, profile, outputDir, pdf, log, customCommand
 	});
 }
 

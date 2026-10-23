@@ -12,6 +12,8 @@ export {
 	parseSaveAsRequest,
 	parseSaveAsReceipt,
 	parseCompileRequest,
+	parseCompileConfig,
+	parseCompileConfigUpdate,
 	parseCompileIdentity,
 	parseCompileResult
 } from './schemas/validate.ts';

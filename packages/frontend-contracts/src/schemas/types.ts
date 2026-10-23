@@ -53,6 +53,7 @@ export type FileWatchFailure =
 	| 'STALE_WORKSPACE'
 	| 'LINK_NOT_ALLOWED'
 	| 'FILE_OPERATION_FAILED';
+export type FileWatchResyncReason = 'PERIODIC_RECONCILE_DUE';
 export interface CompileIdentity {
 	readonly runId: string;
 	readonly workspaceId: string;
@@ -83,6 +84,29 @@ export type CompileResult =
 			readonly log: string;
 			readonly diagnostics: readonly Diagnostic[];
 	  };
+export type CompileProfile = 'managed' | 'system' | 'custom';
+export interface CompileConfig {
+	readonly workspaceId: string;
+	readonly revision: number;
+	readonly mainFile: string | null;
+	readonly profile: CompileProfile;
+	readonly engine: 'managed' | 'system';
+	readonly outputDir: string | null;
+	readonly pdf: string | null;
+	readonly log: string | null;
+	readonly customCommand: string | null;
+	readonly canSetCommand: boolean;
+}
+export interface CompileConfigUpdate {
+	readonly workspaceId: string;
+	readonly expectedRevision: number;
+	readonly mainFile: string | null;
+	readonly profile: CompileProfile;
+	readonly outputDir: string | null;
+	readonly pdf: string | null;
+	readonly log: string | null;
+	readonly customCommand: string | null;
+}
 export interface CompileHandle {
 	readonly identity: CompileIdentity;
 	readonly finished: Promise<CompileResult>;
@@ -104,8 +128,12 @@ export interface DesktopPort {
 	watchFiles(
 		workspaceId: string,
 		listener: (event: FileEvent) => void,
-		onError?: (failure: FileWatchFailure) => void
+		onError?: (failure: FileWatchFailure) => void,
+		onResync?: (reason: FileWatchResyncReason) => void
 	): Promise<Unsubscribe>;
 	compile(request: CompileRequest): Promise<CompileHandle>;
+	takeCompileSynctex?(identity: CompileIdentity): Promise<Uint8Array | null>;
+	getCompileConfig(workspaceId: string): Promise<CompileConfig>;
+	updateCompileConfig(request: CompileConfigUpdate): Promise<CompileConfig>;
 	closeWorkspace(workspaceId: string): Promise<void>;
 }
