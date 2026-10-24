@@ -1,9 +1,0 @@
-{
-  "prompt": "Use case: ui-mockup. Reference image 1 is the edit target. Preserve the entire ModuTeX VISUAL editor screenshot: top navigation, left tree, visual editable prose/equation/table CENTER, separate PDF RIGHT, warm-white material. NO SOURCE CODE OR LINE NUMBERS anywhere in center. Change ONLY tools-open interaction: add a 44px contextual table toolbar beneath visual toolbar with 三線表 dropdown, 表頭 toggle, 說明位置 上方, 新增列, 新增欄; show small column width handles labeled 40% 30% 30% just above editable table. Add a compact docked 表格工具 inspector with X close in lower LEFT sidebar below files; fields 欄寬 and 線條 choices 三線表 框線表 僅橫線. Keep prose readable and matching PDF. No neon, dark overlay, floating modal or repeated toolbars. Single landscape full application design mockup.",
-  "approved": false,
-  "tool": "image_gen",
-  "reference": "docs/design/concepts/a-states-2026-10-07/visual.png",
-  "sourcePath": "C:\\Users\\qet63\\.codex\\generated_images\\019ff6f5-0321-7473-9d13-579230a0995b\\exec-b9ab5c93-fc79-4458-9051-c3f1487e7414.png",
-  "kind": "design-concept",
-  "date": "2026-10-07"
-}

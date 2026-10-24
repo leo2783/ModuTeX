@@ -178,3 +178,9 @@ roundtrip-diff/
 .cbmignore
 .impeccable/
 apps/frontend/.pdf-lifetime-*/
+docs/architecture/
+docs/design/
+docs/distribution/
+docs/AUDIT_REPORT_SECURITY_PERF_CI.md
+
+.agents/

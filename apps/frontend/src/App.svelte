@@ -27,6 +27,23 @@
 		WorkbenchWatchLike
 	} from './features/compile/workbench-runtime.ts';
 
+	type WorkbenchRuntimeModule = typeof import('./features/compile/workbench-runtime.ts');
+	// Cache the deferred runtime so handlers stay synchronous up to their first real await
+	// (for example, the replacement confirmation) once the workbench has loaded it.
+	let workbenchRuntime: WorkbenchRuntimeModule | null = null;
+	let workbenchRuntimeLoad: Promise<WorkbenchRuntimeModule> | null = null;
+	function loadWorkbenchRuntime(): Promise<WorkbenchRuntimeModule> {
+		if (workbenchRuntime) return Promise.resolve(workbenchRuntime);
+		workbenchRuntimeLoad ??= import('./features/compile/workbench-runtime.ts').then((module) => {
+			workbenchRuntime = module;
+			return module;
+		}, (error) => {
+			workbenchRuntimeLoad = null;
+			throw error;
+		});
+		return workbenchRuntimeLoad;
+	}
+
 	let workbenchPane = $state<'document' | 'pdf'>('document');
 	let workbenchSplitRatio = $state(0.5);
 	let workbenchVisited = $state(false);
@@ -405,7 +422,7 @@
 		owner: WorkspaceInfo,
 		generation: number
 	): Promise<readonly FileEntry[] | null> {
-		const { runRefreshWorkspaceEntries } = await import('./features/compile/workbench-runtime.ts');
+		const { runRefreshWorkspaceEntries } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		return runRefreshWorkspaceEntries(runtimeHost, owner, generation);
 	}
 	function setWorkspaceEntriesIfCurrent(
@@ -489,7 +506,7 @@
 		externalFileNotice = null;
 	}
 	async function compileWorkspaceFile(path: string, owner: WorkspaceInfo) {
-		const { runCompileWorkspaceFile } = await import('./features/compile/workbench-runtime.ts');
+		const { runCompileWorkspaceFile } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		await runCompileWorkspaceFile(runtimeHost, path, owner);
 	}
 	function workspaceWatchIsCurrent(watch: WorkspaceWatch): boolean {
@@ -689,7 +706,7 @@
 		if (!watch || watch.processing || !workspaceWatchCanDrain(watch)) return;
 		watch.processing = true;
 		try {
-			const { runDrainWorkspaceWatchLoop } = await import('./features/compile/workbench-runtime.ts');
+			const { runDrainWorkspaceWatchLoop } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 			await runDrainWorkspaceWatchLoop(runtimeHost, watch);
 		} finally {
 			watch.processing = false;
@@ -699,7 +716,7 @@
 		}
 	}
 	async function recoverWorkspaceWatch() {
-		const { runRecoverWorkspaceWatch } = await import('./features/compile/workbench-runtime.ts');
+		const { runRecoverWorkspaceWatch } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		await runRecoverWorkspaceWatch(runtimeHost);
 	}
 	function keepExternalDraft() {
@@ -708,7 +725,7 @@
 		externalFileNotice = { ...externalFileNotice, acknowledged: true };
 	}
 	async function reloadExternalSource() {
-		const { runReloadExternalSource } = await import('./features/compile/workbench-runtime.ts');
+		const { runReloadExternalSource } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		await runReloadExternalSource(runtimeHost);
 	}
 	onDestroy(() => {
@@ -958,17 +975,17 @@
 		diagnosticNavigation = null;
 	}
 	async function readDesktopFile(path: string, owner: WorkspaceInfo, manageBusy = true) {
-		const { runReadDesktopFile } = await import('./features/compile/workbench-runtime.ts');
+		const { runReadDesktopFile } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		await runReadDesktopFile(runtimeHost, path, owner, manageBusy);
 	}
 	async function chooseSource(kind: 'file' | 'folder' = 'file', recentId?: string) {
-		const { runChooseSource } = await import('./features/compile/workbench-runtime.ts');
+		const { runChooseSource } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		await runChooseSource(runtimeHost, kind, recentId);
 	}
 	async function drainPendingOpenRequests() {
 		if (pendingOpenTask || !pendingOpenArmed || !desktop || !isTauri()) return;
 		const task = (async () => {
-			const { runDrainPendingOpenRequests, fileErrorDescriptor } = await import('./features/compile/workbench-runtime.ts');
+			const { runDrainPendingOpenRequests, fileErrorDescriptor } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 			try {
 				await runDrainPendingOpenRequests(runtimeHost);
 			} catch (value) {
@@ -986,11 +1003,11 @@
 	async function openSource(event: Event) {
 		const file = (event.currentTarget as HTMLInputElement).files?.[0];
 		if (!file) return;
-		const { runOpenSource } = await import('./features/compile/workbench-runtime.ts');
+		const { runOpenSource } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		await runOpenSource(runtimeHost, file, () => { sourceInput.value = ''; });
 	}
 	async function saveSource() {
-		const { runSaveSource } = await import('./features/compile/workbench-runtime.ts');
+		const { runSaveSource } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		await runSaveSource(runtimeHost);
 	}
 	function updateOperationBusy(): boolean {
@@ -1020,15 +1037,15 @@
 		return savedSnapshotIsCurrent && canInstallUpdate();
 	}
 	async function saveSourceForDraft(): Promise<boolean> {
-		const { runSaveSourceForDraft } = await import('./features/compile/workbench-runtime.ts');
+		const { runSaveSourceForDraft } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		return runSaveSourceForDraft(runtimeHost);
 	}
 	async function saveSourceAs() {
-		const { runSaveSourceAs } = await import('./features/compile/workbench-runtime.ts');
+		const { runSaveSourceAs } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		await runSaveSourceAs(runtimeHost);
 	}
 	async function newDocument(template: TemplateId) {
-		const { runNewDocument } = await import('./features/compile/workbench-runtime.ts');
+		const { runNewDocument } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		await runNewDocument(runtimeHost, template);
 	}
 	async function openFromHome(kind: 'file' | 'folder') {
@@ -1046,7 +1063,7 @@
 			await invoke('frontend_new_window');
 		} catch (value) {
 			if (!lifetime.signal.aborted) {
-				const { windowErrorNotice } = await import('./features/compile/workbench-runtime.ts');
+				const { windowErrorNotice } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 				if (!lifetime.signal.aborted) errorState = windowErrorNotice(value);
 			}
 		} finally {
@@ -1054,7 +1071,7 @@
 		}
 	}
 	async function compileSource() {
-		const { runCompileSource } = await import('./features/compile/workbench-runtime.ts');
+		const { runCompileSource } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		await runCompileSource(runtimeHost);
 	}
 	async function cancelCompile() {
@@ -1072,11 +1089,11 @@
 		}
 	}
 	async function forwardSynctex() {
-		const { runForwardSynctex } = await import('./features/compile/workbench-runtime.ts');
+		const { runForwardSynctex } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		runForwardSynctex(runtimeHost);
 	}
 	async function handlePdfPoint(point: { page: number; x: number; y: number }) {
-		const { runHandlePdfPoint } = await import('./features/compile/workbench-runtime.ts');
+		const { runHandlePdfPoint } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		await runHandlePdfPoint(runtimeHost, point);
 	}
 	function shortcuts(event: KeyboardEvent) {
@@ -1095,7 +1112,7 @@
 	async function openPdf(event: Event) {
 		const file = (event.currentTarget as HTMLInputElement).files?.[0];
 		if (!file) return;
-		const { runOpenPdf } = await import('./features/compile/workbench-runtime.ts');
+		const { runOpenPdf } = (workbenchRuntime ?? await loadWorkbenchRuntime());
 		await runOpenPdf(runtimeHost, file, () => { pdfInput.value = ''; });
 	}
 	const runtimeHost: WorkbenchRuntimeHost = {
@@ -1231,7 +1248,7 @@
 <div class="app" lang={preferences.language} style:--source-font-size={`${preferences.sourceFontSize}px`}>
 	<header class="global-bar">
 		<a class="brand" href="#/">ModuTeX</a>
-		<nav aria-label={t('主要導覽', 'Main navigation')}>
+		<nav aria-label={t('導覽', 'Main navigation')}>
 			<a href="#/" aria-current={route === 'home' ? 'page' : undefined}>{t('首頁', 'Home')}</a>
 			<a href="#/workbench" aria-current={route === 'workbench' ? 'page' : undefined}>{t('工作台', 'Workbench')}</a>
 			<a href="#/settings" aria-current={route === 'settings' ? 'page' : undefined}>{t('設定', 'Settings')}</a>
@@ -1239,7 +1256,7 @@
 			<a href="#/help" aria-current={route === 'help' ? 'page' : undefined}>{t('說明', 'Help')}</a>
 			<a href="#/compile-settings" aria-current={route === 'compile-settings' ? 'page' : undefined}>{t('編譯設定', 'Compile settings')}</a>
 			{#if isTauri()}
-				<button type="button" class="text-button" onclick={openNewWindow} disabled={openingWindow}>{t('開新視窗', 'New window')}</button>
+				<button type="button" class="text-button" onclick={openNewWindow} disabled={openingWindow}>{t('新增視窗', 'New window')}</button>
 			{/if}
 			{#await import('./components/LanguageMenu.svelte') then { default: LanguageMenu }}<LanguageMenu locale={preferences.language} onChange={language => changePreference('language', language)} />{/await}
 		</nav>
@@ -1317,8 +1334,8 @@
 				<span>
 					{#if externalFileNotice.kind === 'missing'}
 						{externalFileNotice.acknowledged
-							? t('磁碟上的文件已刪除。草稿已保留；請另存新檔以儲存。', 'The disk file was deleted. Your draft is kept; use Save as to save it.')
-							: t('磁碟上的「' + externalFileNotice.path + '」已刪除。草稿仍保留，不能儲存至原位置。', 'The disk file "' + externalFileNotice.path + '" was deleted. Your draft is preserved and cannot be saved to that path.')}
+							? t('磁碟上的文件已刪除。草稿已保留，請另存新檔儲存。', 'The disk file was deleted. Your draft is kept; use Save as to save it.')
+							: t('「' + externalFileNotice.path + '」已被刪除。', 'The disk file "' + externalFileNotice.path + '" was deleted. Your draft is preserved and cannot be saved to that path.')}
 					{:else}
 						{externalFileNotice.acknowledged
 							? t('磁碟文件已變更。草稿已保留；如要載入磁碟版本，請重新載入。', 'The disk file changed. Your draft is kept; reload to use the disk version.')
@@ -1347,7 +1364,7 @@
 		{/if}
 		{#if workbenchVisited}
 		{#key workbenchLoadKey}
-		{#await Promise.all([import('./components/WorkbenchChrome.svelte'), import('./features/source-editor/outline.ts'), import('./features/compile/workbench-runtime.ts')])}
+		{#await Promise.all([import('./components/WorkbenchChrome.svelte'), import('./features/source-editor/outline.ts'), loadWorkbenchRuntime()])}
 			<div class="empty-state" role="status"><p>{t('正在開啟工作台…', 'Loading workbench…')}</p></div>
 		{:then [{ default: WorkbenchChrome }, { sourceOutline }, { fileErrorDescriptor }]}
 		<WorkbenchChrome
@@ -1441,7 +1458,7 @@
 	{#if error}<div class="error-strip" role="alert">{error}<button class="text-button" onclick={() => (errorState = null)}>{t('關閉', 'Close')}</button></div>{/if}
 	{#if route === 'workbench' && showCompileDetails && (diagnostics.length || compileLog)}
 		<section class="compile-details" aria-label={t('編譯詳細資料', 'Compilation details')}>
-		{#await Promise.all([import('./components/CompileFeedback.svelte'), import('./features/compile/workbench-runtime.ts')]) then [{ default: CompileFeedback }, { canNavigateDiagnosticState, runNavigateToDiagnostic }]}
+		{#await Promise.all([import('./components/CompileFeedback.svelte'), loadWorkbenchRuntime()]) then [{ default: CompileFeedback }, { canNavigateDiagnosticState, runNavigateToDiagnostic }]}
 			<CompileFeedback locale={preferences.language} {diagnostics} {compileLog} expanded={true}
 				canNavigateDiagnostic={(diagnostic) => canNavigateDiagnosticState(runtimeHost, diagnostic)}
 				navigateToDiagnostic={(diagnostic) => runNavigateToDiagnostic(runtimeHost, diagnostic)} />

@@ -695,8 +695,8 @@
         },
         {
           "path": "docs/architecture/tauri/CONTRACT.md",
-          "role": "project behavior and ownership contract",
-          "sha256": "88ad11250e2a16eb1d20a1c074a2fb584affd9f8595336af3fdb6dbf5d4dd630"
+          "role": "project behavior and ownership contract; refreshed after MCP release deferral, document-core implementation unchanged",
+          "sha256": "add0798b9993b8280c406ec46192381e8aae17e6a79f8fc21b27b316bb5ae301"
         }
       ],
       "constituentLicenses": [

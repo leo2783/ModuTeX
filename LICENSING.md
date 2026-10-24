@@ -1,6 +1,6 @@
 # Licensing
 
-## Current Tauri application (0.3.0)
+## Current ModuTex application (0.3.0)
 
 Original code in the Tauri application is licensed under Apache-2.0:
 

@@ -1,9 +1,0 @@
-{
-  "prompt": "undefined\nRELEASE NOTES PAGE. Preserve same global top bar and exact approved-A design language, but replace document workspace with a dedicated reading page. 版本紀錄 active. Left 16% version navigation 0.1.0 active. Main reading content 70% centered and restrained: heading 版本紀錄, version 0.1.0; sections 新增 with items 文件、原始碼與 PDF 工作台 / 公式、矩陣與表格工具 / 內建 Tectonic 編譯與資源快取 / 繁體中文與英文; 修正 with item 表格所需 tabularx 套件補入; 使用須知 首次編譯與缺少的 TeX 資源需要網路。 Do not invent a release date or future version. No automatic-update button, promotional claims, download CTA, decorative stats or code. Clear text hierarchy, thin section separators and quiet whitespace.",
-  "approved": false,
-  "tool": "image_gen",
-  "reference": "docs/design/concepts/workbench-a.png",
-  "sourcePath": "C:\\Users\\qet63\\.codex\\generated_images\\019ff6f5-0321-7473-9d13-579230a0995b\\exec-0e4aff97-9a50-4318-aa21-355b27a808e0.png",
-  "kind": "design-concept",
-  "date": "2026-10-07"
-}
