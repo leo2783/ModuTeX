@@ -44,6 +44,6 @@ test('real Svelte/Vite server render reads version documents and renders semanti
 		assert.match(notes, /0\.1\.0/); // Historical releases remain in the index.
 		assert.doesNotMatch(notes, /<script[ >]/i);
 		const limits = render(module.default, { props: { showLimitations: true } }).body;
-		assert.match(limits, /已知限制/); assert.match(limits, /Managed Tectonic requires internet access/);
+		assert.match(limits, /已知限制/); assert.match(limits, /Tectonic 首次準備編譯資源時需要網路/);
 	} finally { await server.close(); }
 });

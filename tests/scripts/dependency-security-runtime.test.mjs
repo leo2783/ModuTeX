@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
@@ -9,7 +9,7 @@ import { createServer } from 'vite';
 const require = createRequire(import.meta.url);
 
 test('Vite denies Wasm requests to denied files while serving allowed modules', async () => {
-	const temporary = await mkdtemp(join(tmpdir(), 'modutex-vite-security-'));
+	const temporary = await realpath(await mkdtemp(join(tmpdir(), 'modutex-vite-security-')));
 	const root = join(temporary, 'public');
 	let server;
 	try {
@@ -36,9 +36,12 @@ test('Vite denies Wasm requests to denied files while serving allowed modules', 
 		const control = await fetch(origin + '/entry.js');
 		assert.equal(control.status, 200);
 		assert.match(await control.text(), /allowed = true/);
+		const absoluteControl = await fetch(origin + `/@fs/${join(root, 'entry.js').replaceAll('\\', '/')}`);
+		assert.equal(absoluteControl.status, 200);
+		assert.match(await absoluteControl.text(), /allowed = true/);
 	} finally {
 		await server?.close();
-		assert.ok(resolve(temporary).startsWith(resolve(tmpdir()) + sep));
+		assert.ok(resolve(temporary).startsWith(resolve(await realpath(tmpdir())) + sep));
 		await rm(temporary, { recursive: true, force: true });
 	}
 });

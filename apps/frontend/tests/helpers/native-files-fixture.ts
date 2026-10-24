@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createHash } from 'node:crypto';
 import { watch as watchDirectory } from 'node:fs';
-import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type {
 	FileEntry,
@@ -40,7 +40,7 @@ export class NativeFilesFixture {
 	private current: FixtureWorkspace | null = null;
 
 	async open(target: string, kind: 'file' | 'folder'): Promise<WorkspaceInfo> {
-		const absolute = path.resolve(target);
+		const absolute = await realpath(path.resolve(target));
 		const info = await stat(absolute);
 		let root: string;
 		let entryPath: string | null;
@@ -125,7 +125,7 @@ export class NativeFilesFixture {
 		const bytes = Uint8Array.from(request.bytes);
 		await writeFile(target, bytes, { flag: 'wx' });
 		const entryPath = path.basename(target);
-		const workspace = this.activate(path.dirname(target), entryPath, entryPath);
+		const workspace = this.activate(await realpath(path.dirname(target)), entryPath, entryPath);
 		return {
 			workspace,
 			write: {
