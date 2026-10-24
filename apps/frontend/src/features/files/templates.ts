@@ -8,9 +8,9 @@ export const templateOptions = Object.freeze([
 ] as const);
 export type TemplateId = typeof templateOptions[number]['id'];
 const sources: Readonly<Record<TemplateId, string>> = Object.freeze({
-	blank: '\\documentclass{article}\n\n\\begin{document}\n\\null\n\n\\end{document}\n',
-	article: '\\documentclass{article}\n\n\\title{Document title}\n\\author{}\n\\date{}\n\n\\begin{document}\n\\maketitle\n\n\\section{Introduction}\n\n\\end{document}\n',
-	report: '\\documentclass{report}\n\n\\title{Report title}\n\\author{}\n\\date{}\n\n\\begin{document}\n\\maketitle\n\n\\chapter{Introduction}\n\n\\end{document}\n'
+	blank: '\\documentclass{article}\n\\usepackage[margin=2cm]{geometry}\n\n\\begin{document}\n\\null\n\n\\end{document}\n',
+	article: '\\documentclass{article}\n\\usepackage[margin=2cm]{geometry}\n\n\\title{Document title}\n\\author{}\n\\date{}\n\n\\begin{document}\n\\maketitle\n\n\\section{Introduction}\n\n\\end{document}\n',
+	report: '\\documentclass{report}\n\\usepackage[margin=2cm]{geometry}\n\n\\title{Report title}\n\\author{}\n\\date{}\n\n\\begin{document}\n\\maketitle\n\n\\chapter{Introduction}\n\n\\end{document}\n'
 });
 /** Closed identifiers, not arbitrary source paths or inherited object properties. */
 export function createDraft(value: unknown): SourceDocument {
