@@ -156,7 +156,9 @@ jobs:
           node --test tests/scripts/distribution/inventory.test.mjs tests/scripts/distribution/updater-manifest.test.mjs
           tests/scripts/distribution/installer-lifecycle.test.mjs
       - name: Run static CD and PowerShell policy tests
-        run: node --test tests/scripts/tauri-cd-execution.test.mjs tests/scripts/tauri-powershell-parse.test.mjs
+        run: >-
+          node --test tests/scripts/tauri-cd-execution.test.mjs tests/scripts/tauri-powershell-parse.test.mjs
+          tests/scripts/frontend-artifact-download.test.mjs
       - name: Run signature policy tests against the downloaded executable fixture
         env:
           MODUTEX_TEST_SIGNATURE_SAMPLE: apps/desktop-tauri/target/release/modutex-desktop-tauri.exe

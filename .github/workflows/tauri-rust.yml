@@ -90,17 +90,33 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FRONTEND_ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir .
+          $artifactDirectory = Join-Path $env:RUNNER_TEMP ('modutex-tauri-frontend-' + [guid]::NewGuid().ToString('N'))
+          if (Test-Path -LiteralPath $artifactDirectory) {
+            throw 'Frontend artifact staging directory unexpectedly exists'
+          }
+          New-Item -ItemType Directory -Path $artifactDirectory -ErrorAction Stop | Out-Null
+          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir $artifactDirectory
           if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
-          $dist = 'apps/frontend/dist-tauri'
+          $dist = Join-Path $artifactDirectory 'apps/frontend/dist-tauri'
           if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
             throw 'Frontend artifact did not contain apps/frontend/dist-tauri'
           }
           if (-not (Test-Path -LiteralPath (Join-Path $dist 'index.html') -PathType Leaf)) {
             throw 'Frontend artifact did not contain the built Tauri index.html'
           }
-          if (@(Get-ChildItem -LiteralPath $dist -File -Recurse).Count -eq 0) {
+          if (@(Get-ChildItem -LiteralPath $dist -File -Recurse -Force).Count -eq 0) {
             throw 'Tauri frontend artifact is empty'
+          }
+          $checkoutDist = 'apps/frontend/dist-tauri'
+          if (Test-Path -LiteralPath $checkoutDist) {
+            Remove-Item -LiteralPath $checkoutDist -Recurse -Force -ErrorAction Stop
+          }
+          New-Item -ItemType Directory -Path $checkoutDist -ErrorAction Stop | Out-Null
+          Get-ChildItem -LiteralPath $dist -Force |
+            Copy-Item -Destination $checkoutDist -Recurse -Force -ErrorAction Stop |
+            Out-Null
+          if (-not (Test-Path -LiteralPath (Join-Path $checkoutDist 'index.html') -PathType Leaf)) {
+            throw 'The staged Tauri frontend index.html was not installed in the checkout'
           }
       - name: Install Rust toolchain 1.97.1 with Clippy
         run: |
@@ -153,17 +169,33 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FRONTEND_ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir .
+          $artifactDirectory = Join-Path $env:RUNNER_TEMP ('modutex-tauri-frontend-' + [guid]::NewGuid().ToString('N'))
+          if (Test-Path -LiteralPath $artifactDirectory) {
+            throw 'Frontend artifact staging directory unexpectedly exists'
+          }
+          New-Item -ItemType Directory -Path $artifactDirectory -ErrorAction Stop | Out-Null
+          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir $artifactDirectory
           if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
-          $dist = 'apps/frontend/dist-tauri'
+          $dist = Join-Path $artifactDirectory 'apps/frontend/dist-tauri'
           if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
             throw 'Frontend artifact did not contain apps/frontend/dist-tauri'
           }
           if (-not (Test-Path -LiteralPath (Join-Path $dist 'index.html') -PathType Leaf)) {
             throw 'Frontend artifact did not contain the built Tauri index.html'
           }
-          if (@(Get-ChildItem -LiteralPath $dist -File -Recurse).Count -eq 0) {
+          if (@(Get-ChildItem -LiteralPath $dist -File -Recurse -Force).Count -eq 0) {
             throw 'Tauri frontend artifact is empty'
+          }
+          $checkoutDist = 'apps/frontend/dist-tauri'
+          if (Test-Path -LiteralPath $checkoutDist) {
+            Remove-Item -LiteralPath $checkoutDist -Recurse -Force -ErrorAction Stop
+          }
+          New-Item -ItemType Directory -Path $checkoutDist -ErrorAction Stop | Out-Null
+          Get-ChildItem -LiteralPath $dist -Force |
+            Copy-Item -Destination $checkoutDist -Recurse -Force -ErrorAction Stop |
+            Out-Null
+          if (-not (Test-Path -LiteralPath (Join-Path $checkoutDist 'index.html') -PathType Leaf)) {
+            throw 'The staged Tauri frontend index.html was not installed in the checkout'
           }
       - name: Install Rust toolchain 1.97.1
         run: |
