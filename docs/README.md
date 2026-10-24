@@ -1,39 +1,27 @@
 # 文件索引
 
-## 使用
+## 使用與開發
 
 - [安裝與啟動](user/INSTALLATION.md)
 - [編輯文件](user/EDITING.md)
 - [PDF 編譯](user/COMPILATION.md)
-- [開發與打包、產品／函式庫版本](user/DEVELOPMENT.md)
+- [開發與打包](user/DEVELOPMENT.md)
 - [已知限制](user/KNOWN_LIMITATIONS.md)
 
-## 架構
+## 架構與進度
 
-- [Tauri 後端與 Apache-2.0 遷移計畫（Windows；Draw.io 排除）](architecture/TAURI_APACHE_MIGRATION_PLAN_2026-10-17.md)
-- [Tauri 遷移 subagent 使用計畫（AGY 3＋Luna API 3）](architecture/TAURI_SUBAGENT_PLAN_2026-10-17.md)
-- [Tauri 遷移實作狀態](architecture/TAURI_IMPLEMENTATION_STATUS.md)
-- [現行分歧整合決策](reference/REPOSITORY_RECONCILIATION.md)
-- [歷史 Svelte 前端重寫計畫與頁面概念](architecture/FRONTEND_REWRITE_PLAN.md)
-- [實作清單](architecture/FRONTEND_REWRITE_STATUS.md)
-- [來源核心與量測](architecture/DOCUMENT_CORE.md)
-- [桌面契約與資料驗證](architecture/FRONTEND_CONTRACTS.md)
-- [工作台圖片稿](design/WORKBENCH_BRIEF.md)
-- [A 版面延伸稿：編輯、終端機、工具、版本紀錄、設定](design/WORKBENCH_STATES.md)
-- [產品簡報](design/PRODUCT.md)
-- [現行儲存庫目錄](reference/REPOSITORY_LAYOUT.md)
+- [Tauri 遷移：規格、階段、派工與快取](architecture/TAURI_APACHE_MIGRATION_PLAN_2026-10-17.md)
+- [Tauri API 契約](architecture/FRONTEND_CONTRACTS.md)
+- [來源核心](architecture/DOCUMENT_CORE.md)
+- [桌面、檔案與編譯契約](architecture/FRONTEND_CONTRACTS.md)
+- [編輯器與功能規格](architecture/FRONTEND_VISUAL_SOURCE.md)
+- [前端狀態與驗收證據](architecture/FRONTEND_REWRITE_STATUS.md)
 
-## 來源與授權
+## 設計、來源與維護
 
-- [0.2.0 與歷史版本對應來源](reference/SOURCE_ORIGIN.md)
-- [AGPL／Apache-2.0 來源盤點](licensing/AGPL_APACHE_INVENTORY_2026-10-04.md)
-- [目前授權範圍](../LICENSING.md)
+- [產品設計與圖片稿](design/PRODUCT.md)
+- [來源、授權範圍與證據](licensing/SOURCE_REVIEW.md) · [現行授權](../LICENSING.md)
+- [儲存庫與版本來源](reference/REPOSITORY.md)
+- [Vendor 固定版本與離線驗證](vendor/VENDOR.md)
 
-設計、比較與日期審查文件是歷史證據；當時的測試數字、工作者狀態和未提交搬移不代表目前 main。現行資訊以使用指南、實作狀態及整合決策為準。
-
-- [2026-10-11 操作對照快照](archive/frontend-operations-2026-10-11.html)保留當時內容；頁面已標示歷史狀態，程式碼行號不適用目前 main。
-
-## 第三方
-
-- [Vendor lock](vendor/vendor-lock.md)
-- [離線與完整性驗證](vendor/offline-verification.md)
+JSON 來源／能力／驗證台帳保留於各主題目錄。[2026-10-11 操作快照](archive/frontend-operations-2026-10-11.html) 保留歷史內容，程式碼行號不作目前導覽。

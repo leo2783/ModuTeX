@@ -21,7 +21,7 @@ test('Vite denies Wasm requests to denied files while serving allowed modules', 
 			root,
 			configFile: false,
 			logLevel: 'silent',
-			server: { host: '127.0.0.1', port: 0, fs: { strict: true, allow: [root] } }
+			server: { host: '127.0.0.1', port: 0, watch: null, fs: { strict: true, allow: [root] } }
 		});
 		await server.listen();
 		const address = server.httpServer.address();

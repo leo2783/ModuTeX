@@ -16,13 +16,13 @@ Compiling another document follows the same unsaved-change checks.
 
 ## Errors / 錯誤
 
-| Situation | Action / 處理方式 |
-|---|---|
-| TeX error | Inspect the opened details; navigate to source when a valid filename/line is available. / 查看詳細資料，有有效檔名與行號時可定位原始碼。 |
-| Missing resources | Allow Tectonic to download uncached resources, then retry. / 下載缺少資源後重試。 |
-| Disk conflict | Keep the draft or reload from disk before saving. / 先保留草稿或重新載入磁碟內容。 |
-| Input limit | Inspect the reported file; keep unrelated caches/application data outside the workspace. / 檢查被指出的檔案，將無關快取與應用資料放在工作區外。 |
-| Cancellation | Wait for the engine to stop before retrying. / 等待引擎停止後再重試。 |
+| Situation         | Action / 處理方式                                                                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| TeX error         | Inspect the opened details; navigate to source when a valid filename/line is available. / 查看詳細資料，有有效檔名與行號時可定位原始碼。        |
+| Missing resources | Allow Tectonic to download uncached resources, then retry. / 下載缺少資源後重試。                                                               |
+| Disk conflict     | Keep the draft or reload from disk before saving. / 先保留草稿或重新載入磁碟內容。                                                              |
+| Input limit       | Inspect the reported file; keep unrelated caches/application data outside the workspace. / 檢查被指出的檔案，將無關快取與應用資料放在工作區外。 |
+| Cancellation      | Wait for the engine to stop before retrying. / 等待引擎停止後再重試。                                                                           |
 
 The status provides a log toggle. Editing after compilation marks the preview as an earlier version.
 編譯狀態可切換記錄顯示；編譯後再修改，預覽會標示為先前版本。

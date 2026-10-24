@@ -25,24 +25,24 @@ scripts and row/column size controls.
 
 ## Other content / 其他內容
 
-| Content | Operation / 操作 |
-|---|---|
-| Table / 表格 | Click to edit rows, columns, widths, borders, header and caption. / 點選編輯行列、欄寬、框線、表頭及說明。 |
+| Content       | Operation / 操作                                                                                                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table / 表格  | Click to edit rows, columns, widths, borders, header and caption. / 點選編輯行列、欄寬、框線、表頭及說明。                                                                                  |
 | Code / 程式碼 | Choose a language. Above 100,000 UTF-16 units, the complete code stays literal text without automatic highlighting. / 選擇語言；超過 100,000 個 UTF-16 units 時保留完整純文字，不自動高亮。 |
-| Image / 圖片 | Insert or Ctrl+V PNG/JPEG; select its cell and Ctrl+C to copy. Input limit: 5 MiB. / 插入或 Ctrl+V 貼上 PNG/JPEG，選取圖片格後 Ctrl+C 複製；輸入上限 5 MiB。 |
+| Image / 圖片  | Insert or Ctrl+V PNG/JPEG; select its cell and Ctrl+C to copy. Input limit: 5 MiB. / 插入或 Ctrl+V 貼上 PNG/JPEG，選取圖片格後 Ctrl+C 複製；輸入上限 5 MiB。                                |
 
 Save to persist image assets with the workspace. Unsupported commands remain editable in Source mode.
 儲存可將圖片資產保存到工作區；不支援的語法仍可在原始碼修改。
 
 ## Shortcuts / 快捷鍵
 
-| Keys | Action / 操作 |
-|---|---|
-| Ctrl+O / Ctrl+S | Open / Save · 開啟／儲存 |
-| Ctrl+Z / Ctrl+Shift+Z | Undo / Redo · 復原／重做 |
-| Ctrl+Enter | Compile PDF; configurable. / 編譯 PDF，可在設定調整。 |
-| Escape | Cancel a draft or enter cell navigation. / 取消草稿或進入儲存格導航。 |
-| Up / Down | Navigate selected cells. / 導航選取儲存格。 |
-| Alt+Up / Alt+Down | Move the selected cell. / 移動選取儲存格。 |
+| Keys                  | Action / 操作                                                         |
+| --------------------- | --------------------------------------------------------------------- |
+| Ctrl+O / Ctrl+S       | Open / Save · 開啟／儲存                                              |
+| Ctrl+Z / Ctrl+Shift+Z | Undo / Redo · 復原／重做                                              |
+| Ctrl+Enter            | Compile PDF; configurable. / 編譯 PDF，可在設定調整。                 |
+| Escape                | Cancel a draft or enter cell navigation. / 取消草稿或進入儲存格導航。 |
+| Up / Down             | Navigate selected cells. / 導航選取儲存格。                           |
+| Alt+Up / Alt+Down     | Move the selected cell. / 移動選取儲存格。                            |
 
 [Compilation / 編譯](COMPILATION.md) · [Limitations / 限制](KNOWN_LIMITATIONS.md)
