@@ -112,6 +112,10 @@ jobs:
             apps/frontend/tests/e2e/app-settings-draft-entry-browser.e2e.mjs \
             apps/frontend/tests/e2e/draft-panel-browser.e2e.mjs \
             apps/frontend/tests/e2e/updater-browser.e2e.mjs
+      - name: Run full-app workbench and replacement browser regressions
+        env:
+          MODUTEX_TEST_BROWSER_CHANNEL: chromium
+        run: node --test --test-concurrency=1 apps/frontend/tests/app/*.test.mjs
   frontend-build:
     name: Build and upload Tauri frontend assets and notices
     runs-on: windows-2025
@@ -154,6 +158,10 @@ jobs:
           }
       - name: Verify frontend origin licensing
         run: node scripts/licensing/verify-frontend-origin.mjs
+      - name: Verify real Tauri production bundle loading and shipped notices
+        env:
+          MODUTEX_TEST_FRONTEND_DIST: apps/frontend/dist-tauri
+        run: node --test apps/frontend/tests/production/bundle-loading.test.mjs apps/frontend/tests/production/notices.test.mjs
       - name: Run frontend origin licensing and resource-limit tests
         run: node --test tests/scripts/licensing/*.test.mjs
       - name: Upload Tauri frontend assets and required notices
@@ -197,3 +205,5 @@ jobs:
         run: npm run build:shared --workspace=modutex-frontend
       - name: Test @modutex/frontend-contracts
         run: npm run test --workspace=@modutex/frontend-contracts
+      - name: Type-check shared contracts and their tests
+        run: npm run check --workspace=@modutex/frontend-contracts

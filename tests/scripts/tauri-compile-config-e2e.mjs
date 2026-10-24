@@ -9,6 +9,7 @@ import {join,resolve,basename,toNamespacedPath} from 'node:path';
 import {tmpdir} from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
+import { waitNativeCdp } from './helpers/wait-native-cdp.mjs';
 const root=resolve(import.meta.dirname,'../..'),evidence=join(root,'.verification-artifacts/tauri');
 const exe=resolve(process.env.MODUTEX_TEST_EXE??join(root,'apps/desktop-tauri/target/release/modutex-desktop-tauri.exe'));
 const coldCache = process.env.MODUTEX_TEST_COLD_CACHE === '1';
@@ -48,7 +49,7 @@ async function assertManagedEngine(){
 }
 async function compile(cold = false){const started=performance.now();await page.getByRole('button',{name:/^(編譯 PDF|Compile PDF)$/}).click();await page.getByRole('button',{name:/^(取消編譯|Cancel compilation)$/}).waitFor({timeout:15000});if(cold)await assertManagedEngine();await page.waitForFunction(()=>/編譯完成|Compilation completed|編譯失敗|Compilation failed/.test(document.querySelector('.compile-status')?.textContent??''),null,{timeout:330000});assert.match(await page.locator('.compile-status').innerText(),/編譯完成|Compilation completed/,'real native compile must publish successfully');await page.locator('canvas').first().waitFor({state:'visible',timeout:20000});receipt.checks.push({compileMs:Math.round(performance.now()-started),coldCache:cold});}
 try{
- for(const until=Date.now()+30000;Date.now()<until;){if(launchError)throw launchError;if(app.exitCode!==null)throw Error(`host exited ${app.exitCode}: ${stderr}`);try{if((await fetch(`http://127.0.0.1:${port}/json/version`,{signal:AbortSignal.timeout(400)})).ok)break}catch{}await delay(100)}
+ await waitNativeCdp({ app, port, evidence, lane: 'compile-config', stderr: () => stderr, launchError: () => launchError });
  browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`,{timeout:10000});for(const until=Date.now()+10000;Date.now()<until;){page=browser.contexts().flatMap(c=>c.pages())[0];if(page)break;await delay(50)}assert(page);page.on('pageerror',e=>receipt.pageErrors.push(e.message));
  await page.exposeFunction('recordNativeWatchFailure', value => receipt.watchFailures.push(value));
  await page.evaluate(async()=>{const api=window.__TAURI_INTERNALS__;await api.invoke('plugin:event|listen',{event:'frontend://files/error',target:{kind:'Any'},handler:api.transformCallback(event=>window.recordNativeWatchFailure(event.payload))});});

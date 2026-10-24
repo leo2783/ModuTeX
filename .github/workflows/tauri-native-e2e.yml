@@ -71,6 +71,8 @@ jobs:
             script: tests/scripts/tauri-native-close-e2e.mjs
           - lane: multiwindow
             script: tests/scripts/tauri-multiwindow-e2e.mjs
+          - lane: os-open
+            script: tests/scripts/tauri-os-open-e2e.mjs
     steps:
       - name: Checkout verified source commit
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
@@ -92,23 +94,19 @@ jobs:
       - name: Provision and verify Microsoft Edge WebView2 Runtime
         run: |
           $ErrorActionPreference = 'Stop'
-          $programFilesX86 = [System.Environment]::GetFolderPath(
-            [System.Environment+SpecialFolder]::ProgramFilesX86)
-          $runtimeRoots = @(
-            (Join-Path $env:ProgramFiles 'Microsoft\EdgeWebView\Application'),
-            (Join-Path $programFilesX86 'Microsoft\EdgeWebView\Application'),
-            (Join-Path $env:LOCALAPPDATA 'Microsoft\EdgeWebView\Application')
-          )
-
+          # Microsoft-supported Evergreen detection, including per-user registration.
+          # https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution
           function Find-WebView2Runtime {
-            foreach ($runtimeRoot in $runtimeRoots) {
-              if (-not (Test-Path -LiteralPath $runtimeRoot -PathType Container)) { continue }
-              $versionDirectories = Get-ChildItem -LiteralPath $runtimeRoot -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
-                Sort-Object { [version]$_.Name } -Descending
-              foreach ($versionDirectory in $versionDirectories) {
-                $candidate = Join-Path $versionDirectory.FullName 'msedgewebview2.exe'
-                if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+            $client = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+            $keys = @(
+              "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$client",
+              "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$client"
+            )
+            foreach ($key in $keys) {
+              $value = Get-ItemPropertyValue -LiteralPath $key -Name 'pv' -ErrorAction SilentlyContinue
+              $version = $null
+              if ([version]::TryParse([string]$value, [ref]$version) -and $version -gt [version]'0.0.0.0') {
+                return [pscustomobject]@{ Version = $version; Registration = $key }
               }
             }
             return $null
@@ -146,11 +144,7 @@ jobs:
           if (-not $runtime) {
             throw 'Microsoft Edge WebView2 Evergreen Runtime is unavailable after provisioning'
           }
-          $runtimeVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($runtime).FileVersion
-          if ([string]::IsNullOrWhiteSpace($runtimeVersion)) {
-            throw 'Installed Microsoft Edge WebView2 Runtime has no usable version'
-          }
-          Write-Host "Verified Microsoft Edge WebView2 Runtime $runtimeVersion at $runtime"
+          Write-Host "Verified Microsoft Edge WebView2 Runtime $($runtime.Version) registered at $($runtime.Registration)"
       - name: Install E2E dependencies
         run: npm ci --ignore-scripts
       - name: Prepare clean native E2E artifact destinations

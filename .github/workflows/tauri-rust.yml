@@ -214,53 +214,33 @@ jobs:
       - name: Install isolated basic MiKTeX and prewarm LuaLaTeX
         id: miktex
         timeout-minutes: 15
-        run: >
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . ./tests/scripts/helpers/ci-bounded-process.ps1
+          $script:CiProcessDeadline = [DateTime]::UtcNow.AddSeconds(720)
           $miktexRoot = Join-Path $env:RUNNER_TEMP ('modutex-miktex-' + [guid]::NewGuid().ToString('N'))
-
           if (Test-Path -LiteralPath $miktexRoot) { throw 'MiKTeX temporary directory unexpectedly exists' }
-
           New-Item -ItemType Directory -Path $miktexRoot -ErrorAction Stop | Out-Null
-
           $archivePath = Join-Path $miktexRoot 'miktexsetup-5.5.0+1763023-x64.zip'
-
           $logDirectory = Join-Path $miktexRoot 'logs'
-
           New-Item -ItemType Directory -Path $logDirectory -ErrorAction Stop | Out-Null
-
           Write-Host '[MiKTeX] Downloading pinned setup archive (120-second request timeout)'
-
-          Invoke-WebRequest -Uri
-          'https://miktex.org/download/ctan/systems/win32/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip'
-          -OutFile $archivePath -TimeoutSec 120 -ErrorAction Stop
-
+          Invoke-WebRequest -Uri 'https://miktex.org/download/ctan/systems/win32/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip' -OutFile $archivePath -TimeoutSec 120 -ErrorAction Stop
           $archiveSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-
           if ($archiveSha256 -ne '0571e90f6d94353089b4f189fd82a532f9fe559a388c7e7f1102b14b3c1ae27d') {
             throw "MiKTeX setup archive SHA-256 mismatch: $archiveSha256"
           }
-
           Write-Host '[MiKTeX] Extracting verified setup archive'
-
           $setupDirectory = Join-Path $miktexRoot 'setup'
-
           $repository = Join-Path $miktexRoot 'repository'
-
           $installDirectory = Join-Path $miktexRoot 'portable'
-
-          New-Item -ItemType Directory -Path $setupDirectory, $repository, $installDirectory -ErrorAction Stop |
-          Out-Null
-
+          New-Item -ItemType Directory -Path $setupDirectory, $repository, $installDirectory -ErrorAction Stop | Out-Null
           Expand-Archive -LiteralPath $archivePath -DestinationPath $setupDirectory
-
-          $setupExecutables = @(Get-ChildItem -LiteralPath $setupDirectory -Filter 'miktexsetup_standalone.exe' -File
-          -Recurse)
-
+          $setupExecutables = @(Get-ChildItem -LiteralPath $setupDirectory -Filter 'miktexsetup_standalone.exe' -File -Recurse)
           if ($setupExecutables.Count -ne 1) {
             throw "Expected exactly one miktexsetup_standalone.exe in the verified archive, found $($setupExecutables.Count)"
           }
-
           $setupPath = $setupExecutables[0].FullName
-
           $setupOptions = @(
             "--local-package-repository=$repository",
             '--package-set=basic',
@@ -268,47 +248,23 @@ jobs:
             '--use-registry=no',
             '--modify-path=no'
           )
-
           $downloadArguments = $setupOptions + @('download')
-
           Write-Host '[MiKTeX] Downloading portable basic package set'
-
-          & $setupPath @downloadArguments 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'setup-download.log')
-
-          if ($LASTEXITCODE -ne 0) { throw "MiKTeX basic package download failed with exit code $LASTEXITCODE" }
-
+          Invoke-CiBoundedProcess -FilePath $setupPath -Arguments $downloadArguments -LogPath (Join-Path $logDirectory 'setup-download.log') -PortableRoot $installDirectory -TimeoutSeconds 300
           $installArguments = $setupOptions + @('install')
-
           Write-Host '[MiKTeX] Installing portable basic package set'
-
-          & $setupPath @installArguments 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'setup-install.log')
-
-          if ($LASTEXITCODE -ne 0) { throw "MiKTeX portable installation failed with exit code $LASTEXITCODE" }
-
+          Invoke-CiBoundedProcess -FilePath $setupPath -Arguments $installArguments -LogPath (Join-Path $logDirectory 'setup-install.log') -PortableRoot $installDirectory -TimeoutSeconds 180
 
           $mpmExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'mpm.exe' -File -Recurse)
-
           if ($mpmExecutables.Count -ne 1) {
             throw "Expected exactly one installed mpm.exe, found $($mpmExecutables.Count)"
           }
-
           $mpmPath = $mpmExecutables[0].FullName
-
           Write-Host '[MiKTeX] Selecting online package repository'
-
-          & $mpmPath --pick-repository-url 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'mpm-repository.log')
-
-          if ($LASTEXITCODE -ne 0) { throw "MiKTeX online package repository selection failed with exit code
-          $LASTEXITCODE" }
-
+          Invoke-CiBoundedProcess -FilePath $mpmPath -Arguments @('--pick-repository-url') -LogPath (Join-Path $logDirectory 'mpm-repository.log') -PortableRoot $installDirectory -TimeoutSeconds 60
           Write-Host '[MiKTeX] Updating online package catalog'
-
-          & $mpmPath --update-db 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'mpm-update-db.log')
-
-          if ($LASTEXITCODE -ne 0) { throw "MiKTeX online package catalog update failed with exit code $LASTEXITCODE" }
-
+          Invoke-CiBoundedProcess -FilePath $mpmPath -Arguments @('--update-db') -LogPath (Join-Path $logDirectory 'mpm-update-db.log') -PortableRoot $installDirectory -TimeoutSeconds 120
           Write-Host '[MiKTeX] Installing required LuaLaTeX and fontspec packages'
-
           foreach ($package in @(
             'ltxbase',
             'miktex-luatex',
@@ -318,54 +274,32 @@ jobs:
             'lm'
           )) {
             Write-Host "[MiKTeX] Installing package: $package"
-            & $mpmPath "--install=$package" 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory "mpm-install-$package.log")
-            if ($LASTEXITCODE -ne 0) { throw "MiKTeX package installation failed for '$package' with exit code $LASTEXITCODE" }
+            Invoke-CiBoundedProcess -FilePath $mpmPath -Arguments @("--install=$package") -LogPath (Join-Path $logDirectory "mpm-install-$package.log") -PortableRoot $installDirectory -TimeoutSeconds 120
           }
 
-
           $lualatexExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'lualatex.exe' -File -Recurse)
-
           if ($lualatexExecutables.Count -ne 1) {
             throw "Expected exactly one installed lualatex.exe, found $($lualatexExecutables.Count)"
           }
-
           $lualatexPath = $lualatexExecutables[0].FullName
-
           Write-Host '[MiKTeX] Verifying LuaLaTeX version with automatic installation disabled'
-
-          $versionOutput = & $lualatexPath --disable-installer --version 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'lualatex-version.log')
-
-          $versionExitCode = $LASTEXITCODE
-
+          $versionOutput = Invoke-CiBoundedProcess -FilePath $lualatexPath -Arguments @('--disable-installer', '--version') -LogPath (Join-Path $logDirectory 'lualatex-version.log') -PortableRoot $installDirectory -TimeoutSeconds 30
           $versionText = $versionOutput | Out-String
-
-          if ($versionExitCode -ne 0 -or $versionText -notmatch '(?i)Lua(?:HB)?TeX') {
+          if ($versionText -notmatch '(?i)Lua(?:HB)?TeX') {
             throw "MiKTeX LuaLaTeX executable failed version verification: $versionText"
           }
 
-
           $sourcePath = Join-Path $miktexRoot 'luaotfload-prewarm.tex'
-
           @'
-
           \documentclass{article}
-
           \usepackage{fontspec}
-
           \setmainfont{Latin Modern Roman}
-
           \begin{document}
-
           ModuTeX LuaLaTeX prerequisite verification.
-
           \end{document}
-
           '@ | Set-Content -LiteralPath $sourcePath -Encoding ascii
-
           $prewarmDirectory = Join-Path $miktexRoot 'prewarm-output'
-
           New-Item -ItemType Directory -Path $prewarmDirectory -ErrorAction Stop | Out-Null
-
           $prewarmArguments = @(
             '--disable-installer',
             '-interaction=nonstopmode',
@@ -374,25 +308,15 @@ jobs:
             "-output-directory=$prewarmDirectory",
             $sourcePath
           )
-
           Write-Host '[MiKTeX] Prewarming fontspec and validating a real PDF with automatic installation disabled'
-
-          & $lualatexPath @prewarmArguments 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'lualatex-prewarm.log')
-
-          if ($LASTEXITCODE -ne 0) { throw "LuaLaTeX article/font-database prewarm failed with exit code $LASTEXITCODE"
-          }
-
+          Invoke-CiBoundedProcess -FilePath $lualatexPath -Arguments $prewarmArguments -LogPath (Join-Path $logDirectory 'lualatex-prewarm.log') -PortableRoot $installDirectory -TimeoutSeconds 180
+          Save-CiPortableLogs -PortableRoot $installDirectory -LogDirectory $logDirectory
           $prewarmPdf = Join-Path $prewarmDirectory 'luaotfload-prewarm.pdf'
-
-          if (-not (Test-Path -LiteralPath $prewarmPdf -PathType Leaf)) { throw 'LuaLaTeX prewarm did not produce its
-          PDF' }
-
+          if (-not (Test-Path -LiteralPath $prewarmPdf -PathType Leaf)) { throw 'LuaLaTeX prewarm did not produce its PDF' }
           $pdfBytes = [System.IO.File]::ReadAllBytes($prewarmPdf)
-
           if ($pdfBytes.Length -lt 5 -or [System.Text.Encoding]::ASCII.GetString($pdfBytes, 0, 5) -ne '%PDF-') {
             throw 'LuaLaTeX prewarm output is not a PDF'
           }
-
           "lualatex=$lualatexPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
       - name: Run Rust tests for desktop-tauri with serialized process cleanup
         env:
@@ -413,7 +337,7 @@ jobs:
         with:
           name: miktex-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/modutex-miktex-*/logs/*.log
+            ${{ runner.temp }}/modutex-miktex-*/logs/**
             ${{ runner.temp }}/modutex-miktex-*/prewarm-output/*.log
           if-no-files-found: ignore
           retention-days: 7

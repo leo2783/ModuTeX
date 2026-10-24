@@ -397,13 +397,14 @@ export function validateTauriCiContract(wf) {
 	assert.equal(e2eJob.strategy?.['fail-fast'], false, 'each native lane must finish independently');
 	const lanes = e2eJob.strategy?.matrix?.include;
 	assert(Array.isArray(lanes), 'native E2E matrix required');
-	const requiredScripts = ['tauri-g2-workbench-e2e.mjs', 'tauri-g4-files-e2e.mjs', 'tauri-g4-git-e2e.mjs', 'tauri-g4-terminal-e2e.mjs', 'tauri-compile-config-e2e.mjs', 'tauri-native-close-e2e.mjs', 'tauri-multiwindow-e2e.mjs'].map(name => `tests/scripts/${name}`);
+	const requiredScripts = ['tauri-g2-workbench-e2e.mjs', 'tauri-g4-files-e2e.mjs', 'tauri-g4-git-e2e.mjs', 'tauri-g4-terminal-e2e.mjs', 'tauri-compile-config-e2e.mjs', 'tauri-native-close-e2e.mjs', 'tauri-multiwindow-e2e.mjs', 'tauri-os-open-e2e.mjs'].map(name => `tests/scripts/${name}`);
 	assert.deepEqual(lanes.map(lane => lane.script).sort(), requiredScripts.sort(), 'each native flow must run exactly once');
 	assert.equal(new Set(lanes.map(lane => lane.lane)).size, lanes.length, 'native evidence lanes must be unique');
 	const laneStep = stepsOf(e2eJob).find(step => step.run?.includes('node ${{ matrix.script }}'));
 	assert(laneStep && laneStep.if === undefined, 'selected native E2E lane cannot be skipped');
 	assert.match(laneStep.run, /\$LASTEXITCODE/, 'native E2E failures must stop the lane');
 	assert.match(JSON.stringify(laneStep.env), /MODUTEX_TEST_PERIODIC_WATCH/, 'compile lane must verify periodic watch');
+	assert.doesNotMatch(JSON.stringify(e2eJob), /MODUTEX_TEST_SOURCE_FORMAT/, 'OS-open CI must not depend on a user-installed formatter');
 	assert.match(e2eCommand, /gh run download/, 'native E2E must consume build artifact');
 	assert.match(e2eCommand, /Get-FileHash/, 'native E2E must verify executable bytes');
 	assert.match(JSON.stringify(e2eJob), /built_exe_sha256/, 'native E2E must bind expected build SHA');

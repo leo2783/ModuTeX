@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join, basename } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
+import { waitNativeCdp } from './helpers/wait-native-cdp.mjs';
 const root = resolve(import.meta.dirname, '../..');
 const evidence = join(root, '.verification-artifacts/tauri');
 const exe = resolve(process.env.MODUTEX_TEST_EXE ?? join(root, 'apps/desktop-tauri/target/release/modutex-desktop-tauri.exe'));
@@ -39,12 +40,7 @@ const watchdog = setTimeout(() => {
  if (app.pid) execFile('taskkill.exe', ['/PID', String(app.pid), '/T', '/F'], { windowsHide: true }, () => process.exit(1));
 }, 150000);
 try {
- for (const end = Date.now() + 30000; Date.now() < end;) {
-  if (launchError) throw launchError;
-  if (app.exitCode !== null) throw Error(`test App exited ${app.exitCode}: ${stderr}`);
-  try { if ((await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(400) })).ok) break; } catch {}
-  await delay(100);
- }
+ await waitNativeCdp({ app, port, evidence, lane: 'g4-git', stderr: () => stderr, launchError: () => launchError });
  browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 10000 });
  page = browser.contexts().flatMap(context => context.pages())[0];
  assert(page);

@@ -2,21 +2,63 @@ import { inputOnlyMathLive } from '../../scripts/mathlive-input-only.mjs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile, stat } from 'node:fs/promises';
+import { resolve, relative, sep } from 'node:path';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { inventoryFrontend } from '../../../../scripts/licensing/frontend-artifacts.mjs';
+import { consumeFrontendBuildEvidence } from '../../../../scripts/licensing/verify-frontend-origin.mjs';
 
 // Run after frontend:build: verify real emitted files, not a fabricated manifest.
-const dist = new URL('../../dist/', import.meta.url);
+const dist = process.env.MODUTEX_TEST_FRONTEND_DIST
+	? pathToFileURL(resolve(process.env.MODUTEX_TEST_FRONTEND_DIST) + sep)
+	: new URL('../../dist/', import.meta.url);
 const manifest = JSON.parse(await readFile(new URL('.vite/manifest.json', dist), 'utf8'));
 const entry = Object.values(manifest).filter((chunk) => chunk.isEntry);
+const root = fileURLToPath(new URL('../../../../', import.meta.url));
+const distRelative = relative(root, fileURLToPath(dist)).split(sep).join('/');
+let verifiedInventory;
+
+function staticClosure(chunk, found = new Map()) {
+	if (found.has(chunk.file)) return found;
+	found.set(chunk.file, chunk);
+	for (const name of chunk.imports ?? []) {
+		assert.ok(manifest[name], `Missing static dependency: ${name}`);
+		staticClosure(manifest[name], found);
+	}
+	return found;
+}
+
+async function chunkEvidence(file) {
+	assert.ok((await stat(new URL(file, dist))).size > 0, `Missing/empty emitted chunk: ${file}`);
+	try {
+		const map = JSON.parse(await readFile(new URL(`${file}.map`, dist), 'utf8'));
+		assert.equal(map.version, 3, `Invalid source map: ${file}`);
+		assert.ok(Array.isArray(map.sources) && map.sources.length > 0, `Source map has no sources: ${file}`);
+		return { map, sources: map.sources };
+	} catch (error) {
+		if (error.code !== 'ENOENT') throw error;
+	}
+	// Vite emits mapless virtual helpers and re-export facades. The existing
+	// consumer verifies exact output/input hashes and pinned compiler identities.
+	verifiedInventory ??= (async () => {
+		const inventory = await inventoryFrontend(root, distRelative);
+		const result = await consumeFrontendBuildEvidence(root, inventory);
+		assert.equal(result.verified, true, 'Missing verified build evidence');
+		assert.deepEqual(result.findings, [], 'Invalid build evidence');
+		return inventory;
+	})();
+	const inventory = await verifiedInventory;
+	const path = `${distRelative}/${file}`;
+	assert.ok(inventory.resolved.some(item => item.finding.path === path &&
+		item.evidence.kind === 'verified-script-module-graph'), `Unverified mapless chunk: ${file}`);
+	const evidence = JSON.parse(await readFile(new URL('frontend-build-evidence.json', dist), 'utf8'));
+	const output = evidence.outputs.find(item => item.path === file);
+	assert.ok(output?.modules.length > 0, `Missing verified chunk modules: ${file}`);
+	return { map: null, sources: output.modules.map(module => module.sourcePath ?? module.id) };
+}
 
 test('production startup defers the actual editor and retains its emitted assets', async () => {
 	assert.equal(entry.length, 1);
-	const initial = new Set();
-	const visit = (chunk) => {
-		if (initial.has(chunk.file)) return;
-		initial.add(chunk.file);
-		for (const name of chunk.imports ?? []) { assert.ok(manifest[name], `Missing static dependency: ${name}`); visit(manifest[name]); }
-	};
-	visit(entry[0]);
+	const initial = new Set(staticClosure(entry[0]).keys());
 	const editor = manifest['src/features/source-editor/SourceView.svelte'];
 	assert.ok(editor, 'Actual SourceView build chunk missing');
 	assert.equal(initial.has(editor.file), false, 'Editor must not belong to startup static closure');
@@ -38,10 +80,8 @@ test('production startup defers the actual editor and retains its emitted assets
 	let initialBytes = 0;
 	for (const file of initial) {
 		initialBytes += (await stat(new URL(file, dist))).size;
-		const map = JSON.parse(await readFile(new URL(`${file}.map`, dist), 'utf8'));
-		assert.equal(map.version, 3, `Invalid startup source map: ${file}`);
-		assert.ok(Array.isArray(map.sources) && map.sources.length > 0, `Startup source map has no sources: ${file}`);
-		for (const source of map.sources) {
+		const { sources } = await chunkEvidence(file);
+		for (const source of sources) {
 			assert.equal(typeof source, 'string', `Invalid mapped startup source: ${file}`);
 			assert.doesNotMatch(source.replaceAll('\\', '/'), /(?:^|\/)packages\/document-core\/dist\/parser\.js(?:[?#]|$)/, `Complete parser must stay outside startup static closure: ${file}`);
 			assert.doesNotMatch(source.replaceAll('\\', '/'), /(?:^|\/)src\/pages\/Settings\.svelte(?:[?#]|$)/, `Settings must stay outside startup static closure: ${file}`);
@@ -49,10 +89,9 @@ test('production startup defers the actual editor and retains its emitted assets
 		}
 	}
 	for (const dynamicChunk of [editor, help, settings, releaseNotes]) {
-		const map = JSON.parse(await readFile(new URL(`${dynamicChunk.file}.map`, dist), 'utf8'));
-		assert.equal(map.version, 3, `Invalid dynamic chunk source map: ${dynamicChunk.file}`);
-		assert.ok(Array.isArray(map.sources) && map.sources.length > 0, `Dynamic chunk source map has no sources: ${dynamicChunk.file}`);
-		assert.ok(map.sources.some((s) => s.replaceAll('\\', '/').endsWith(dynamicChunk.src)), `Dynamic source map does not reference source file: ${dynamicChunk.src}`);
+		const records = await Promise.all([...staticClosure(dynamicChunk).keys()].map(chunkEvidence));
+		assert.ok(records.some(({ map }) => map?.sources.some(s => s.replaceAll('\\', '/').endsWith(dynamicChunk.src))),
+			`Dynamic implementation source map does not reference source file: ${dynamicChunk.src}`);
 	}
 	assert.ok(initialBytes < 100 * 1024, `Startup JavaScript ${initialBytes} exceeds 100 KiB`);
 	const pending = [
@@ -64,27 +103,27 @@ test('production startup defers the actual editor and retains its emitted assets
 	];
 	for (const file of pending) assert.ok((await stat(new URL(file, dist))).size > 0, `Missing/empty emitted asset: ${file}`);
 	const licenseHeading = 'TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION';
-	assert.ok((await readFile(new URL(help.file, dist), 'utf8')).includes(licenseHeading));
+	const helpCode = await Promise.all([...staticClosure(help).keys()].map(file => readFile(new URL(file, dist), 'utf8')));
+	assert.ok(helpCode.some(code => code.includes(licenseHeading)));
 	for (const file of initial) assert.equal((await readFile(new URL(file, dist), 'utf8')).includes(licenseHeading), false);
 });
 
 test('real MathLive and its font assets are deferred and shipped locally', async () => {
 	const input = manifest['src/features/math/MathInput.svelte'];
 	assert.ok(input, 'Actual lazy MathInput chunk missing');
-	const initial = new Set();
-	const visit = chunk => { if (initial.has(chunk.file)) return; initial.add(chunk.file); for (const name of chunk.imports ?? []) visit(manifest[name]); };
-	visit(entry[0]);
+	const initial = new Set(staticClosure(entry[0]).keys());
 	assert.equal(initial.has(input.file), false);
 	const library = manifest['src/features/math/field.ts'];
 	assert.ok(library, 'Actual MathLive dynamic module missing');
 	assert.ok(input.dynamicImports?.includes('src/features/math/field.ts'));
-	const map = JSON.parse(await readFile(new URL(library.file + '.map', dist), 'utf8'));
-	const librarySource = map.sources.findIndex(source => source.replaceAll('\\', '/').endsWith('/mathlive-input/runtime.mjs'));
-	assert.ok(librarySource >= 0, 'Deferred helper must contain the actual MathLive implementation');
-	assert.equal(map.sourcesContent[librarySource], inputOnlyMathLive(await readFile(new URL('../../../../node_modules/mathlive/mathlive.mjs', import.meta.url), 'utf8')));
-	assert.equal(initial.has(library.file), false);
-	assert.ok((await stat(new URL(library.file, dist))).size > 0);
-	const cssFiles = library.css ?? [];
+	const libraryChunks = staticClosure(library);
+	const records = await Promise.all([...libraryChunks.keys()].map(chunkEvidence));
+	const implementation = records.find(({ map }) => map?.sources.some(source => source.replaceAll('\\', '/').endsWith('/mathlive-input/runtime.mjs')));
+	assert.ok(implementation, 'Deferred helper must contain the actual mapped MathLive implementation');
+	const librarySource = implementation.map.sources.findIndex(source => source.replaceAll('\\', '/').endsWith('/mathlive-input/runtime.mjs'));
+	assert.equal(implementation.map.sourcesContent[librarySource], inputOnlyMathLive(await readFile(new URL('../../../../node_modules/mathlive/mathlive.mjs', import.meta.url), 'utf8')));
+	for (const file of libraryChunks.keys()) assert.equal(initial.has(file), false, `MathLive dependency belongs to startup: ${file}`);
+	const cssFiles = [...new Set([...libraryChunks.values()].flatMap(chunk => chunk.css ?? []))];
 	assert.ok(cssFiles.length > 0, 'Bundled font stylesheet missing');
 	const css = (await Promise.all(cssFiles.map(file => readFile(new URL(file, dist), 'utf8')))).join('\n');
 	assert.match(css, /@font-face/);

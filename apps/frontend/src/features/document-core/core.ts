@@ -421,12 +421,7 @@ export function parseSource(
 	}
 }
 
-export function projectionIsCurrent(
-	document: SourceDocument,
-	projection: SourceProjection
-): boolean {
-	return document.documentId === projection.documentId && document.version === projection.version;
-}
+export { projectionIsCurrent } from './projection-state.ts';
 
 const compactSyntaxKinds: readonly SyntaxKind[] = [
 	'text',

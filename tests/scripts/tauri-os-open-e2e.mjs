@@ -9,6 +9,7 @@ import {tmpdir} from 'node:os';
 import {resolve, join, dirname, basename, sep} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
+import {waitNativeCdp} from './helpers/wait-native-cdp.mjs';
 import {realPdf} from '../../apps/frontend/tests/helpers/pdf-fixture.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -58,14 +59,7 @@ const watchdog = setTimeout(() => {
         {windowsHide: true, timeout: 10000}, () => process.exit(1));
 }, 120000);
 try {
-    let ready=false;
-    for(const until=Date.now()+30000;Date.now()<until;){
-        if(launchError)throw launchError;
-        if(app.exitCode!==null)throw Error('Startup process exited: '+stderr);
-        try{ready=(await fetch('http://127.0.0.1:'+port+'/json/version',{signal:AbortSignal.timeout(500)})).ok;}catch{}
-        if(ready)break;await delay(100);
-    }
-    assert(ready);
+    await waitNativeCdp({app, port, evidence, lane: 'os-open', stderr: () => stderr, launchError: () => launchError});
     browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:10000});
     page=browser.contexts().flatMap(context=>context.pages())[0];
     assert(page);

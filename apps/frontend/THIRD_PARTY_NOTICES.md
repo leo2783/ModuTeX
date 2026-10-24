@@ -2019,6 +2019,9 @@ THE SOFTWARE.
 
 ## @tauri-apps/plugin-updater 2.14.0
 
+Source: node_modules/@tauri-apps/plugin-updater/LICENSE.spdx
+
+```text
 SPDXVersion: SPDX-2.1
 DataLicense: CC0-1.0
 PackageName: tauri
@@ -2039,3 +2042,4 @@ PackageDownloadLocation: git://github.com/tauri-apps/tauri
 PackageDownloadLocation: git+https://github.com/tauri-apps/tauri.git
 PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
 Creator: Person: Daniel Thompson-Yvetot
+```
