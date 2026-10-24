@@ -461,20 +461,6 @@ fn open_workspace_for_owner(
     Ok(outcome.opened)
 }
 
-fn requeue_pending_open_if_owner_live(
-    state: &FrontendFilesState,
-    pending: &PendingOpenState,
-    owner: &OwnerId,
-    label: &str,
-    path: std::path::PathBuf,
-) {
-    let _transition = state.lock_watch_transition();
-    let lifecycle = state.lock_lifecycle();
-    if state.require_owner_live_locked(&lifecycle, owner).is_ok() {
-        let _ = pending.enqueue(owner, label, path);
-    }
-}
-
 #[tauri::command]
 pub fn frontend_take_pending_open(
     window: WebviewWindow,
@@ -485,64 +471,20 @@ pub fn frontend_take_pending_open(
     let Some(path) = pending.take_for_owner(&owner) else {
         return Ok(None);
     };
-    let label = window.label().to_owned();
 
     if !is_native_open_path(&path) {
-        requeue_pending_open_if_owner_live(state.inner(), pending.inner(), &owner, &label, path);
         return Err("invalid pending document path".to_owned());
     }
     let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-        requeue_pending_open_if_owner_live(state.inner(), pending.inner(), &owner, &label, path);
         return Err("invalid pending document name".to_owned());
     };
-    let relative_path = match RelativePath::parse(file_name) {
-        Ok(relative_path) => relative_path,
-        Err(error) => {
-            requeue_pending_open_if_owner_live(
-                state.inner(),
-                pending.inner(),
-                &owner,
-                &label,
-                path,
-            );
-            return Err(error.to_string());
-        }
-    };
-    if let Err(error) = state.service.validate_native_open_target(&path) {
-        requeue_pending_open_if_owner_live(state.inner(), pending.inner(), &owner, &label, path);
-        return Err(error.to_string());
-    }
+    let relative_path = RelativePath::parse(file_name).map_err(|error| error.to_string())?;
+    state
+        .service
+        .validate_native_open_target(&path)
+        .map_err(|error| error.to_string())?;
 
-    let is_tex = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("tex"));
-    let kind = if is_tex {
-        WorkspaceKind::File
-    } else {
-        WorkspaceKind::Folder
-    };
-    let target = if is_tex {
-        path.as_path()
-    } else if let Some(parent) = path.parent() {
-        parent
-    } else {
-        requeue_pending_open_if_owner_live(state.inner(), pending.inner(), &owner, &label, path);
-        return Err("pending document has no parent directory".to_owned());
-    };
-    let workspace = match open_workspace_for_owner(state.inner(), &owner, kind, target) {
-        Ok(workspace) => workspace,
-        Err(error) => {
-            requeue_pending_open_if_owner_live(
-                state.inner(),
-                pending.inner(),
-                &owner,
-                &label,
-                path,
-            );
-            return Err(error);
-        }
-    };
+    let workspace = open_workspace_for_owner(state.inner(), &owner, WorkspaceKind::File, &path)?;
 
     Ok(Some(PendingOpenReceipt {
         workspace,

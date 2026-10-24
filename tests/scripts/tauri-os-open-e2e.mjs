@@ -9,6 +9,7 @@ import {tmpdir} from 'node:os';
 import {resolve, join, dirname, basename, sep} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
+import {realPdf} from '../../apps/frontend/tests/helpers/pdf-fixture.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const evidence = join(root, '.verification-artifacts/tauri');
@@ -28,11 +29,13 @@ const port = socket.address().port;
 await new Promise(ok => socket.close(ok));
 const firstFile=join(sandbox,basename(sandbox)+'-first.tex');
 const secondFile=join(sandbox,basename(sandbox)+'-second.tex');
+const pdfFile=join(sandbox,basename(sandbox)+'-preview.pdf');
 const verifyFormatting=process.env.MODUTEX_TEST_SOURCE_FORMAT==='1';
 const firstSource=verifyFormatting?'\\documentclass{article}\n\\begin{document}\nInitial OS document.\n\\begin{itemize}\n\\item Item\n\\end{itemize}\n\\end{document}\n':'Initial OS document.\n';
 await writeFile(firstFile,firstSource);
-if(verifyFormatting)await writeFile(join(sandbox,'localSettings.yaml'),'defaultIndent: "  "\n');
+if(verifyFormatting)await writeFile(join(sandbox,'localSettings.yaml'),'x'.repeat(128*1024+1));
 await writeFile(secondFile,'Second OS document.\n');
+await writeFile(pdfFile,new Uint8Array(realPdf()));
 const existing=await new Promise((accept,reject)=>execFile('pwsh.exe',['-NoProfile','-Command',"@(Get-Process -Name modutex-desktop-tauri -ErrorAction SilentlyContinue).Count"],{windowsHide:true},(error,stdout)=>error?reject(error):accept(Number(stdout.trim()))));
 assert.equal(existing,0,'System-open acceptance requires no existing user ModuTeX process');
 const spawnedAt = performance.now();
@@ -78,12 +81,12 @@ try {
         const before=await editor.innerText();
         const format=page.getByRole('button',{name:/^(格式化 LaTeX|Format LaTeX)$/});
         await format.click();
-        await page.waitForFunction(()=>/\n +\\item Item/.test([...document.querySelectorAll('.cm-content .cm-line')].map(line=>line.textContent).join('\n')),null,{timeout:30000});
+        await page.waitForFunction(()=>/\n[\t ]+\\item Item/.test([...document.querySelectorAll('.cm-content .cm-line')].map(line=>line.textContent).join('\n')),null,{timeout:30000});
         assert.notEqual(await editor.innerText(),before);
         assert.equal(await readFile(firstFile,'utf8'),firstSource,'Formatting must preserve the disk file until Save');
         await editor.click();await page.keyboard.press('Control+z');
         assert.equal(await editor.innerText(),before,'Formatting must share source undo history');
-        receipt.checks.push('Real latexindent uses project settings, preserves disk bytes and supports undo');
+        receipt.checks.push('Real latexindent ignores unselected sibling settings, preserves disk bytes and supports undo');
     }
     await editor.click();await page.keyboard.press('Control+End');
     await page.keyboard.insertText('\nUNSAVED_FIRST_WINDOW\n');
@@ -102,6 +105,22 @@ try {
     assert((await next.locator('.cm-content').first().innerText()).includes('Second OS document.'));
     assert((await editor.innerText()).includes('UNSAVED_FIRST_WINDOW'));
     assert.equal(await readFile(firstFile,'utf8'),firstSource,'Opening another file must not silently save the first');
+    stage='second-instance PDF handoff renders the selected file';
+    const beforePdf=new Set(browser.contexts().flatMap(context=>context.pages()));
+    await new Promise((accept,reject)=>execFile(exe,[pdfFile],{cwd:root,windowsHide:true,timeout:15000},error=>error?reject(error):accept()));
+    let pdfPage;
+    for(const until=Date.now()+15000;Date.now()<until;){
+        pdfPage=browser.contexts().flatMap(context=>context.pages()).find(candidate=>!beforePdf.has(candidate));
+        if(pdfPage)break;await delay(100);
+    }
+    assert(pdfPage,'PDF handoff must open its own document window');
+    pdfPage.on('pageerror',error=>pageErrors.push(error.message));
+    await pdfPage.waitForFunction(()=>{
+        const canvas=document.querySelector('.pdf-scroll canvas');
+        return canvas instanceof HTMLCanvasElement && canvas.width>0 && canvas.height>0;
+    },null,{timeout:15000});
+    assert((await editor.innerText()).includes('UNSAVED_FIRST_WINDOW'));
+    receipt.checks.push('Actual PDF file handoff renders without replacing unsaved TeX');
     assert.deepEqual(pageErrors,[]);
     receipt.checks.push('Second instance opens its file and preserves unsaved content in the original window');
     receipt.status='passed';
@@ -123,7 +142,7 @@ try {
             for (const item of await invoke('frontend_list_recent')) {
                 if (names.includes(item.label)) await invoke('frontend_remove_recent', {id: item.id});
             }
-        }, [basename(firstFile), basename(secondFile)]).catch(error => {
+        }, [basename(firstFile), basename(secondFile), basename(pdfFile)]).catch(error => {
             receipt.cleanupError = String(error);
             receipt.status = 'failed';
             process.exitCode = 1;

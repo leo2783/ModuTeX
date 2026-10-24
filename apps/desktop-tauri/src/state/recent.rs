@@ -388,10 +388,11 @@ pub fn validate_recent_entry_path(
                 "recent.entryPath: invalid text length",
             ));
         }
-        if text.contains('/') || !text.to_ascii_lowercase().ends_with(".tex") {
+        let lower = text.to_ascii_lowercase();
+        if text.contains('/') || !(lower.ends_with(".tex") || lower.ends_with(".pdf")) {
             return Err(RecentStoreError::new(
                 RecentErrorCode::InvalidTarget,
-                "recent.entryPath: expected a single TeX filename",
+                "recent.entryPath: expected a single TeX or PDF filename",
             ));
         }
     }

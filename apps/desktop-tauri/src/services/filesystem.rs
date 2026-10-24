@@ -501,7 +501,11 @@ fn pin_from_capability(
             .entry_handle()
             .ok_or_else(|| FilesystemError::InvalidPath("missing capability entry".to_owned()))?;
         let (cap_entry_id, _) = query_std_file_identity(entry_file, false)?;
-        let read_out = pinned.trusted_root.read_file(entry_rel)?;
+        let read_out = if entry_rel.as_str().to_ascii_lowercase().ends_with(".pdf") {
+            pinned.trusted_root.read_file_pdf(entry_rel)?
+        } else {
+            pinned.trusted_root.read_file(entry_rel)?
+        };
         if read_out.identity != cap_entry_id {
             return Err(FilesystemError::LinkNotAllowed);
         }
@@ -1885,7 +1889,11 @@ impl FilesystemService {
     ) -> Result<(WorkspaceInfo, SessionGeneration, Arc<WorkspaceSlot>), FilesystemError> {
         let mut initial_docs = HashMap::new();
         if let Some(ref entry_rel) = entry_path {
-            let read_out = pinned.trusted_root.read_file(entry_rel)?;
+            let read_out = if entry_rel.as_str().to_ascii_lowercase().ends_with(".pdf") {
+                pinned.trusted_root.read_file_pdf(entry_rel)?
+            } else {
+                pinned.trusted_root.read_file(entry_rel)?
+            };
             initial_docs.insert(
                 entry_rel.clone(),
                 TrackedDocument {

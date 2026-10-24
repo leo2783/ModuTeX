@@ -147,7 +147,8 @@ export function parseRecentDocuments(value: unknown): readonly RecentDocument[] 
 		let entryPath: string | null = null;
 		if (input.entryPath !== null) {
 			entryPath = relativePath(text(input.entryPath, 'recent.entryPath', 4096));
-			if (entryPath.includes('/') || !entryPath.toLowerCase().endsWith('.tex')) throw new ContractError('recent.entryPath', 'Expected a single TeX filename');
+			const lower = entryPath.toLowerCase();
+			if (entryPath.includes('/') || !(lower.endsWith('.tex') || lower.endsWith('.pdf'))) throw new ContractError('recent.entryPath', 'Expected a single TeX or PDF filename');
 		}
 		return Object.freeze({ id, label, entryPath, openedAt: integer(input.openedAt, 'recent.openedAt', 0) });
 	});

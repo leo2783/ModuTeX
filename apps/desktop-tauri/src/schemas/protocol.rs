@@ -358,10 +358,11 @@ fn recent_entry<'de, D: Deserializer<'de>>(
                 "invalid text length",
             )));
         }
-        if text.contains('/') || !text.to_ascii_lowercase().ends_with(".tex") {
+        let lower = text.to_ascii_lowercase();
+        if text.contains('/') || !(lower.ends_with(".tex") || lower.ends_with(".pdf")) {
             return Err(D::Error::custom(ProtocolError::new(
                 "recent.entryPath",
-                "expected a single TeX filename",
+                "expected a single TeX or PDF filename",
             )));
         }
     }

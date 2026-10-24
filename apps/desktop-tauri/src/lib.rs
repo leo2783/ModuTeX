@@ -303,7 +303,8 @@ fn setup_main_window(
         if pending.has_pending_for_owner(&main_owner) {
             let _ = window.emit(state::pending_open::PENDING_OPEN_EVENT, ());
         }
-        for path in startup_open_paths {
+        // The first launch path is assigned to the main window above.
+        for path in startup_open_paths.iter().skip(1) {
             let _ = route_native_open_path(app.handle(), path);
         }
     }

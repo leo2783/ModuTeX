@@ -20,6 +20,85 @@ use crate::{
     state::desktop::FrontendFilesState,
 };
 
+#[test]
+fn native_pdf_selection_preserves_file_workspace_kind_and_entry() {
+    let (state, tmp) = create_test_state(Arc::new(MockDialog::new(None, None)));
+    let owner = OwnerId::from_label("main").unwrap();
+    let pdf = tmp.join("selected.pdf");
+    fs::write(&pdf, b"%PDF-1.7\nselected").unwrap();
+    fs::write(tmp.join("private.tex"), b"unselected sibling").unwrap();
+    let workspace = super::open_workspace_for_owner(
+        &state,
+        &owner,
+        crate::schemas::protocol::WorkspaceKind::File,
+        &pdf,
+    )
+    .unwrap();
+    let (kind, _) = state.service.workspace_info(&owner, &workspace.id).unwrap();
+    assert_eq!(kind, crate::schemas::protocol::WorkspaceKind::File);
+    assert_eq!(workspace.entry_path.unwrap().as_str(), "selected.pdf");
+    assert!(state.workspace_grant(&owner, &workspace.id).is_ok());
+    drop(state);
+    fs::remove_dir_all(tmp).unwrap();
+}
+
+#[test]
+fn native_pdf_admission_and_recent_reopen_preserve_distinct_size_limits() {
+    let (state, tmp) = create_test_state(Arc::new(MockDialog::new(None, None)));
+    let owner = OwnerId::from_label("main").unwrap();
+    let timestamp = Timestamp::new(1).unwrap();
+    let pdf = tmp.join("large.PDF");
+    let mut bytes = vec![b' '; MAX_READ_BYTES + 1];
+    bytes[..5].copy_from_slice(b"%PDF-");
+    fs::write(&pdf, &bytes).unwrap();
+    let opened = state
+        .service
+        .open_workspace_file(&owner, &pdf, timestamp)
+        .unwrap()
+        .opened;
+    let recent = state
+        .service
+        .list_recent()
+        .unwrap()
+        .into_iter()
+        .find(|entry| {
+            entry
+                .entry_path
+                .as_ref()
+                .is_some_and(|path| path.as_str() == "large.PDF")
+        })
+        .unwrap();
+    state.service.close_workspace(&owner, &opened.id).unwrap();
+    let reopened = state
+        .service
+        .reopen_recent(&owner, recent.id.as_str(), timestamp)
+        .unwrap()
+        .opened;
+    assert_eq!(reopened.entry_path.unwrap().as_str(), "large.PDF");
+    state.service.close_workspace(&owner, &reopened.id).unwrap();
+
+    let tex = tmp.join("large.tex");
+    fs::write(&tex, &bytes).unwrap();
+    assert!(matches!(
+        state.service.open_workspace_file(&owner, &tex, timestamp),
+        Err(FilesystemError::FileTooLarge { .. })
+    ));
+    let file = fs::OpenOptions::new().write(true).open(&pdf).unwrap();
+    file.set_len((MAX_PDF_BYTES + 1) as u64).unwrap();
+    drop(file);
+    assert!(matches!(
+        state.service.open_workspace_file(&owner, &pdf, timestamp),
+        Err(FilesystemError::FileTooLarge { .. })
+    ));
+    fs::write(&pdf, b"invalid PDF header").unwrap();
+    assert!(state
+        .service
+        .open_workspace_file(&owner, &pdf, timestamp)
+        .is_err());
+    drop(state);
+    fs::remove_dir_all(tmp).unwrap();
+}
+
 struct MockDialog {
     pick_result: Mutex<Option<PathBuf>>,
     save_result: Mutex<Option<PathBuf>>,
@@ -50,7 +129,13 @@ fn create_test_state(mock_dialog: Arc<MockDialog>) -> (FrontendFilesState, PathB
     let tmp = std::env::temp_dir().join(format!("modutex-g2-test-{}", uuid::Uuid::new_v4()));
     fs::create_dir_all(&tmp).unwrap();
 
-    let service = FilesystemService::with_default_stores().unwrap();
+    let host_data = tmp.join("host-data");
+    let service = FilesystemService::new(
+        Arc::new(crate::state::sessions::SessionRegistry::new()),
+        crate::state::workspace_leases::WorkspaceLeaseCoordinator::new(),
+        crate::state::recent::RecentStore::new(&host_data),
+        crate::state::settings::SettingsStore::new(&host_data),
+    );
     let tokens = Arc::new(BinaryTokenStore::new(TokenLimits::default()).unwrap());
     let native_watch = Arc::new(NativeWatchRegistry::new());
     let state = FrontendFilesState::new(service, tokens, native_watch, mock_dialog);
