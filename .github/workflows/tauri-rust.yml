@@ -213,6 +213,7 @@ jobs:
           if ($cargoVer -notmatch 'cargo 1\.97\.1') { throw "cargo 1.97.1 required, got $cargoVer" }
       - name: Install isolated basic MiKTeX and prewarm LuaLaTeX
         id: miktex
+        timeout-minutes: 15
         run: >
           $miktexRoot = Join-Path $env:RUNNER_TEMP ('modutex-miktex-' + [guid]::NewGuid().ToString('N'))
 
@@ -222,9 +223,15 @@ jobs:
 
           $archivePath = Join-Path $miktexRoot 'miktexsetup-5.5.0+1763023-x64.zip'
 
+          $logDirectory = Join-Path $miktexRoot 'logs'
+
+          New-Item -ItemType Directory -Path $logDirectory -ErrorAction Stop | Out-Null
+
+          Write-Host '[MiKTeX] Downloading pinned setup archive (120-second request timeout)'
+
           Invoke-WebRequest -Uri
           'https://miktex.org/download/ctan/systems/win32/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip'
-          -OutFile $archivePath -ErrorAction Stop
+          -OutFile $archivePath -TimeoutSec 120 -ErrorAction Stop
 
           $archiveSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
 
@@ -232,6 +239,7 @@ jobs:
             throw "MiKTeX setup archive SHA-256 mismatch: $archiveSha256"
           }
 
+          Write-Host '[MiKTeX] Extracting verified setup archive'
 
           $setupDirectory = Join-Path $miktexRoot 'setup'
 
@@ -263,13 +271,17 @@ jobs:
 
           $downloadArguments = $setupOptions + @('download')
 
-          & $setupPath @downloadArguments
+          Write-Host '[MiKTeX] Downloading portable basic package set'
+
+          & $setupPath @downloadArguments 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'setup-download.log')
 
           if ($LASTEXITCODE -ne 0) { throw "MiKTeX basic package download failed with exit code $LASTEXITCODE" }
 
           $installArguments = $setupOptions + @('install')
 
-          & $setupPath @installArguments
+          Write-Host '[MiKTeX] Installing portable basic package set'
+
+          & $setupPath @installArguments 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'setup-install.log')
 
           if ($LASTEXITCODE -ne 0) { throw "MiKTeX portable installation failed with exit code $LASTEXITCODE" }
 
@@ -282,14 +294,20 @@ jobs:
 
           $mpmPath = $mpmExecutables[0].FullName
 
-          & $mpmPath --pick-repository-url
+          Write-Host '[MiKTeX] Selecting online package repository'
+
+          & $mpmPath --pick-repository-url 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'mpm-repository.log')
 
           if ($LASTEXITCODE -ne 0) { throw "MiKTeX online package repository selection failed with exit code
           $LASTEXITCODE" }
 
-          & $mpmPath --update-db
+          Write-Host '[MiKTeX] Updating online package catalog'
+
+          & $mpmPath --update-db 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'mpm-update-db.log')
 
           if ($LASTEXITCODE -ne 0) { throw "MiKTeX online package catalog update failed with exit code $LASTEXITCODE" }
+
+          Write-Host '[MiKTeX] Installing required LuaLaTeX and fontspec packages'
 
           foreach ($package in @(
             'ltxbase',
@@ -299,7 +317,8 @@ jobs:
             'fontspec',
             'lm'
           )) {
-            & $mpmPath "--install=$package"
+            Write-Host "[MiKTeX] Installing package: $package"
+            & $mpmPath "--install=$package" 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory "mpm-install-$package.log")
             if ($LASTEXITCODE -ne 0) { throw "MiKTeX package installation failed for '$package' with exit code $LASTEXITCODE" }
           }
 
@@ -312,7 +331,9 @@ jobs:
 
           $lualatexPath = $lualatexExecutables[0].FullName
 
-          $versionOutput = & $lualatexPath --version 2>&1
+          Write-Host '[MiKTeX] Verifying LuaLaTeX version with automatic installation disabled'
+
+          $versionOutput = & $lualatexPath --disable-installer --version 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'lualatex-version.log')
 
           $versionExitCode = $LASTEXITCODE
 
@@ -346,6 +367,7 @@ jobs:
           New-Item -ItemType Directory -Path $prewarmDirectory -ErrorAction Stop | Out-Null
 
           $prewarmArguments = @(
+            '--disable-installer',
             '-interaction=nonstopmode',
             '-halt-on-error',
             '-no-shell-escape',
@@ -353,7 +375,9 @@ jobs:
             $sourcePath
           )
 
-          & $lualatexPath @prewarmArguments
+          Write-Host '[MiKTeX] Prewarming fontspec and validating a real PDF with automatic installation disabled'
+
+          & $lualatexPath @prewarmArguments 2>&1 | Tee-Object -FilePath (Join-Path $logDirectory 'lualatex-prewarm.log')
 
           if ($LASTEXITCODE -ne 0) { throw "LuaLaTeX article/font-database prewarm failed with exit code $LASTEXITCODE"
           }
@@ -383,3 +407,13 @@ jobs:
           --all-targets --all-features
 
           if ($LASTEXITCODE -ne 0) { throw "document-core tests failed with exit code $LASTEXITCODE" }
+      - name: Upload MiKTeX logs on failure
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: miktex-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/modutex-miktex-*/logs/*.log
+            ${{ runner.temp }}/modutex-miktex-*/prewarm-output/*.log
+          if-no-files-found: ignore
+          retention-days: 7

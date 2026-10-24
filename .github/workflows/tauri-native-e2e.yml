@@ -87,6 +87,70 @@ jobs:
         run: |
           if ((node --version) -ne 'v24.19.0') { throw 'Node.js 24.19.0 required' }
           if ((npm --version) -ne '11.17.0') { throw 'npm 11.17.0 required' }
+      # Tauri needs the Evergreen Runtime to create its real WebView; the lane
+      # still launches the accepted executable and checks its actual CDP endpoint.
+      - name: Provision and verify Microsoft Edge WebView2 Runtime
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $programFilesX86 = [System.Environment]::GetFolderPath(
+            [System.Environment+SpecialFolder]::ProgramFilesX86)
+          $runtimeRoots = @(
+            (Join-Path $env:ProgramFiles 'Microsoft\EdgeWebView\Application'),
+            (Join-Path $programFilesX86 'Microsoft\EdgeWebView\Application'),
+            (Join-Path $env:LOCALAPPDATA 'Microsoft\EdgeWebView\Application')
+          )
+
+          function Find-WebView2Runtime {
+            foreach ($runtimeRoot in $runtimeRoots) {
+              if (-not (Test-Path -LiteralPath $runtimeRoot -PathType Container)) { continue }
+              $versionDirectories = Get-ChildItem -LiteralPath $runtimeRoot -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+                Sort-Object { [version]$_.Name } -Descending
+              foreach ($versionDirectory in $versionDirectories) {
+                $candidate = Join-Path $versionDirectory.FullName 'msedgewebview2.exe'
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+              }
+            }
+            return $null
+          }
+
+          $runtime = Find-WebView2Runtime
+          if (-not $runtime) {
+            # Official Microsoft Evergreen Bootstrapper.
+            $installer = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebView2Setup.exe'
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' `
+              -OutFile $installer -TimeoutSec 120
+            if (-not (Test-Path -LiteralPath $installer -PathType Leaf) -or
+                (Get-Item -LiteralPath $installer).Length -le 0) {
+              throw 'Microsoft WebView2 bootstrapper download is missing or empty'
+            }
+
+            $signature = Get-AuthenticodeSignature -FilePath $installer
+            if ([string]$signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {
+              throw 'Microsoft WebView2 bootstrapper signature is not valid'
+            }
+            $publisher = $signature.SignerCertificate.GetNameInfo(
+              [System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+            if ($publisher -ne 'Microsoft Corporation') {
+              throw "Unexpected WebView2 bootstrapper publisher: $publisher"
+            }
+
+            $install = Start-Process -FilePath $installer -ArgumentList @('/silent', '/install') `
+              -WindowStyle Hidden -Wait -PassThru
+            if ($install.ExitCode -ne 0) {
+              throw "Microsoft WebView2 Runtime installation failed with exit code $($install.ExitCode)"
+            }
+            $runtime = Find-WebView2Runtime
+          }
+
+          if (-not $runtime) {
+            throw 'Microsoft Edge WebView2 Evergreen Runtime is unavailable after provisioning'
+          }
+          $runtimeVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($runtime).FileVersion
+          if ([string]::IsNullOrWhiteSpace($runtimeVersion)) {
+            throw 'Installed Microsoft Edge WebView2 Runtime has no usable version'
+          }
+          Write-Host "Verified Microsoft Edge WebView2 Runtime $runtimeVersion at $runtime"
       - name: Install E2E dependencies
         run: npm ci --ignore-scripts
       - name: Prepare clean native E2E artifact destinations
@@ -97,7 +161,7 @@ jobs:
           if (Test-Path -LiteralPath $targetExe) { Remove-Item -LiteralPath $targetExe -Force }
           $releaseExe = 'apps/desktop-tauri/target/release/modutex-desktop-tauri.exe'
           if (Test-Path -LiteralPath $releaseExe) { Remove-Item -LiteralPath $releaseExe -Force }
-          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $targetExe) | Out-Null
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $targetExe) -ErrorAction Stop | Out-Null
       - name: Download frontend assets built for this run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -105,7 +169,7 @@ jobs:
         run: |
           $staging = Join-Path $env:RUNNER_TEMP ("modutex-frontend-" + [guid]::NewGuid().ToString('N'))
           if (Test-Path -LiteralPath $staging) { throw 'Frontend artifact staging path already exists' }
-          New-Item -ItemType Directory -Path $staging | Out-Null
+          New-Item -ItemType Directory -Path $staging -ErrorAction Stop | Out-Null
           gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir $staging
           if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
           $artifactDist = Join-Path $staging 'apps/frontend/dist-tauri'
@@ -114,8 +178,9 @@ jobs:
             throw 'Native E2E frontend artifact did not contain a nonempty apps/frontend/dist-tauri/index.html'
           }
           $targetDist = 'apps/frontend/dist-tauri'
-          New-Item -ItemType Directory -Path $targetDist | Out-Null
-          Get-ChildItem -LiteralPath $artifactDist -Force | Copy-Item -Destination $targetDist -Recurse -Force
+          New-Item -ItemType Directory -Path $targetDist -ErrorAction Stop | Out-Null
+          Get-ChildItem -LiteralPath $artifactDist -Force |
+            Copy-Item -Destination $targetDist -Recurse -Force -ErrorAction Stop
       - name: Verify and download the exact release executable artifact
         env:
           GH_TOKEN: ${{ github.token }}
@@ -178,7 +243,7 @@ jobs:
 
           $destDir = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release'
 
-          New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $destDir -ErrorAction Stop | Out-Null
 
           gh run download $env:EXE_ARTIFACT_RUN_ID --name $env:EXE_ARTIFACT_NAME --dir $destDir
 
@@ -208,8 +273,8 @@ jobs:
             throw "Native E2E executable SHA-256 ($actualSha) differs from build output ($env:EXPECTED_EXE_SHA)"
           }
           $releaseExe = 'apps/desktop-tauri/target/release/modutex-desktop-tauri.exe'
-          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $releaseExe) | Out-Null
-          Copy-Item -LiteralPath $exe -Destination $releaseExe -Force
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $releaseExe) -ErrorAction Stop | Out-Null
+          Copy-Item -LiteralPath $exe -Destination $releaseExe -Force -ErrorAction Stop
       - name: Verify downloaded Tauri frontend assets
         run: |
           $dist = 'apps/frontend/dist-tauri'
@@ -218,6 +283,13 @@ jobs:
           }
           if (@(Get-ChildItem -LiteralPath $dist -File -Recurse).Count -eq 0) {
             throw 'Native E2E frontend artifact is empty'
+          }
+      - name: Prepare native E2E evidence directory
+        run: |
+          $evidence = Join-Path $env:GITHUB_WORKSPACE '.verification-artifacts/tauri'
+          New-Item -ItemType Directory -Force -Path $evidence -ErrorAction Stop | Out-Null
+          if (-not (Test-Path -LiteralPath $evidence -PathType Container)) {
+            throw 'Could not create native E2E evidence directory'
           }
       - name: Run native E2E lane (${{ matrix.lane }})
         env:
