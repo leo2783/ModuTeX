@@ -513,6 +513,80 @@ fn pin_from_capability(
     Ok(pinned)
 }
 
+#[cfg(all(windows, target_arch = "x86_64"))]
+fn native_open_io_error(error: io::Error) -> FilesystemError {
+    match error.kind() {
+        io::ErrorKind::NotFound => FilesystemError::NotFound,
+        io::ErrorKind::PermissionDenied => FilesystemError::AccessDenied,
+        _ => FilesystemError::Io(error.raw_os_error().map_or(1, |code| code as u32)),
+    }
+}
+
+#[cfg(all(windows, target_arch = "x86_64"))]
+fn verify_native_open_root_identity(
+    root_path: &Path,
+    expected: FileIdentity,
+) -> Result<(), FilesystemError> {
+    let root = open_directory_no_follow(root_path).map_err(native_open_io_error)?;
+    if native_file_identity(&root).map_err(native_open_io_error)? != expected {
+        return Err(FilesystemError::StaleWorkspace);
+    }
+    Ok(())
+}
+
+#[cfg(all(windows, target_arch = "x86_64"))]
+fn stat_native_open_target_identity(
+    file_path: &Path,
+) -> Result<(RootIdentity, RelativePath, FileIdentity), FilesystemError> {
+    if !crate::state::pending_open::is_native_open_path(file_path) {
+        return Err(FilesystemError::InvalidPath(
+            "unsupported native document path".to_owned(),
+        ));
+    }
+    let parent = file_path.parent().ok_or_else(|| {
+        FilesystemError::InvalidPath("document path has no parent directory".to_owned())
+    })?;
+    let file_name = file_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| FilesystemError::InvalidPath("invalid document name".to_owned()))?;
+    let relative = RelativePath::parse(file_name)?;
+    let pinned = pin_and_validate_root(parent)?;
+    let root_file_identity = pinned.trusted_root.identity();
+    let stat = pinned.trusted_root.stat(&relative)?;
+    if stat.kind != FileKind::File {
+        return Err(FilesystemError::InvalidPath(
+            "native document target is not a regular file".to_owned(),
+        ));
+    }
+
+    verify_native_open_root_identity(&pinned.canonical_path, root_file_identity)?;
+    let target_path = pinned.canonical_path.join(relative.as_str());
+    let path_metadata = fs::symlink_metadata(&target_path).map_err(native_open_io_error)?;
+    if is_symlink_or_reparse(&path_metadata) {
+        return Err(FilesystemError::LinkNotAllowed);
+    }
+    if !path_metadata.is_file() {
+        return Err(FilesystemError::InvalidPath(
+            "native document target is not a regular file".to_owned(),
+        ));
+    }
+    let file = open_file_no_follow(&target_path).map_err(native_open_io_error)?;
+    let opened_metadata = file.metadata().map_err(native_open_io_error)?;
+    if is_symlink_or_reparse(&opened_metadata) {
+        return Err(FilesystemError::LinkNotAllowed);
+    }
+    if !opened_metadata.is_file() {
+        return Err(FilesystemError::InvalidPath(
+            "native document target is not a regular file".to_owned(),
+        ));
+    }
+    let identity = native_file_identity(&file).map_err(native_open_io_error)?;
+    pinned.trusted_root.verify_alive()?;
+    verify_native_open_root_identity(&pinned.canonical_path, root_file_identity)?;
+    Ok((pinned.workspace_root.identity(), relative, identity))
+}
+
 fn is_internal_recovery_name(path: &RelativePath) -> bool {
     path.as_str().split('/').any(|seg| {
         seg.starts_with(".modutex-stage-")
@@ -1956,6 +2030,37 @@ impl FilesystemService {
             opened_at,
         };
         Ok(self.shared.recent_store.admit_opened_workspace(selection))
+    }
+
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    pub fn validate_native_open_target(&self, file_path: &Path) -> Result<(), FilesystemError> {
+        stat_native_open_target_identity(file_path).map(|_| ())
+    }
+
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    pub fn find_open_document_owner(
+        &self,
+        file_path: &Path,
+    ) -> Result<Option<String>, FilesystemError> {
+        let (root_identity, relative, file_identity) = stat_native_open_target_identity(file_path)?;
+        let state = self.lock_state();
+        for slot in state.active.values() {
+            if slot.root_meta.identity() != root_identity {
+                continue;
+            }
+            let slot_state = slot.lock();
+            if slot_state.revoked {
+                continue;
+            }
+            let is_open = slot_state.documents.iter().any(|(path, document)| {
+                path.as_str().eq_ignore_ascii_case(relative.as_str())
+                    && document.identity == file_identity
+            });
+            if is_open {
+                return Ok(Some(slot.owner.as_str().to_owned()));
+            }
+        }
+        Ok(None)
     }
 
     pub fn reopen_recent(

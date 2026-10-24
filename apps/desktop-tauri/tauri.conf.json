@@ -62,6 +62,16 @@
       "icons/icon.png",
       "icons/icon.ico"
     ],
+    "fileAssociations": [
+      {
+        "ext": ["tex"],
+        "name": "TeX source document"
+      },
+      {
+        "ext": ["pdf"],
+        "name": "PDF document"
+      }
+    ],
     "windows": {
       "nsis": {
         "installMode": "currentUser"

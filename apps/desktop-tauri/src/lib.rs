@@ -12,6 +12,8 @@ pub mod compile_config;
 
 use schemas::protocol::{HostHealth, OwnerId};
 use tauri::http::header::{HeaderValue, CONTENT_TYPE};
+#[cfg(all(windows, target_arch = "x86_64"))]
+use tauri::Emitter;
 use tauri::{Manager, WebviewWindowBuilder, WindowEvent};
 
 /// Reports host liveness. The owner is derived from the invoking trusted
@@ -133,7 +135,150 @@ pub(crate) fn create_trusted_document_window(
     Ok(window)
 }
 
-fn setup_main_window(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+#[cfg(all(windows, target_arch = "x86_64"))]
+fn create_trusted_document_window_with_pending_open(
+    app: &tauri::AppHandle,
+    config: &tauri::utils::config::WindowConfig,
+    files: &state::desktop::FrontendFilesState,
+    pending: &state::pending_open::PendingOpenState,
+    path: std::path::PathBuf,
+) -> Result<tauri::WebviewWindow, String> {
+    let owner = OwnerId::from_label(&config.label)
+        .map_err(|_| "invalid document window owner".to_owned())?;
+    pending
+        .enqueue(&owner, &config.label, path)
+        .map_err(|error| error.to_owned())?;
+
+    match create_trusted_document_window(app, config, files) {
+        Ok(window) => {
+            if pending.has_pending_for_owner(&owner) {
+                let _ = window.emit(state::pending_open::PENDING_OPEN_EVENT, ());
+            }
+            Ok(window)
+        }
+        Err(error) => {
+            pending.revoke_owner(&owner);
+            Err(error)
+        }
+    }
+}
+
+#[cfg(all(windows, target_arch = "x86_64"))]
+fn focus_document_window(app: &tauri::AppHandle, label: &str) -> bool {
+    let Some(window) = app.get_webview_window(label) else {
+        return false;
+    };
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    true
+}
+
+#[cfg(all(windows, target_arch = "x86_64"))]
+fn route_native_open_path(app: &tauri::AppHandle, path: &std::path::Path) -> bool {
+    let Some(pending) = app.try_state::<state::pending_open::PendingOpenState>() else {
+        return false;
+    };
+
+    if let Some((_, label)) = pending.owner_for_path(path) {
+        if let Some(window) = app.get_webview_window(&label) {
+            let _ = focus_document_window(app, &label);
+            let _ = window.emit(state::pending_open::PENDING_OPEN_EVENT, ());
+        }
+        return true;
+    }
+
+    let Some(files) = app.try_state::<state::desktop::FrontendFilesState>() else {
+        let Ok(owner) = OwnerId::from_label("main") else {
+            return false;
+        };
+        let accepted = pending.enqueue(&owner, "main", path.to_path_buf()).is_ok();
+        if accepted {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.emit(state::pending_open::PENDING_OPEN_EVENT, ());
+            }
+        }
+        return accepted;
+    };
+
+    match files.service.find_open_document_owner(path) {
+        Ok(Some(label)) if focus_document_window(app, &label) => return true,
+        Ok(Some(_)) | Ok(None) => {}
+        Err(_) => return false,
+    }
+
+    let Some(mut config) = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|candidate| candidate.label == "main")
+        .cloned()
+    else {
+        return false;
+    };
+    let Ok(label) = commands::frontend_window::new_document_window_label() else {
+        return false;
+    };
+    if app.get_webview_window(&label).is_some() {
+        return false;
+    }
+    config.label = label;
+
+    let window = create_trusted_document_window_with_pending_open(
+        app,
+        &config,
+        files.inner(),
+        pending.inner(),
+        path.to_path_buf(),
+    );
+    match window {
+        Ok(window) => {
+            let _ = window.show();
+            let _ = window.set_focus();
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn focus_main_window(app: &tauri::AppHandle) {
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    let _ = focus_document_window(app, "main");
+    #[cfg(not(all(windows, target_arch = "x86_64")))]
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn handle_single_instance_open(app: &tauri::AppHandle, args: Vec<String>, cwd: String) {
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    {
+        let paths = state::pending_open::collect_native_open_paths(
+            args.into_iter().map(std::ffi::OsString::from),
+            std::path::Path::new(&cwd),
+        );
+        let mut routed = false;
+        for path in paths {
+            routed |= route_native_open_path(app, &path);
+        }
+        if !routed {
+            focus_main_window(app);
+        }
+    }
+    #[cfg(not(all(windows, target_arch = "x86_64")))]
+    {
+        let _ = (args, cwd);
+        focus_main_window(app);
+    }
+}
+
+fn setup_main_window(
+    app: &mut tauri::App,
+    startup_open_paths: &[std::path::PathBuf],
+) -> Result<(), Box<dyn std::error::Error>> {
     let main_config = app
         .config()
         .app
@@ -146,11 +291,25 @@ fn setup_main_window(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Err
     #[cfg(all(windows, target_arch = "x86_64"))]
     {
         let files = app.state::<state::desktop::FrontendFilesState>();
-        create_trusted_document_window(app.handle(), &main_config, &files)
+        let pending = app.state::<state::pending_open::PendingOpenState>();
+        let main_owner = OwnerId::from_label(&main_config.label).map_err(std::io::Error::other)?;
+        if let Some(path) = startup_open_paths.first() {
+            if pending.owner_for_path(path).is_none() {
+                let _ = pending.enqueue(&main_owner, &main_config.label, path.clone());
+            }
+        }
+        let window = create_trusted_document_window(app.handle(), &main_config, &files)
             .map_err(std::io::Error::other)?;
+        if pending.has_pending_for_owner(&main_owner) {
+            let _ = window.emit(state::pending_open::PENDING_OPEN_EVENT, ());
+        }
+        for path in startup_open_paths {
+            let _ = route_native_open_path(app.handle(), path);
+        }
     }
     #[cfg(not(all(windows, target_arch = "x86_64")))]
     {
+        let _ = startup_open_paths;
         build_trusted_webview(app.handle(), &main_config)?;
     }
 
@@ -158,7 +317,27 @@ fn setup_main_window(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Err
 }
 
 pub fn run() {
-    let builder = tauri::Builder::default()
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    let startup_open_paths = {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        state::pending_open::collect_native_open_paths(std::env::args_os().skip(1), &cwd)
+    };
+    #[cfg(not(all(windows, target_arch = "x86_64")))]
+    let startup_open_paths: Vec<std::path::PathBuf> = Vec::new();
+
+    let builder = tauri::Builder::default();
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    let builder = builder.manage(state::pending_open::PendingOpenState::default());
+
+    let builder = builder
+        // Run path routing and filesystem identity checks away from the Windows
+        // event thread; creating a WebView can synchronously wait for that thread.
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            let app = app.clone();
+            drop(tauri::async_runtime::spawn_blocking(move || {
+                handle_single_instance_open(&app, args, cwd);
+            }));
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| {
@@ -193,10 +372,16 @@ pub fn run() {
                             .state::<state::terminal::FrontendTerminalState>()
                             .revoke_owner(&owner);
                         window
+                            .state::<state::source_format::FrontendSourceFormatState>()
+                            .revoke_owner(&owner);
+                        window
                             .state::<state::compile::FrontendCompileState>()
                             .revoke_owner(&owner);
                         window
                             .state::<state::desktop::FrontendFilesState>()
+                            .revoke_owner(&owner);
+                        window
+                            .state::<state::pending_open::PendingOpenState>()
                             .revoke_owner(&owner);
                     }
                     #[cfg(not(all(windows, target_arch = "x86_64")))]
@@ -204,7 +389,7 @@ pub fn run() {
                 }
             }
         })
-        .setup(|app| {
+        .setup(move |app| {
             #[cfg(all(windows, target_arch = "x86_64"))]
             {
                 let data_dir = app.path().app_data_dir()?;
@@ -225,6 +410,7 @@ pub fn run() {
                     app.handle().clone(),
                 )
                 .map_err(std::io::Error::other)?;
+                let source_format = state::source_format::FrontendSourceFormatState::new();
                 let git = state::git::FrontendGitState::new(shared_filesystem.clone());
                 #[cfg(feature = "mcp")]
                 let mcp_bridge = std::sync::Arc::new(state::mcp::McpBridgeState::new(
@@ -260,6 +446,13 @@ pub fn run() {
                     );
                 }
 
+                if !app.manage(source_format) {
+                    return Err(std::io::Error::other(
+                        "FrontendSourceFormatState is already managed",
+                    )
+                    .into());
+                }
+
                 if !app.manage(git) {
                     return Err(std::io::Error::other("FrontendGitState is already managed").into());
                 }
@@ -273,7 +466,7 @@ pub fn run() {
                     return Err(std::io::Error::other("McpRuntime is already managed").into());
                 }
             }
-            setup_main_window(app)?;
+            setup_main_window(app, &startup_open_paths)?;
             #[cfg(feature = "g1-prototypes")]
             commands::prototype::setup(app)?;
             Ok(())
@@ -289,6 +482,7 @@ pub fn run() {
         #[cfg(feature = "mcp")]
         commands::mcp::frontend_mcp_reply,
         commands::frontend_files::frontend_open_workspace,
+        commands::frontend_files::frontend_take_pending_open,
         commands::frontend_files::frontend_list_recent,
         commands::frontend_files::frontend_open_recent,
         commands::frontend_files::frontend_remove_recent,
@@ -305,6 +499,7 @@ pub fn run() {
         commands::frontend_compile::frontend_cancel_compile,
         commands::frontend_compile::frontend_take_compile_pdf,
         commands::frontend_compile::frontend_take_compile_synctex,
+        commands::frontend_source_format::frontend_format_latex,
         commands::frontend_draft::frontend_draft_compile,
         commands::frontend_draft::frontend_draft_typeset_paragraph,
         commands::frontend_draft::frontend_draft_stop,
@@ -363,6 +558,7 @@ pub fn run() {
         #[cfg(feature = "mcp")]
         commands::mcp::frontend_mcp_reply,
         commands::frontend_files::frontend_open_workspace,
+        commands::frontend_files::frontend_take_pending_open,
         commands::frontend_files::frontend_list_recent,
         commands::frontend_files::frontend_open_recent,
         commands::frontend_files::frontend_remove_recent,
@@ -379,6 +575,7 @@ pub fn run() {
         commands::frontend_compile::frontend_cancel_compile,
         commands::frontend_compile::frontend_take_compile_pdf,
         commands::frontend_compile::frontend_take_compile_synctex,
+        commands::frontend_source_format::frontend_format_latex,
         commands::frontend_draft::frontend_draft_compile,
         commands::frontend_draft::frontend_draft_typeset_paragraph,
         commands::frontend_draft::frontend_draft_stop,

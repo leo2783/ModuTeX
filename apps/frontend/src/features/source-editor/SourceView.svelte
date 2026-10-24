@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
+	import { invoke, isTauri } from '@tauri-apps/api/core';
 	import type { ImageContext } from '../images/store.ts';
 	import { clipboardImage } from '../images/view.ts';
 	import { Compartment, EditorState } from '@codemirror/state';
@@ -27,8 +28,9 @@
 	import { visualInsertionTransaction, paragraphInsertionTransaction } from './state.ts';
 	import { booktabsPlan, tableInsertionTransaction, withPackage, type PackagePlan } from '../tables/preamble.ts';
 	import { text, type Language } from '../../i18n/text.ts';
-	let { document, label, saving, savedVersion, active = true, fontSize = 14, showLineNumbers = true, wrapLines = false, navigation = null, diagnosticNavigation = null, locale = 'zh-Hant', imageContext = null, viewMode = 'visual', onViewModeChange, onChange, onRejected, onVisualRejected, onProjection, onParserFailure }: { document: SourceDocument; label: string;
+	let { document, label, saving, savedVersion, active = true, fontSize = 14, showLineNumbers = true, wrapLines = false, navigation = null, diagnosticNavigation = null, locale = 'zh-Hant', imageContext = null, formatWorkspaceId = null, viewMode = 'visual', onViewModeChange, onChange, onRejected, onVisualRejected, onProjection, onParserFailure }: { document: SourceDocument; label: string;
 		imageContext?: ((writing: boolean) => Promise<ImageContext>) | null;
+		formatWorkspaceId?: string | null;
 		viewMode?: 'source' | 'visual'; onViewModeChange?: (mode: 'source' | 'visual') => void;
 		active?: boolean; fontSize?: number; showLineNumbers?: boolean; wrapLines?: boolean; locale?: Language;
 		navigation?: { readonly span: SourceSpan; readonly sequence: number; readonly sourceOnly?: boolean } | null;
@@ -209,6 +211,104 @@
 	let handledDiagnosticNavigation = 0;
 	let scheduledDiagnosticNavigation = 0;
 	let disposed = false;
+	const FORMAT_SOURCE_MAX_BYTES = 5 * 1024 * 1024;
+	let sourceFormatting = $state(false);
+	let sourceFormatMessage = $state<string | null>(null);
+	let sourceFormatSequence = 0;
+	function boundedUtf8Length(value: string, maximum: number): number | null {
+		let bytes = 0;
+		for (let index = 0; index < value.length; index++) {
+			const code = value.charCodeAt(index);
+			if (code <= 0x7f) bytes++;
+			else if (code <= 0x7ff) bytes += 2;
+			else if (code >= 0xd800 && code <= 0xdbff && index + 1 < value.length) {
+				const next = value.charCodeAt(index + 1);
+				if (next >= 0xdc00 && next <= 0xdfff) { bytes += 4; index++; }
+				else bytes += 3;
+			} else bytes += 3;
+			if (bytes > maximum) return null;
+		}
+		return bytes;
+	}
+	function sourceFormatFailure(error: unknown): string {
+		const detail = typeof error === 'string' ? error : error instanceof Error ? error.message : '';
+		if (detail.includes('LATEXINDENT_NOT_FOUND')) {
+			return t('找不到 latexindent.exe。請安裝 TeX Live 或 MiKTeX，並將 latexindent.exe 加入 PATH。', 'latexindent.exe was not found. Install TeX Live or MiKTeX and add latexindent.exe to PATH.');
+		}
+		if (detail.includes('SOURCE_FORMAT_LIMIT')) {
+			return t('文件超過 5 MiB，未變更原始碼。', 'Source exceeds 5 MiB. The source was not changed.');
+		}
+		if (detail.includes('SOURCE_FORMAT_BUSY')) {
+			return t('格式化工具正在使用中，請稍後再試。', 'The formatter is busy. Try again shortly.');
+		}
+		return t('格式化失敗，原始碼未變更。', 'Formatting failed. The source was not changed.');
+	}
+	async function formatSource() {
+		const view = editor;
+		const workspaceId = formatWorkspaceId;
+		if (!view || !workspaceId || !isTauri() || mode !== 'source' || !active || saving ||
+			tool !== null || view.state.readOnly || sourceFormatting) return;
+		const source = view.state.field(sourceState).projection.document;
+		const sourceText = source.read();
+		const documentId = source.documentId;
+		const documentVersion = source.version;
+		const selection = view.state.selection.ranges.map((range) => [range.anchor, range.head] as const);
+		if (!Number.isSafeInteger(documentVersion) || documentVersion < 0 ||
+			boundedUtf8Length(sourceText, FORMAT_SOURCE_MAX_BYTES) === null) {
+			sourceFormatMessage = t('文件超過 5 MiB，未變更原始碼。', 'Source exceeds 5 MiB. The source was not changed.');
+			return;
+		}
+		const sequence = ++sourceFormatSequence;
+		sourceFormatting = true;
+		sourceFormatMessage = null;
+		try {
+			const receipt = await invoke<unknown>('frontend_format_latex', {
+				request: { workspaceId, text: sourceText, documentId, documentVersion }
+			});
+			if (disposed || sequence !== sourceFormatSequence) return;
+			if (typeof receipt !== 'object' || receipt === null || Array.isArray(receipt)) {
+				throw new Error('INVALID_FORMAT_RECEIPT');
+			}
+			const result = receipt as Record<string, unknown>;
+			if (result.documentId !== documentId || result.documentVersion !== documentVersion ||
+				typeof result.formatted !== 'string' ||
+				boundedUtf8Length(result.formatted, FORMAT_SOURCE_MAX_BYTES) === null) {
+				throw new Error('INVALID_FORMAT_RECEIPT');
+			}
+			const formatted = result.formatted.replace(/\r\n|\r|\n/g, source.profile.preferredLineEnding);
+			if (boundedUtf8Length(formatted, FORMAT_SOURCE_MAX_BYTES) === null) {
+				throw new Error('SOURCE_FORMAT_LIMIT');
+			}
+			const current = view.state.field(sourceState).projection.document;
+			const currentSelection = view.state.selection.ranges;
+			const selectionMatches = currentSelection.length === selection.length &&
+				currentSelection.every((range, index) =>
+					range.anchor === selection[index]?.[0] && range.head === selection[index]?.[1]);
+			if (editor !== view || document.documentId !== documentId || document.version !== documentVersion ||
+				current.documentId !== documentId || current.version !== documentVersion ||
+				current.read() !== sourceText || formatWorkspaceId !== workspaceId ||
+				!selectionMatches || mode !== 'source' || !active || saving || tool !== null ||
+				view.state.readOnly || !isTauri()) {
+				sourceFormatMessage = t('內容或選取位置已變更，格式化結果未套用。', 'The source or selection changed. The formatting result was not applied.');
+				return;
+			}
+			if (formatted !== sourceText) {
+				const transaction = sourcePatchTransaction(view.state, { documentId, version: documentVersion }, [{
+					from: 0,
+					to: sourceText.length,
+					insert: formatted,
+					expected: sourceText
+				}]);
+				view.dispatch(transaction);
+			}
+		} catch (error) {
+			if (!disposed && sequence === sourceFormatSequence && editor === view) {
+				sourceFormatMessage = sourceFormatFailure(error);
+			}
+		} finally {
+			if (!disposed && sequence === sourceFormatSequence) sourceFormatting = false;
+		}
+	}
 	interface CurrentMcpEditor {
 		readonly view: EditorView;
 		readonly projection: EditorProjection;
@@ -774,6 +874,9 @@
 			<button class="icon-tool" title={t('視覺化', 'Visual')} aria-label={t('視覺化', 'Visual')} aria-pressed={mode === 'visual'} onclick={() => { if (tool !== null) closeTool(); setMode('visual'); visual?.focus(); }}><ToolbarIcon kind="visual" /></button>
 			<button class="icon-tool" title={t('原始碼', 'Source')} aria-label={t('原始碼', 'Source')} aria-pressed={mode === 'source'} onclick={() => { if (tool !== null) closeTool(); setMode('source'); editor?.focus(); }}><ToolbarIcon kind="source" /></button>
 		</div>
+		{#if mode === 'source' && formatWorkspaceId && isTauri()}
+			<button class="text-button" title={t('格式化 LaTeX', 'Format LaTeX')} aria-label={t('格式化 LaTeX', 'Format LaTeX')} onclick={() => void formatSource()} disabled={!active || saving || tool !== null || sourceFormatting}>{sourceFormatting ? t('格式化中', 'Formatting') : t('格式化 LaTeX', 'Format LaTeX')}</button>
+		{/if}
 		<div class="tool-group" role="group" aria-label={t('文字格式', 'Text format')}>
 			<details class="math-menu structure-menu">
 				<summary aria-label={t('文字層級', 'Text structure')} title={t('文字層級', 'Text structure')}>{t('文字層級', 'Text structure')}<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="m2 4 3 3 3-3" fill="none" stroke="currentColor" /></svg></summary>
@@ -811,6 +914,7 @@
 			<button class="icon-tool" title={t('程式碼區塊', 'Code block')} aria-label={t('程式碼區塊', 'Code block')} onclick={() => openCode()} disabled={!active || saving || tool !== null}><ToolbarIcon kind="code" /></button>
 		</div>
 	</div>
+	{#if sourceFormatMessage}<p class="tool-error" role="alert">{sourceFormatMessage}</p>{/if}
 	{#if mode !== 'visual'}<div class="table-edit"><button class="text-button" onclick={editEquation} disabled={!active || saving || tool !== null || !parsed}>{t('編輯游標所在公式', 'Edit equation at cursor')}</button><button class="text-button" onclick={editTable} disabled={saving || tool !== null}>{t('編輯游標所在表格', 'Edit table at cursor')}</button><button class="text-button" onclick={() => editor && foldCode(editor)} disabled={!active || saving || tool !== null || !parsed}>{t('折疊目前區段', 'Fold current section')}</button><button class="text-button" onclick={() => editor && unfoldAll(editor)} disabled={!active || tool !== null}>{t('展開全部', 'Unfold all')}</button></div>{/if}
 	{#if toolError}<p class="tool-error" role="alert">{toolMessage(toolError)}</p>{/if}
 	<div class="cell-actions-bar" bind:this={cellToolbarTarget} hidden={mode !== 'visual'}></div>

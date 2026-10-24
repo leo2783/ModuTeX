@@ -12,6 +12,8 @@ pub mod frontend_git;
 #[cfg(all(windows, target_arch = "x86_64"))]
 pub mod frontend_settings;
 #[cfg(all(windows, target_arch = "x86_64"))]
+pub mod frontend_source_format;
+#[cfg(all(windows, target_arch = "x86_64"))]
 pub mod frontend_terminal;
 #[cfg(all(windows, target_arch = "x86_64"))]
 pub mod frontend_window;

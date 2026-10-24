@@ -5,7 +5,7 @@ use crate::{
 };
 use tauri::{Manager, State, WebviewWindow};
 
-fn new_document_window_label() -> Result<String, String> {
+pub(crate) fn new_document_window_label() -> Result<String, String> {
     let label = format!("document-{}", uuid::Uuid::new_v4());
     OwnerId::from_label(&label)
         .map_err(|_| "invalid generated document window label".to_owned())?;

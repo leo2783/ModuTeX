@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-frontend-source-format"
+description = "Allows the trusted frontend to format source through latexindent."
+commands.allow = ["frontend_format_latex"]

@@ -5,9 +5,12 @@
 //! with owner authorization fence, native dialogs within spawn_blocking,
 //! host-only 32MiB PDF tokens, and native directory change monitoring.
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+use std::{
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 
 use serde::Serialize;
@@ -33,7 +36,10 @@ use crate::{
     },
     shared::relative_path::RelativePath,
     state::{
-        compile::FrontendCompileState, desktop::FrontendFilesState, terminal::FrontendTerminalState,
+        compile::FrontendCompileState,
+        desktop::FrontendFilesState,
+        pending_open::{is_native_open_path, PendingOpenState},
+        terminal::FrontendTerminalState,
     },
 };
 #[derive(Clone, Debug, Serialize)]
@@ -50,6 +56,13 @@ pub struct WatchResyncMessage {
     pub subscription_id: String,
     pub generation: u64,
     pub reason: FileWatchResyncReason,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingOpenReceipt {
+    pub workspace: WorkspaceInfo,
+    pub path: String,
 }
 
 #[tauri::command]
@@ -417,6 +430,126 @@ pub fn verify_trusted_window(
     Ok(owner)
 }
 
+fn open_workspace_for_owner(
+    state: &FrontendFilesState,
+    owner: &OwnerId,
+    kind: WorkspaceKind,
+    path: &Path,
+) -> Result<WorkspaceInfo, String> {
+    let _transition = state.lock_watch_transition();
+    let mut lifecycle = state.lock_lifecycle();
+    state.require_owner_live_locked(&lifecycle, owner)?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let opened_at = Timestamp::new(now_ms).map_err(|error| error.to_string())?;
+
+    let outcome = match kind {
+        WorkspaceKind::Folder => state
+            .service
+            .open_workspace_folder(owner, path, None, opened_at),
+        WorkspaceKind::File => state.service.open_workspace_file(owner, path, opened_at),
+    }
+    .map_err(|error| error.to_string())?;
+    if let Err(error) =
+        state.admit_workspace_locked(&mut lifecycle, owner, outcome.opened.id.clone())
+    {
+        let _ = state.service.close_workspace(owner, &outcome.opened.id);
+        return Err(error);
+    }
+    Ok(outcome.opened)
+}
+
+fn requeue_pending_open_if_owner_live(
+    state: &FrontendFilesState,
+    pending: &PendingOpenState,
+    owner: &OwnerId,
+    label: &str,
+    path: std::path::PathBuf,
+) {
+    let _transition = state.lock_watch_transition();
+    let lifecycle = state.lock_lifecycle();
+    if state.require_owner_live_locked(&lifecycle, owner).is_ok() {
+        let _ = pending.enqueue(owner, label, path);
+    }
+}
+
+#[tauri::command]
+pub fn frontend_take_pending_open(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    pending: State<'_, PendingOpenState>,
+) -> Result<Option<PendingOpenReceipt>, String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let Some(path) = pending.take_for_owner(&owner) else {
+        return Ok(None);
+    };
+    let label = window.label().to_owned();
+
+    if !is_native_open_path(&path) {
+        requeue_pending_open_if_owner_live(state.inner(), pending.inner(), &owner, &label, path);
+        return Err("invalid pending document path".to_owned());
+    }
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        requeue_pending_open_if_owner_live(state.inner(), pending.inner(), &owner, &label, path);
+        return Err("invalid pending document name".to_owned());
+    };
+    let relative_path = match RelativePath::parse(file_name) {
+        Ok(relative_path) => relative_path,
+        Err(error) => {
+            requeue_pending_open_if_owner_live(
+                state.inner(),
+                pending.inner(),
+                &owner,
+                &label,
+                path,
+            );
+            return Err(error.to_string());
+        }
+    };
+    if let Err(error) = state.service.validate_native_open_target(&path) {
+        requeue_pending_open_if_owner_live(state.inner(), pending.inner(), &owner, &label, path);
+        return Err(error.to_string());
+    }
+
+    let is_tex = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("tex"));
+    let kind = if is_tex {
+        WorkspaceKind::File
+    } else {
+        WorkspaceKind::Folder
+    };
+    let target = if is_tex {
+        path.as_path()
+    } else if let Some(parent) = path.parent() {
+        parent
+    } else {
+        requeue_pending_open_if_owner_live(state.inner(), pending.inner(), &owner, &label, path);
+        return Err("pending document has no parent directory".to_owned());
+    };
+    let workspace = match open_workspace_for_owner(state.inner(), &owner, kind, target) {
+        Ok(workspace) => workspace,
+        Err(error) => {
+            requeue_pending_open_if_owner_live(
+                state.inner(),
+                pending.inner(),
+                &owner,
+                &label,
+                path,
+            );
+            return Err(error);
+        }
+    };
+
+    Ok(Some(PendingOpenReceipt {
+        workspace,
+        path: relative_path.as_str().to_owned(),
+    }))
+}
+
 #[tauri::command]
 pub async fn frontend_open_workspace(
     window: WebviewWindow,
@@ -439,29 +572,7 @@ pub async fn frontend_open_workspace(
     };
 
     let owner = verify_trusted_window(&window, &state)?;
-    let _transition = state.lock_watch_transition();
-    let mut lifecycle = state.lock_lifecycle();
-    state.require_owner_live_locked(&lifecycle, &owner)?;
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-    let opened_at = Timestamp::new(now_ms).map_err(|e| e.to_string())?;
-
-    let outcome = match kind {
-        WorkspaceKind::Folder => state
-            .service
-            .open_workspace_folder(&owner, &path, None, opened_at),
-        WorkspaceKind::File => state.service.open_workspace_file(&owner, &path, opened_at),
-    }
-    .map_err(|e| e.to_string())?;
-    if let Err(error) =
-        state.admit_workspace_locked(&mut lifecycle, &owner, outcome.opened.id.clone())
-    {
-        let _ = state.service.close_workspace(&owner, &outcome.opened.id);
-        return Err(error);
-    }
-    Ok(Some(outcome.opened))
+    open_workspace_for_owner(state.inner(), &owner, kind, &path).map(Some)
 }
 
 #[tauri::command]

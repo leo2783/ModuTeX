@@ -15,6 +15,8 @@ pub mod git_service;
 #[cfg(all(windows, target_arch = "x86_64", feature = "mcp"))]
 pub mod mcp;
 #[cfg(all(windows, target_arch = "x86_64"))]
+pub mod source_format;
+#[cfg(all(windows, target_arch = "x86_64"))]
 mod synctex_artifact;
 #[cfg(all(windows, target_arch = "x86_64"))]
 pub mod terminal_service;

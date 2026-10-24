@@ -9,6 +9,14 @@ const UPDATER_PERMISSIONS: &[&str] = &[
 
 const COMMANDS: &[(&str, &str)] = &[
     (
+        "frontend_take_pending_open",
+        "commands::frontend_files::frontend_take_pending_open",
+    ),
+    (
+        "frontend_format_latex",
+        "commands::frontend_source_format::frontend_format_latex",
+    ),
+    (
         "frontend_new_window",
         "commands::frontend_window::frontend_new_window",
     ),
@@ -258,8 +266,10 @@ fn main_capability_is_the_exact_local_g2345_and_updater_union() {
     let mut expected = vec![
         "allow-host-health".to_owned(),
         "allow-frontend-new-window".to_owned(),
+        "allow-frontend-pending-open".to_owned(),
         "allow-frontend-files".to_owned(),
         "allow-frontend-compile".to_owned(),
+        "allow-frontend-source-format".to_owned(),
         "allow-frontend-compile-config".to_owned(),
         "allow-frontend-settings".to_owned(),
         "allow-frontend-terminal".to_owned(),

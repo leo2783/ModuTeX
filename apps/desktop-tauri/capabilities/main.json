@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Local main and host-created document windows: host health, G2 files, G3 compile configuration, G4 terminal, G5 Draft, WorkspaceFiles and Git. No shell or filesystem plugin grants.",
+  "description": "Local main and host-created document windows: host health, G2 files, G3 compile configuration, G4 terminal, G5 Draft, WorkspaceFiles, Git and source formatting. No shell or filesystem plugin grants.",
   "local": true,
   "windows": [
     "main",
@@ -10,8 +10,10 @@
   "permissions": [
     "allow-host-health",
     "allow-frontend-new-window",
+    "allow-frontend-pending-open",
     "allow-frontend-files",
     "allow-frontend-compile",
+    "allow-frontend-source-format",
     "allow-frontend-compile-config",
     "allow-frontend-settings",
     "allow-frontend-terminal",

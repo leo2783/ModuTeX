@@ -24,6 +24,7 @@
 	import { readSource, readSourceBytes } from './features/files/read.ts';
 	import type { TemplateId } from './features/files/templates.ts';
 	import { invoke, isTauri } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 	import type { ReadReceipt } from '@modutex/frontend-contracts';
 	import { BoundSynctexIndex, sameCompileIdentity, type SynctexPdfLocation, type SynctexSourceLocation } from './features/compile/synctex.ts';
 	import DraftPanel from './features/draft/DraftPanel.svelte';
@@ -150,6 +151,10 @@
 		readonly from: number;
 		readonly to: number;
 	}
+	interface PendingOpenReceipt {
+		readonly workspace: WorkspaceInfo;
+		readonly path: string;
+	}
 	type LineDiagnostic = Diagnostic & { readonly path: string; readonly line: number };
 	interface WorkspaceWatch {
 		readonly owner: WorkspaceInfo;
@@ -266,14 +271,13 @@
 		}
 	}
 	function nativeImportNotice(result: NativePreferencesImport): [string, string] | null {
+		if (result.invalid) return ['部分設定無法讀取。已使用預設值。', 'Some settings could not be read. Defaults were used.'];
 		if (result.remainingElectronSettings.length) {
-			const fields = result.remainingElectronSettings.join(', ');
 			return [
-				`舊版 Electron 設定尚有未遷移欄位：${fields}。原設定檔已保留。`,
-				`Some legacy Electron settings remain unmigrated: ${fields}. The original settings file was preserved.`
+				'部分舊版設定尚未匯入。原設定檔已保留。',
+				'Some legacy settings were not imported. The original settings file was preserved.'
 			];
 		}
-		if (result.invalid) return ['部分設定無法讀取，已使用預設值。', 'Some settings could not be read and were reset to defaults.'];
 		return null;
 	}
 	async function refreshRecent() {
@@ -356,6 +360,10 @@
 	let desktop = $state.raw<FileDesktopPort | null>(null);
 	let desktopLoading = $state(hasDesktopBridge);
 	let workspace = $state.raw<WorkspaceInfo | null>(null);
+	let pendingOpenArmed = $state(false);
+	let pendingOpenTask: Promise<void> | null = null;
+	let pendingOpenListenerDisposed = false;
+	let unlistenPendingOpen: (() => void) | null = null;
 	let workspaceFiles = $state.raw<WorkspaceFilesPort | null>(null);
 	let workspaceFilesAvailability = $state<'checking' | 'available' | 'unavailable'>('unavailable');
 	let workspaceFilesOpen = $state(false);
@@ -386,6 +394,13 @@
 	} | null>(null);
 	let activeWorkspaceWatch: WorkspaceWatch | null = null;
 	$effect(() => ensureWorkspaceWatch(workspace));
+	$effect(() => {
+		if (pendingOpenArmed && desktop && isTauri() &&
+			!opening && !saving && !confirming && !compiling &&
+			!lifetime.signal.aborted) {
+			void drainPendingOpenRequests();
+		}
+	});
 	let sourceInput: HTMLInputElement;
 	let pdfInput: HTMLInputElement;
 	let sourceTicket = 0;
@@ -891,6 +906,14 @@
 		}
 		if (activeWorkspaceWatch === watch) activeWorkspaceWatch = null;
 	}
+	function disposePendingOpenListener() {
+		pendingOpenListenerDisposed = true;
+		const stop = unlistenPendingOpen;
+		unlistenPendingOpen = null;
+		if (stop) {
+			try { stop(); } catch { /* disposal must not interrupt App teardown */ }
+		}
+	}
 	function failWorkspaceWatch(watch: WorkspaceWatch) {
 		if (!watch.active || watch.terminal) return;
 		invalidateSynctexForWorkspaceWatchLoss(watch);
@@ -1293,6 +1316,8 @@
 		}
 	}
 	onDestroy(() => {
+		disposePendingOpenListener();
+		pendingOpenArmed = false;
 		rootStateDisposed = true;
 		stopWorkspaceWatch();
 		workspaceGeneration++;
@@ -1308,6 +1333,30 @@
 		const root = document.documentElement, previousTheme = root.dataset.theme, previousLanguage = root.getAttribute('lang');
 		let closeRegistrationDisposed = false;
 		let unlistenCloseRequested: (() => void) | null = null;
+		if (isTauri()) {
+			pendingOpenListenerDisposed = false;
+			try {
+				void listen('frontend://open/pending', () => {
+					if (!pendingOpenListenerDisposed && !lifetime.signal.aborted) {
+						pendingOpenArmed = true;
+					}
+				}).then((unlisten) => {
+					if (pendingOpenListenerDisposed || lifetime.signal.aborted) {
+						unlisten();
+						return;
+					}
+					unlistenPendingOpen = unlisten;
+					// Also poll once: startup events can be emitted before this listener exists.
+					pendingOpenArmed = true;
+				}).catch(() => {
+					if (!pendingOpenListenerDisposed && !lifetime.signal.aborted) {
+						pendingOpenArmed = true;
+					}
+				});
+			} catch {
+				pendingOpenArmed = true;
+			}
+		}
 		if (isTauri()) {
 			try {
 				void getCurrentWindow().onCloseRequested((event) => {
@@ -1333,6 +1382,7 @@
 				if (lifetime.signal.aborted) return;
 				desktop = desktopFiles(lifetime.signal);
 				workspaceFiles = tauriWorkspaceFiles(lifetime.signal);
+				if (isTauri()) pendingOpenArmed = true;
 				if (workspace && workspaceFiles) {
 					const owner = workspace;
 					const generation = workspaceGeneration;
@@ -1400,6 +1450,7 @@
 		window.addEventListener('beforeunload', warn);
 		rootStateReady = true;
 		return () => {
+			disposePendingOpenListener();
 			closeRegistrationDisposed = true;
 			const stopCloseListener = unlistenCloseRequested;
 			unlistenCloseRequested = null;
@@ -1613,6 +1664,132 @@
 				void refreshRecent();
 				void drainWorkspaceWatch();
 			}
+		}
+	}
+	async function drainPendingOpenRequests() {
+		if (pendingOpenTask || !pendingOpenArmed || !desktop || !isTauri()) return;
+		const port = desktop;
+		const task = (async () => {
+			while (pendingOpenArmed && !lifetime.signal.aborted && desktop === port) {
+				if (opening || saving || compiling || confirming) return;
+
+				const previousSource = source;
+				const previousSourceVersion = source?.version ?? null;
+				const previousWorkspace = workspace;
+				const previousSourceName = sourceName;
+				const previousRevision = revision;
+				const previousDirty = dirty;
+				const previousPdfBytes = pdfBytes;
+				const previousPdfName = pdfName;
+				const previousPdfTicket = pdfTicket;
+				const allowed = await allowReplacement();
+				if (!allowed || lifetime.signal.aborted) {
+					pendingOpenArmed = false;
+					return;
+				}
+				if (opening || saving || compiling || confirming) return;
+				if (source !== previousSource ||
+					(source?.version ?? null) !== previousSourceVersion ||
+					workspace !== previousWorkspace ||
+					sourceName !== previousSourceName ||
+					revision !== previousRevision ||
+					dirty !== previousDirty ||
+					pdfBytes !== previousPdfBytes ||
+					pdfName !== previousPdfName ||
+					pdfTicket !== previousPdfTicket) {
+					pendingOpenArmed = false;
+					return;
+				}
+
+				opening = true;
+				try {
+					const receipt = await invoke<PendingOpenReceipt | null>('frontend_take_pending_open');
+					if (lifetime.signal.aborted) {
+						if (receipt) void port.closeWorkspace(receipt.workspace.id).catch(() => {});
+						pendingOpenArmed = false;
+						return;
+					}
+					if (!receipt) {
+						pendingOpenArmed = false;
+						return;
+					}
+					if (desktop !== port ||
+						source !== previousSource ||
+						(source?.version ?? null) !== previousSourceVersion ||
+						workspace !== previousWorkspace ||
+						sourceName !== previousSourceName ||
+						revision !== previousRevision ||
+						dirty !== previousDirty ||
+						pdfBytes !== previousPdfBytes ||
+						pdfName !== previousPdfName ||
+						pdfTicket !== previousPdfTicket) {
+						void port.closeWorkspace(receipt.workspace.id).catch(() => {});
+						pendingOpenArmed = false;
+						return;
+					}
+
+					const oldWorkspace = workspace;
+					stopWorkspaceWatch();
+					workspaceWatchIssue = null;
+					externalFileNotice = null;
+					abandonCompile();
+					draftPanelOpen = false;
+					draftSelectionSnapshot = null;
+					draftSelectionWarning = null;
+					selectWorkspace(receipt.workspace);
+					++sourceTicket;
+					++pdfTicket;
+					source = null;
+					sourceName = '';
+					revision = null;
+					savedVersion = null;
+					hasDiskCheckpoint = true;
+					dirty = false;
+					pdfBytes = null;
+					pdfIdentity = null;
+					pdfName = '';
+					pageCount = 0;
+					entries = [];
+					projection = null;
+					outline = [];
+					outlineOwner = '';
+					outlineFailed = false;
+					navigation = null;
+					diagnosticNavigation = null;
+
+					await readDesktopFile(receipt.path, receipt.workspace, false);
+					const isPdf = receipt.path.toLowerCase().endsWith('.pdf');
+					const loaded = isPdf
+						? pdfBytes !== null && pdfName === receipt.path
+						: source !== null && sourceName === receipt.path;
+					if (!loaded) {
+						pendingOpenArmed = false;
+						return;
+					}
+					await refreshWorkspaceEntries(receipt.workspace, workspaceGeneration);
+					if (oldWorkspace && oldWorkspace.id !== receipt.workspace.id) {
+						await port.closeWorkspace(oldWorkspace.id).catch(() => {});
+					}
+					await refreshRecent();
+				} catch (value) {
+					if (!lifetime.signal.aborted) errorState = fileErrorDescriptor(value);
+					pendingOpenArmed = false;
+				} finally {
+					if (!lifetime.signal.aborted) {
+						opening = false;
+						void drainWorkspaceWatch();
+					}
+				}
+			}
+		})();
+		pendingOpenTask = task;
+		try {
+			await task;
+		} catch (value) {
+			if (!lifetime.signal.aborted) errorState = fileErrorDescriptor(value);
+			pendingOpenArmed = false;
+		} finally {
+			if (pendingOpenTask === task) pendingOpenTask = null;
 		}
 	}
 	async function openSource(event: Event) {
@@ -2447,7 +2624,7 @@ function compileSnapshotIsCurrent(
 							{#await import('./features/source-editor/SourceView.svelte')}
 								<div class="empty-state" role="status"><p>{t('正在開啟編輯器…', 'Loading editor…')}</p></div>
 							{:then { default: SourceView }}
-								<SourceView bind:this={sourceViewInstance} document={source} label={sourceName} saving={saving || opening} {savedVersion} active={route === 'workbench' && active}
+								<SourceView bind:this={sourceViewInstance} document={source} label={sourceName} saving={saving || opening} {savedVersion} active={route === 'workbench' && active} formatWorkspaceId={workspace?.id ?? null}
 									viewMode={sourceViewMode} onViewModeChange={setSourceViewMode}
 									fontSize={preferences.sourceFontSize} showLineNumbers={preferences.showLineNumbers} wrapLines={preferences.wrapLines}
 									locale={preferences.language}
