@@ -213,3 +213,85 @@ fn empty_source_keeps_valid_zero_length_operations() {
     assert_eq!(document.read(0, 0).expect("empty read"), "");
     assert!(document.to_bytes().is_empty());
 }
+
+#[test]
+fn long_typing_keeps_pieces_bounded_and_preserves_unicode_snapshots() {
+    let initial_bytes = "\u{feff}A\u{10400}\r\n中\r\n".as_bytes();
+    let initial =
+        SourceDocument::open(initial_bytes, "typing-source".to_owned()).expect("valid source");
+    let mut document = initial.clone();
+    let mut expected = initial.text();
+    let mut snapshots = vec![(initial.clone(), initial_bytes.to_vec())];
+    let characters = ["x", "\u{10400}", "\r", "\n", "中"];
+
+    for index in 0..4096 {
+        let insert = characters[index % characters.len()];
+        let position = document.len();
+        document = document
+            .apply(&SourceTransaction {
+                expected_version: document.version(),
+                patches: vec![patch(position, position, insert, Some(""))],
+            })
+            .expect("append scalar")
+            .document;
+        expected.push_str(insert);
+        assert!(document.piece_count() <= 256);
+        assert_eq!(document.version(), (index + 1) as u64);
+        if index % 511 == 0 {
+            let mut bytes = vec![0xef, 0xbb, 0xbf];
+            bytes.extend_from_slice(expected.as_bytes());
+            assert_eq!(document.to_bytes(), bytes);
+            snapshots.push((document.clone(), bytes));
+        }
+    }
+
+    assert_eq!(document.text(), expected);
+    assert_eq!(document.len(), expected.encode_utf16().count());
+    assert_eq!(document.read(1, 3).expect("astral scalar"), "\u{10400}");
+    assert_eq!(document.read(1, 2).unwrap_err(), SourceError::Range);
+    assert_eq!(document.read(3, 5).expect("unchanged CRLF"), "\r\n");
+    assert_eq!(
+        document.read(9, 11).expect("compacted astral scalar"),
+        "\u{10400}"
+    );
+    assert_eq!(document.read(9, 10).unwrap_err(), SourceError::Range);
+    assert_eq!(document.read(11, 13).expect("compacted CRLF"), "\r\n");
+    assert_eq!(
+        document
+            .apply(&SourceTransaction {
+                expected_version: document.version(),
+                patches: vec![patch(10, 10, "x", None)],
+            })
+            .unwrap_err(),
+        SourceError::Range
+    );
+    assert_eq!(document.profile(), initial.profile());
+    for (snapshot, bytes) in snapshots {
+        assert_eq!(snapshot.to_bytes(), bytes);
+        let restored = document
+            .restore(&snapshot, document.version())
+            .expect("restore snapshot after compaction");
+        assert_eq!(restored.version(), document.version() + 1);
+        assert_eq!(restored.to_bytes(), bytes);
+    }
+}
+
+#[test]
+fn one_large_transaction_also_keeps_pieces_bounded() {
+    let original = "a".repeat(800);
+    let initial = open(&original, "many-patches");
+    let update = initial
+        .apply(&SourceTransaction {
+            expected_version: 0,
+            patches: (0..800)
+                .map(|position| patch(position, position, "中", Some("")))
+                .collect(),
+        })
+        .expect("many ordered insertions");
+
+    assert!(update.document.piece_count() <= 256);
+    assert_eq!(update.document.text(), "中a".repeat(800));
+    assert_eq!(update.document.version(), 1);
+    assert_eq!(update.change.patches.len(), 800);
+    assert_eq!(initial.text(), original);
+}

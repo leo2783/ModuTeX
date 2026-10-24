@@ -55,6 +55,69 @@ struct Piece {
     to: usize,
 }
 
+// Each compaction removes 127 pieces, amortizing its cost across later edits.
+// The cheapest adjacent window usually keeps a large original segment shared
+// during typing; its copy cost still depends on the selected window's bytes.
+const MAX_PIECES: usize = 256;
+const COMPACT_PIECES: usize = 128;
+
+fn compact(pieces: &mut Vec<Piece>) -> Result<(), SourceError> {
+    while pieces.len() > MAX_PIECES {
+        let lengths: Vec<usize> = pieces
+            .iter()
+            .map(|piece| {
+                piece
+                    .source
+                    .byte_slice(piece.from, piece.to)
+                    .map(<[u8]>::len)
+                    .ok_or(SourceError::Range)
+            })
+            .collect::<Result<_, _>>()?;
+        let mut window_bytes = lengths[..COMPACT_PIECES]
+            .iter()
+            .try_fold(0usize, |total, length| total.checked_add(*length))
+            .ok_or(SourceError::Range)?;
+        let mut best_start = 0;
+        let mut best_bytes = window_bytes;
+        for end in COMPACT_PIECES..lengths.len() {
+            window_bytes = (window_bytes - lengths[end - COMPACT_PIECES])
+                .checked_add(lengths[end])
+                .ok_or(SourceError::Range)?;
+            if window_bytes < best_bytes {
+                best_start = end + 1 - COMPACT_PIECES;
+                best_bytes = window_bytes;
+            }
+        }
+
+        let end = best_start + COMPACT_PIECES;
+        let mut text = String::with_capacity(best_bytes);
+        for piece in &pieces[best_start..end] {
+            text.push_str(
+                piece
+                    .source
+                    .text_slice(piece.from, piece.to)
+                    .ok_or(SourceError::Range)?,
+            );
+        }
+        let bytes = text.as_bytes().to_vec();
+        let source = Arc::new(Segment::new(text, bytes));
+        let to = source.utf16_len();
+        pieces.splice(
+            best_start..end,
+            [Piece {
+                source,
+                from: 0,
+                to,
+            }],
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "../tests/unit/source_compaction.rs"]
+mod tests;
+
 #[derive(Clone, Debug)]
 pub struct SourceDocument {
     document_id: String,
@@ -372,6 +435,8 @@ impl SourceDocument {
         for piece in self.slice(cursor, self.length) {
             append(&mut pieces, piece);
         }
+
+        compact(&mut pieces)?;
 
         let document = Self::from_parts(
             pieces,
