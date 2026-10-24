@@ -707,7 +707,7 @@
         </div>
         <div class="hero-actions">
           <button class="btn btn-theme" id="theme-toggle" title="切換深淺色主題" aria-label="切換深淺色主題">
-            <span id="theme-icon">🌙</span> <span id="theme-text">深色模式</span>
+            <span id="theme-icon"></span> <span id="theme-text">深色模式</span>
           </button>
         </div>
       </div>
@@ -717,7 +717,7 @@
     <section class="filter-panel" aria-label="過濾與搜尋面板">
       <div class="filter-row-top">
         <div class="search-box">
-          <span class="search-icon">🔍</span>
+          <span class="search-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
           <input type="search" id="search-input" placeholder="即時搜尋操作項目、函式名稱、檔案路徑或關鍵字..." aria-label="即時搜尋操作項目">
         </div>
         <div class="select-group">
@@ -897,24 +897,24 @@
           '<div class="card-body" id="' + item.id + '-body">',
           '  <div class="section-grid">',
           '    <div class="section-item">',
-          '      <div class="section-label">📌 定義</div>',
+          '      <div class="section-label">定義</div>',
           '      <div class="section-content">' + escapeHtml(item.definition) + '</div>',
           '    </div>',
           '    <div class="section-item">',
-          '      <div class="section-label">📍 程式位置</div>',
+          '      <div class="section-label">程式位置</div>',
           '      <div class="section-content location-path">' + escapeHtml(item.location) + '</div>',
           '    </div>',
           '    <div class="section-item">',
-          '      <div class="section-label">🎯 操作 / 計算目的</div>',
+          '      <div class="section-label">操作 / 計算目的</div>',
           '      <div class="section-content">' + escapeHtml(item.purpose) + '</div>',
           '    </div>',
           '    <div class="section-item">',
-          '      <div class="section-label">🛡️ 邊界情況</div>',
+          '      <div class="section-label">邊界情況</div>',
           '      <div class="section-content">' + escapeHtml(item.edgeCases) + '</div>',
           '    </div>',
           '  </div>',
           '  <div class="code-evidence-title">',
-          '    <span>💻 新舊版真實原始碼證據 (Side-by-Side Code Evidence)</span>',
+          '    <span>新舊版真實原始碼證據 (Side-by-Side Code Evidence)</span>',
           '  </div>',
           '  <div class="code-comparison-grid">',
           '    <div class="code-pane">',
@@ -1086,7 +1086,7 @@
         var isDark = root.getAttribute('data-theme') === 'dark';
         var nextTheme = isDark ? 'light' : 'dark';
         root.setAttribute('data-theme', nextTheme);
-        themeIcon.textContent = isDark ? '🌙' : '☀️';
+        themeIcon.textContent = '';
         themeText.textContent = isDark ? '深色模式' : '淺色模式';
         try { localStorage.setItem('modutex-theme', nextTheme); } catch (e) {}
       }
@@ -1097,7 +1097,7 @@
         var savedTheme = localStorage.getItem('modutex-theme');
         if (savedTheme) {
           document.documentElement.setAttribute('data-theme', savedTheme);
-          themeIcon.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+          themeIcon.textContent = '';
           themeText.textContent = savedTheme === 'dark' ? '淺色模式' : '深色模式';
         }
       } catch (e) {}
