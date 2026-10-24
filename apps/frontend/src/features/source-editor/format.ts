@@ -1,5 +1,5 @@
 import { ChangeSet, type EditorState } from '@codemirror/state';
-import { projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan, type SyntaxNode } from '@modutex/document-core';
+import { projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan, type SyntaxNode } from '../document-core/core.ts';
 import { rangeInsertionTarget, sourceState, sourcePatchTransaction } from './state.ts';
 import { packagePlan } from '../tables/preamble.ts';
 

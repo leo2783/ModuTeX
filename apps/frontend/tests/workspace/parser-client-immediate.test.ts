@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SourceDocument } from '@modutex/document-core';
+import { SourceDocument } from '../../src/features/document-core/core.ts';
 import { ParserClient, type ParserTransport } from '../../src/features/parser/client.ts';
 import { ParserEngine, type ParserRequest } from '../../src/features/parser/engine.ts';
 

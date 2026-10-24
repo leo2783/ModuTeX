@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import type { ImageContext } from '../images/store.ts';
 	import { clipboardImage } from '../images/view.ts';
 	import { Compartment, EditorState } from '@codemirror/state';
 	import { EditorView, lineNumbers, highlightActiveLineGutter, keymap } from '@codemirror/view';
-	import type { SourceDocument, SourceProjection, SourceSpan, SourcePatch } from '@modutex/document-core';
+	import type { EditorProjection, SourceDocument, SourceProjection, SourceSpan, SourcePatch } from '../document-core/core.ts';
 	import { ParserClient } from '../parser/client.ts';
 	import { VisualEditor } from '../visual-editor/view.ts';
 	import 'prosemirror-view/style/prosemirror.css';
@@ -27,8 +27,9 @@
 	import { visualInsertionTransaction, paragraphInsertionTransaction } from './state.ts';
 	import { booktabsPlan, tableInsertionTransaction, withPackage, type PackagePlan } from '../tables/preamble.ts';
 	import { text, type Language } from '../../i18n/text.ts';
-	let { document, label, saving, savedVersion, active = true, fontSize = 14, showLineNumbers = true, wrapLines = false, navigation = null, diagnosticNavigation = null, locale = 'zh-Hant', imageContext = null, onChange, onRejected, onVisualRejected, onProjection, onParserFailure }: { document: SourceDocument; label: string;
+	let { document, label, saving, savedVersion, active = true, fontSize = 14, showLineNumbers = true, wrapLines = false, navigation = null, diagnosticNavigation = null, locale = 'zh-Hant', imageContext = null, viewMode = 'visual', onViewModeChange, onChange, onRejected, onVisualRejected, onProjection, onParserFailure }: { document: SourceDocument; label: string;
 		imageContext?: ((writing: boolean) => Promise<ImageContext>) | null;
+		viewMode?: 'source' | 'visual'; onViewModeChange?: (mode: 'source' | 'visual') => void;
 		active?: boolean; fontSize?: number; showLineNumbers?: boolean; wrapLines?: boolean; locale?: Language;
 		navigation?: { readonly span: SourceSpan; readonly sequence: number; readonly sourceOnly?: boolean } | null;
 		diagnosticNavigation?: DiagnosticNavigationRequest | null;
@@ -65,7 +66,16 @@
 	let visualTarget: HTMLDivElement;
 	let cellToolbarTarget: HTMLDivElement;
 	let visual = $state.raw<VisualEditor | null>(null);
-	let mode = $state<'source' | 'visual'>('visual');
+	let mode = $state<'source' | 'visual'>(untrack(() => viewMode));
+	$effect(() => {
+		const next = viewMode;
+		untrack(() => { if (mode !== next) mode = next; });
+	});
+	function setMode(next: 'source' | 'visual') {
+		if (mode === next) return;
+		mode = next;
+		onViewModeChange?.(next);
+	}
 	let visualStatus = $state<'ready' | 'updating'>('updating');
 	let parserFailed = $state(false);
 	let retryParser: (() => void) | null = null;
@@ -199,6 +209,108 @@
 	let handledDiagnosticNavigation = 0;
 	let scheduledDiagnosticNavigation = 0;
 	let disposed = false;
+	interface CurrentMcpEditor {
+		readonly view: EditorView;
+		readonly projection: EditorProjection;
+		readonly source: SourceDocument;
+	}
+	function currentMcpEditor(
+		documentId: string,
+		documentVersion: number,
+		editable = false
+	): CurrentMcpEditor | null {
+		const view = editor;
+		if (!view || disposed || view !== editor) return null;
+		try {
+			const projection = view.state.field(sourceState).projection;
+			const current = projection.document;
+			if (document.documentId !== current.documentId || document.version !== current.version) return null;
+			if (current.documentId !== documentId || current.version !== documentVersion) return null;
+			if (editable && (!active || saving || tool !== null || view.state.readOnly)) return null;
+			return { view, projection, source: current };
+		} catch {
+			return null;
+		}
+	}
+	function sourceOffsetAtEditorPosition(
+		projection: EditorProjection,
+		position: number,
+		sourceLength: number
+	): number | null {
+		try {
+			const offset = projection.toSource(position);
+			return Number.isSafeInteger(offset) && offset >= 0 && offset <= sourceLength
+				? offset
+				: null;
+		} catch {
+			return null;
+		}
+	}
+	function sourceLineColumn(sourceText: string, offset: number): { readonly line: number; readonly column: number } | null {
+		if (!Number.isSafeInteger(offset) || offset < 0 || offset > sourceText.length) return null;
+		let line = 1;
+		let column = 1;
+		for (let index = 0; index < offset;) {
+			const code = sourceText.charCodeAt(index);
+			if (code === 0x0d) {
+				index += index + 1 < offset && sourceText.charCodeAt(index + 1) === 0x0a ? 2 : 1;
+				line++;
+				column = 1;
+			} else if (code === 0x0a) {
+				index++;
+				line++;
+				column = 1;
+			} else {
+				index++;
+				column++;
+			}
+		}
+		return Object.freeze({ line, column });
+	}
+	export function getEditorSelection(
+		documentId: string,
+		documentVersion: number
+	): {
+		readonly documentId: string;
+		readonly documentVersion: number;
+		readonly cursor: { readonly line: number; readonly column: number };
+		readonly selection: {
+			readonly start: { readonly line: number; readonly column: number };
+			readonly end: { readonly line: number; readonly column: number };
+		} | null;
+	} | null {
+		const current = currentMcpEditor(documentId, documentVersion);
+		if (!current) return null;
+		try {
+			const sourceText = current.source.read();
+			const selected = current.view.state.selection.main;
+			const cursorOffset = sourceOffsetAtEditorPosition(current.projection, selected.head, sourceText.length);
+			const cursor = cursorOffset === null ? null : sourceLineColumn(sourceText, cursorOffset);
+			if (!cursor) return null;
+			let selection: {
+				readonly start: { readonly line: number; readonly column: number };
+				readonly end: { readonly line: number; readonly column: number };
+			} | null = null;
+			if (!selected.empty) {
+				const anchor = sourceOffsetAtEditorPosition(current.projection, selected.anchor, sourceText.length);
+				const head = sourceOffsetAtEditorPosition(current.projection, selected.head, sourceText.length);
+				if (anchor === null || head === null) return null;
+				const start = sourceLineColumn(sourceText, Math.min(anchor, head));
+				const end = sourceLineColumn(sourceText, Math.max(anchor, head));
+				if (!start || !end) return null;
+				selection = Object.freeze({ start, end });
+			}
+			if (editor !== current.view || disposed) return null;
+			return Object.freeze({
+				documentId,
+				documentVersion,
+				cursor,
+				selection
+			});
+		} catch {
+			return null;
+		}
+	}
 	function completeDiagnosticNavigation(sequence: number) {
 		handledDiagnosticNavigation = Math.max(handledDiagnosticNavigation, sequence);
 	}
@@ -500,9 +612,9 @@
 		handledNavigation = navigation.sequence;
 		try {
 			editor.dispatch(sourceNavigationTransaction(editor.state, navigation.span));
-			if (navigation.sourceOnly) mode = 'source';
+			if (navigation.sourceOnly) setMode('source');
 			if (mode === 'source') editor.focus();
-			else if (!visual?.navigate(navigation.span)) { mode = 'source'; editor.focus(); }
+			else if (!visual?.navigate(navigation.span)) { setMode('source'); editor.focus(); }
 		} catch { toolError = 'navigation'; }
 	});
 	$effect(() => {
@@ -529,7 +641,7 @@
 				scrollIntoView: true,
 				userEvent: 'select.diagnostic'
 			}));
-			mode = 'source';
+			setMode('source');
 			toolError = null;
 			focusAfterDiagnostic(view, request);
 		} catch {
@@ -659,8 +771,8 @@
 <div class="source-view" style:--abstract-label={'"' + t('摘要', 'Abstract') + '"'}>
 	<div class="insert-bar">
 		<div class="modes" role="group" aria-label={t('編輯模式', 'Editing mode')}>
-			<button class="icon-tool" title={t('視覺化', 'Visual')} aria-label={t('視覺化', 'Visual')} aria-pressed={mode === 'visual'} onclick={() => { if (tool !== null) closeTool(); mode = 'visual'; visual?.focus(); }}><ToolbarIcon kind="visual" /></button>
-			<button class="icon-tool" title={t('原始碼', 'Source')} aria-label={t('原始碼', 'Source')} aria-pressed={mode === 'source'} onclick={() => { if (tool !== null) closeTool(); mode = 'source'; editor?.focus(); }}><ToolbarIcon kind="source" /></button>
+			<button class="icon-tool" title={t('視覺化', 'Visual')} aria-label={t('視覺化', 'Visual')} aria-pressed={mode === 'visual'} onclick={() => { if (tool !== null) closeTool(); setMode('visual'); visual?.focus(); }}><ToolbarIcon kind="visual" /></button>
+			<button class="icon-tool" title={t('原始碼', 'Source')} aria-label={t('原始碼', 'Source')} aria-pressed={mode === 'source'} onclick={() => { if (tool !== null) closeTool(); setMode('source'); editor?.focus(); }}><ToolbarIcon kind="source" /></button>
 		</div>
 		<div class="tool-group" role="group" aria-label={t('文字格式', 'Text format')}>
 			<details class="math-menu structure-menu">

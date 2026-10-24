@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorState } from '@codemirror/state';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { formatTransaction } from '../../src/features/source-editor/format.ts';
 import { createSourceState, historyTransaction, sourceState } from '../../src/features/source-editor/state.ts';
 
@@ -17,9 +17,9 @@ function selected(text: string, needle: string) {
 }
 
 test('nested strong cancellation edits only wrapper boundaries and shares exact undo, redo and repeated toggles', () => {
-	const original = '\uFEFFbefore\r\n\\textbf{L\\emph{ab\\underline{😀CDxy}zz}R}\n\\opaque{keep\\%😀}\r';
-	const expected = '\uFEFFbefore\r\n\\textbf{L\\emph{ab}}\\emph{\\underline{😀C}}\\textbf{\\emph{\\underline{Dxy}zz}R}\n\\opaque{keep\\%😀}\r';
-	let { source, state } = selected(original, '😀C');
+	const original = '\uFEFFbefore\r\n\\textbf{L\\emph{ab\\underline{\ud840\udc00CDxy}zz}R}\n\\opaque{keep\\%\ud840\udc00}\r';
+	const expected = '\uFEFFbefore\r\n\\textbf{L\\emph{ab}}\\emph{\\underline{\ud840\udc00C}}\\textbf{\\emph{\\underline{Dxy}zz}R}\n\\opaque{keep\\%\ud840\udc00}\r';
+	let { source, state } = selected(original, '\ud840\udc00C');
 	const originalSelection = state.selection;
 	const projection = state.field(sourceState).projection;
 	const span = { documentId: source.documentId, version: source.version,
@@ -27,7 +27,7 @@ test('nested strong cancellation edits only wrapper boundaries and shares exact 
 
 	state = formatTransaction(state, parseSource(source), 'strong', span).state;
 	assert.deepEqual(state.field(sourceState).projection.document.toBytes(), bytes(expected));
-	assert.equal(state.doc.sliceString(state.selection.main.from, state.selection.main.to), '😀C');
+	assert.equal(state.doc.sliceString(state.selection.main.from, state.selection.main.to), '\ud840\udc00C');
 	assert.equal(state.field(sourceState).undo.length, 1);
 	assert.equal(state.field(sourceState).dirty, true);
 
@@ -38,7 +38,7 @@ test('nested strong cancellation edits only wrapper boundaries and shares exact 
 	state = historyTransaction(state, 'redo')!.state;
 	assert.deepEqual(state.field(sourceState).projection.document.toBytes(), bytes(expected));
 
-	const reapplied = expected.replace('😀C', '\\textbf{😀C}');
+	const reapplied = expected.replace('\ud840\udc00C', '\\textbf{\ud840\udc00C}');
 	state = formatTransaction(state, parseSource(state.field(sourceState).projection.document), 'strong').state;
 	assert.deepEqual(state.field(sourceState).projection.document.toBytes(), bytes(reapplied));
 	state = formatTransaction(state, parseSource(state.field(sourceState).projection.document), 'strong').state;

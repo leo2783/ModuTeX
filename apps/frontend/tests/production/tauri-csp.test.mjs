@@ -7,19 +7,26 @@ const html=await readFile(new URL('../../index.html',import.meta.url),'utf8');
 const browserConnect="connect-src 'self' ws://127.0.0.1:5174;";
 const tauriConnect="connect-src 'self' ipc: http://ipc.localhost;";
 const tauriDevConnect="connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:5174;";
+const browserFrame="frame-src 'none'";
 test('Tauri production build permits native binary IPC without HMR',()=>{
  const [plugin]=tauriCspPlugin('tauri','build');
  const output=plugin.transformIndexHtml(html);
  assert.equal(output.replace(tauriConnect,browserConnect),html);
+ assert.ok(output.includes(browserFrame));
+ assert.equal(output.includes('frame-src http://127.0.0.1:*'),false);
  assert.equal(output.includes(tauriDevConnect),false);
  const [legacyPlugin]=tauriCspPlugin('tauri');
  assert.equal(legacyPlugin.transformIndexHtml(html),output);
  assert.throws(()=>plugin.transformIndexHtml(html.replace('connect-src','changed-src')),/TAURI_CSP_TEMPLATE_CHANGED/);
+ assert.throws(()=>plugin.transformIndexHtml(html.replace(browserFrame,'frame-src https:')),/TAURI_CSP_TEMPLATE_CHANGED/);
+ assert.throws(()=>plugin.transformIndexHtml(html.replace(browserFrame,browserFrame+'; '+browserFrame)),/TAURI_CSP_TEMPLATE_CHANGED/);
 });
 test('Tauri serve permits native binary IPC and the exact HMR websocket',()=>{
  const [plugin]=tauriCspPlugin('tauri','serve');
  const output=plugin.transformIndexHtml(html);
  assert.equal(output.replace(tauriDevConnect,browserConnect),html);
+ assert.ok(output.includes(browserFrame));
+ assert.equal(output.includes('frame-src http://127.0.0.1:*'),false);
  assert.ok(output.includes(tauriDevConnect));
 });
 test('browser dev and build modes do not install a native IPC CSP transform',()=>{

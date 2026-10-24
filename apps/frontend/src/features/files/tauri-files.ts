@@ -5,6 +5,8 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
+	parseCompileConfig,
+	parseCompileConfigUpdate,
 	parseCompileIdentity,
 	parseCompileRequest,
 	parseCompileResult,
@@ -26,6 +28,7 @@ import type {
 	FileEvent,
 	FileRef,
 	FileWatchFailure,
+	FileWatchResyncReason,
 	SaveAsRequest,
 	WriteRequest
 } from '@modutex/frontend-contracts';
@@ -42,6 +45,9 @@ type FileDesktopPort = Pick<
 	| 'saveAs'
 	| 'watchFiles'
 	| 'compile'
+	| 'takeCompileSynctex'
+	| 'getCompileConfig'
+	| 'updateCompileConfig'
 	| 'closeWorkspace'
 >;
 
@@ -71,12 +77,16 @@ const command = {
 	startCompile: 'frontend_start_compile',
 	compileResult: 'frontend_compile_result',
 	takeCompilePdf: 'frontend_take_compile_pdf',
+	takeCompileSynctex: 'frontend_take_compile_synctex',
 	cancelCompile: 'frontend_cancel_compile',
-	closeWorkspace: 'frontend_close_workspace'
+	closeWorkspace: 'frontend_close_workspace',
+	getCompileConfig: 'frontend_get_compile_config',
+	updateCompileConfig: 'frontend_update_compile_config'
 } as const;
 
 const fileEventName = 'frontend://files/event';
 const fileErrorName = 'frontend://files/error';
+const fileResyncName = 'frontend://files/resync';
 const watchFailures: ReadonlySet<string> = new Set([
 	'TREE_TOO_DEEP',
 	'TREE_TOO_LARGE',
@@ -84,6 +94,21 @@ const watchFailures: ReadonlySet<string> = new Set([
 	'LINK_NOT_ALLOWED',
 	'FILE_OPERATION_FAILED'
 ]);
+const watchResyncReasons: ReadonlySet<string> = new Set(['PERIODIC_RECONCILE_DUE']);
+
+function sameCompileIdentity(left: CompileIdentity, right: CompileIdentity): boolean {
+	return left.runId === right.runId &&
+		left.workspaceId === right.workspaceId &&
+		left.entryPath === right.entryPath &&
+		left.documentId === right.documentId &&
+		left.documentVersion === right.documentVersion &&
+		left.savedRevision === right.savedRevision;
+}
+
+function isSynctexUnavailable(value: unknown): boolean {
+	return value === 'SyncTeX artifact unavailable' ||
+		value instanceof Error && value.message === 'SyncTeX artifact unavailable';
+}
 
 function exactRecord(value: unknown, fields: readonly string[], field: string): Record<string, unknown> {
 	try {
@@ -158,6 +183,58 @@ function opaqueToken(value: unknown, field: string): string {
 	return value;
 }
 
+const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype);
+const nativeByteLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'byteLength')!.get!;
+const nativeBuffer = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'buffer')!.get!;
+const nativeByteOffset = Object.getOwnPropertyDescriptor(typedArrayPrototype, 'byteOffset')!.get!;
+const nativeTag = Object.getOwnPropertyDescriptor(typedArrayPrototype, Symbol.toStringTag)!.get!;
+const nativeArrayBufferLength = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength')!.get!;
+const nativeSet = Uint8Array.prototype.set;
+
+function toOwnedUint8Array(value: unknown, maximum: number, field: string): Uint8Array {
+	if (typeof value !== 'object' || value === null) {
+		throw new Error(`${field}: invalid binary response`);
+	}
+	let source: Uint8Array;
+	if (ArrayBuffer.isView(value)) {
+		let tag: string | undefined;
+		let length: number;
+		let buffer: ArrayBuffer;
+		let offset: number;
+		try {
+			tag = nativeTag.call(value);
+			length = nativeByteLength.call(value);
+			buffer = nativeBuffer.call(value) as ArrayBuffer;
+			nativeArrayBufferLength.call(buffer);
+			offset = nativeByteOffset.call(value);
+		} catch {
+			throw new Error(`${field}: invalid binary response`);
+		}
+		if (tag !== 'Uint8Array') {
+			throw new Error(`${field}: invalid binary response`);
+		}
+		if (length > maximum) {
+			throw new Error(`${field}: byte limit exceeded`);
+		}
+		source = new Uint8Array(buffer, offset, length);
+	} else {
+		let length: number;
+		try {
+			length = nativeArrayBufferLength.call(value);
+		} catch {
+			throw new Error(`${field}: invalid binary response`);
+		}
+		if (length > maximum) {
+			throw new Error(`${field}: byte limit exceeded`);
+		}
+		source = new Uint8Array(value as ArrayBuffer, 0, length);
+	}
+
+	const owned = new Uint8Array(source.length);
+	nativeSet.call(owned, source);
+	return owned;
+}
+
 function writeLimit(path: string): number {
 	return path.toLowerCase().endsWith('.pdf') ? MAX_PDF_BYTES : MAX_SOURCE_BYTES;
 }
@@ -214,12 +291,14 @@ export function createTauriFilesAdapter(
 		suppressFailure: boolean;
 		removeEvent: () => void;
 		removeError: () => void;
+		removeResync: () => void;
 		abort?: () => void;
 		starting: Promise<void> | null;
 		stopping: Promise<void> | null;
 	}
 
 	const watches = new Set<LocalWatch>();
+	const compileSynctexBindings = new Map<string, CompileIdentity>();
 	const disposeWatch = (watch: LocalWatch, suppressFailure = true): Promise<void> => {
 		if (suppressFailure) watch.suppressFailure = true;
 		if (watch.disposed) return watch.stopping ?? Promise.resolve();
@@ -234,6 +313,7 @@ export function createTauriFilesAdapter(
 		};
 		remove(watch.removeEvent);
 		remove(watch.removeError);
+		remove(watch.removeResync);
 		if (watch.abort) signal?.removeEventListener('abort', watch.abort);
 		const args = {
 			workspaceId: watch.workspaceId,
@@ -289,7 +369,11 @@ export function createTauriFilesAdapter(
 		});
 		if (resultIdentity.runId !== expected.runId) throw new Error('identity: result is for another run');
 		const token = opaqueToken(metadata.pdfToken, 'pdfToken');
-		const pdf = await call(command.takeCompilePdf, { token });
+		assertActive();
+		const rawPdf = await call(command.takeCompilePdf, { token });
+		assertActive();
+		const pdf = toOwnedUint8Array(rawPdf, MAX_PDF_BYTES, 'pdf');
+		assertActive();
 		return parseCompileResult(
 			{
 				status: 'success',
@@ -374,7 +458,12 @@ export function createTauriFilesAdapter(
 				file,
 				maximum
 			);
-			const bytes = await call(command.takeFilePdf, { token: opaqueToken(input.binaryToken, 'binaryToken') });
+			const token = opaqueToken(input.binaryToken, 'binaryToken');
+			assertActive();
+			const rawBytes = await call(command.takeFilePdf, { token });
+			assertActive();
+			const bytes = toOwnedUint8Array(rawBytes, maximum, 'bytes');
+			assertActive();
 			return parseReadReceipt({ ...receipt, bytes }, file, maximum);
 		},
 		async writeFile(request) {
@@ -396,7 +485,7 @@ export function createTauriFilesAdapter(
 			}
 			return result;
 		},
-		async watchFiles(workspaceId, listener, onError) {
+		async watchFiles(workspaceId, listener, onError, onResync) {
 			assertActive();
 			const identity = nextWatchIdentity();
 			const watch: LocalWatch = {
@@ -409,6 +498,7 @@ export function createTauriFilesAdapter(
 				suppressFailure: false,
 				removeEvent: () => {},
 				removeError: () => {},
+				removeResync: () => {},
 				starting: null,
 				stopping: null
 			};
@@ -459,6 +549,29 @@ export function createTauriFilesAdapter(
 				});
 				watch.removeError = removeError;
 				if (watch.disposed) removeError();
+				const removeResync = await transport.listen(fileResyncName, (value) => {
+					if (!watch.active || signal?.aborted || watch.failure) return;
+					try {
+						const message = exactRecord(
+							value,
+							['subscriptionId', 'generation', 'reason'],
+							'watch resync'
+						);
+						if (
+							message.subscriptionId !== watch.subscriptionId ||
+							message.generation !== watch.generation ||
+							typeof message.reason !== 'string' ||
+							!watchResyncReasons.has(message.reason)
+						) {
+							return;
+						}
+						onResync?.(message.reason as FileWatchResyncReason);
+					} catch {
+						// Ignore malformed, stale, or callback-failing resync notifications.
+					}
+				});
+				watch.removeResync = removeResync;
+				if (watch.disposed) removeResync();
 				assertActive();
 				if (!watch.active) throw new Error('STALE_WORKSPACE');
 				watch.startRequested = true;
@@ -506,6 +619,12 @@ export function createTauriFilesAdapter(
 				.then(
 					(result) => {
 						assertActive();
+					if (result.status === 'success') {
+						compileSynctexBindings.set(result.identity.runId, result.identity);
+						while (compileSynctexBindings.size > 128) {
+							compileSynctexBindings.delete(compileSynctexBindings.keys().next().value!);
+						}
+					}
 						return result;
 					},
 					(error: unknown) => {
@@ -533,9 +652,47 @@ export function createTauriFilesAdapter(
 			void finished.finally(() => signal?.removeEventListener('abort', cancelOnAbort)).catch(() => {});
 			return { identity, finished, async cancel() { await requestCancellation(); } };
 		},
+		async takeCompileSynctex(expected) {
+			assertActive();
+			const bound = compileSynctexBindings.get(expected.runId);
+			if (!bound) throw new Error('STALE_WORKSPACE');
+			const parsed = parseCompileIdentity(expected, {
+				workspaceId: bound.workspaceId,
+				entryPath: bound.entryPath,
+				documentId: bound.documentId,
+				documentVersion: bound.documentVersion,
+				savedRevision: bound.savedRevision
+			});
+			if (!sameCompileIdentity(parsed, bound)) throw new Error('STALE_WORKSPACE');
+
+			// The host artifact is one-shot. Reserve this local binding before awaiting IPC.
+			compileSynctexBindings.delete(bound.runId);
+			let raw: unknown;
+			try {
+				raw = await call(command.takeCompileSynctex, { runId: bound.runId });
+			} catch (error) {
+				assertActive();
+				if (isSynctexUnavailable(error)) return null;
+				throw error;
+			}
+			assertActive();
+			return toOwnedUint8Array(raw, MAX_PDF_BYTES, 'synctex');
+		},
+		async getCompileConfig(workspaceId) {
+			const result = await call(command.getCompileConfig, { workspaceId });
+			return parseCompileConfig(result, workspaceId);
+		},
+		async updateCompileConfig(request) {
+			const parsed = parseCompileConfigUpdate(request);
+			const result = await call(command.updateCompileConfig, { request: parsed });
+			return parseCompileConfig(result, parsed.workspaceId);
+		},
 		async closeWorkspace(id) {
 			await stopWorkspaceWatches(id);
 			await transport.invoke(command.closeWorkspace, { workspaceId: id });
+			for (const [runId, identity] of compileSynctexBindings) {
+				if (identity.workspaceId === id) compileSynctexBindings.delete(runId);
+			}
 		}
 	};
 }

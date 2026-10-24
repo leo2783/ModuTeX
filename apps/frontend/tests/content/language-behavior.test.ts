@@ -137,17 +137,11 @@ test('Help and Settings SSR reflect locale and preserve source licenses', { time
 				assert.equal(language.value, sample.preferences.language);
 				assert.deepEqual(Array.from(language.options, (option) => option.value), ['zh-Hant', 'en']);
 
-				const appearance = document.querySelector<HTMLSelectElement>('#appearance-value');
-				assert.equal(appearance?.value, sample.preferences.appearance);
-				const fontSize = document.querySelector<HTMLInputElement>('#source-font-size');
-				assert.equal(fontSize?.type, 'number');
-				assert.equal(fontSize?.value, String(sample.preferences.sourceFontSize));
-				const lineNumbers = document.querySelector<HTMLInputElement>('#source-line-numbers');
-				assert.equal(lineNumbers?.type, 'checkbox');
-				assert.equal(lineNumbers?.checked, sample.preferences.showLineNumbers);
-				const wrapping = document.querySelector<HTMLInputElement>('#source-wrapping');
-				assert.equal(wrapping?.checked, sample.preferences.wrapLines);
-				assert.equal(document.querySelector<HTMLSelectElement>('#compile-shortcut')?.value, sample.preferences.compileShortcut);
+				assert.equal(document.querySelector('#appearance-value'), null);
+				assert.equal(document.querySelector('#source-font-size'), null);
+				assert.equal(document.querySelector('#source-line-numbers'), null);
+				assert.equal(document.querySelector('#source-wrapping'), null);
+				assert.equal(document.querySelector('#compile-shortcut'), null);
 			});
 		}
 	} finally {

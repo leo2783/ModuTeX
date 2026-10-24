@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SourceDocument, parseSource, type SourceSpan } from '@modutex/document-core';
+import { SourceDocument, parseSource, type SourceSpan } from '../../src/features/document-core/core.ts';
 import { createSourceState, sourceState, historyTransaction } from '../../src/features/source-editor/state.ts';
 import { projectVisual } from '../../src/features/visual-editor/schema.ts';
 import { cellMoveTransaction } from '../../src/features/source-editor/cell-move.ts';

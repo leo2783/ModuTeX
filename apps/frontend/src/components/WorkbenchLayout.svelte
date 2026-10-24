@@ -30,8 +30,8 @@
 	let panesContainer: HTMLElement | null = $state(null);
 	let docTabButton: HTMLButtonElement | null = $state(null);
 	let pdfTabButton: HTMLButtonElement | null = $state(null);
-	let sidebarSlot: HTMLElement | null = null;
-	let separatorElement: HTMLElement | null = null;
+	let sidebarSlot: HTMLElement | null = $state(null);
+	let separatorElement: HTMLElement | null = $state(null);
 	let previousIsWide: boolean | null = null;
 	let pendingFocusRecovery: { readonly origin: HTMLElement } | null = null;
 	let disposed = false;

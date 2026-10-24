@@ -1,9 +1,9 @@
 <script lang="ts">
-	import installation from '../../../../docs/user/INSTALLATION.md?raw';
 	import apache from '../../../desktop-tauri/LICENSE?raw';
 	import tectonicNotice from '../../../../vendor/notices/TECTONIC-NOTICE.md?raw';
 	import tectonicLicense from '../../../../vendor/notices/TECTONIC-LICENSE.txt?raw';
 	import frontendNotices from '../../THIRD_PARTY_NOTICES.md?raw';
+	import rustNotices from '../features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md?raw';
 	import { helpTopics, type HelpTopic } from '../features/help/topics.ts';
 	import { helpText } from '../features/help/content.ts';
 	import { contentBlocks, inlineParts } from '../features/release-notes/content.ts';
@@ -16,7 +16,7 @@
 	let lastTopic: HelpTopic | null = null;
 
 	const title = $derived(t(helpTopics.find((item) => item.id === topic)?.title ?? '說明', helpTitles[topic] ?? 'Help'));
-	const document = $derived(topic === 'installation' ? installation : (locale === 'en' ? helpEnglish : helpText)[topic] ?? '');
+	const document = $derived((locale === 'en' ? helpEnglish : helpText)[topic] ?? '');
 	const loaded = $derived.by(() => { try { return { blocks: contentBlocks(document), failed: false }; } catch { return { blocks: [], failed: true }; } });
 
 	function handleTopicNavigation() {
@@ -37,7 +37,8 @@
 
 	const notices = $derived([
 		{ name: 'Tectonic 0.17.0', notice: tectonicNotice, license: tectonicLicense },
-		{ name: t('前端元件', 'Frontend components'), notice: '', license: frontendNotices }
+		{ name: t('前端元件', 'Frontend components'), notice: '', license: frontendNotices },
+		{ name: t('文件核心 Rust/WASM 相依套件', 'Document core Rust/WASM dependencies'), notice: '', license: rustNotices }
 	]);
 </script>
 {#snippet inline(text: string)}{#each inlineParts(text) as part}{#if part.kind === 'code'}<code>{part.text}</code>{:else if part.kind === 'link'}<a href={part.href}>{part.text}</a>{:else}{part.text}{/if}{/each}{/snippet}
@@ -70,7 +71,7 @@
 		{:else if loaded.failed}
 			<p role="alert">{t('無法讀取說明文件。請確認程式檔案完整。', 'Unable to read help. Check that the application files are complete.')}</p>
 		{:else}
-			<article lang={topic === 'installation' ? 'zh-Hant' : locale}>
+			<article lang={locale}>
 				{#each loaded.blocks as block}
 					{#if block.kind === 'heading'}<h2>{block.text}</h2>
 					{:else if block.kind === 'list'}<ul>{#each block.items as item}<li>{@render inline(item)}</li>{/each}</ul>

@@ -250,10 +250,11 @@ dom.window.HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
 
 // 3. Dynamically import the compiled client module
 const bundleUrl = pathToFileURL(path.join(tempDir, 'settings-client.mjs')).href;
-const { mount, unmount, flushSync, Settings, Harness } = (await import(bundleUrl)) as {
+const { mount, unmount, flushSync, tick, Settings, Harness } = (await import(bundleUrl)) as {
 	mount: (component: unknown, options: { target: HTMLElement; props: Record<string, unknown> }) => unknown;
 	unmount: (instance: unknown, options?: { outro?: boolean }) => Promise<void>;
 	flushSync: (fn?: () => void) => void;
+	tick: () => Promise<void>;
 	Settings: unknown;
 	Harness: unknown;
 };
@@ -302,50 +303,56 @@ test('section nav buttons update aria-current truthfully and shift focus to h2 h
 		assert.equal(editorBtn.getAttribute('aria-current'), null);
 		assert.equal(shortcutsBtn.getAttribute('aria-current'), null);
 		assert.equal(restoreBtn.getAttribute('aria-current'), null);
+		assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
+		assert.ok(dom.window.document.querySelector('#general-preferences'));
 
 		// Click Appearance button
 		appearanceBtn.click();
 		flushSync();
+		await tick();
 		assert.equal(appearanceBtn.getAttribute('aria-current'), 'true');
 		assert.equal(generalBtn.getAttribute('aria-current'), null);
+		assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
 		const appearanceH2 = dom.window.document.querySelector<HTMLHeadingElement>('#appearance');
 		assert.ok(appearanceH2, 'Appearance h2 heading must exist');
 		assert.equal(appearanceH2.getAttribute('tabindex'), '-1', 'Heading must have tabindex="-1"');
 		assert.equal(dom.window.document.activeElement, appearanceH2, 'Focus must move to Appearance h2 heading');
-		assert.equal(scrolledTargets.at(-1), 'appearance');
 
 		// Click Editor button
 		editorBtn.click();
 		flushSync();
+		await tick();
 		assert.equal(editorBtn.getAttribute('aria-current'), 'true');
 		assert.equal(appearanceBtn.getAttribute('aria-current'), null);
+		assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
 		const editorH2 = dom.window.document.querySelector<HTMLHeadingElement>('#editor-preferences');
 		assert.ok(editorH2, 'Editor preferences h2 heading must exist');
 		assert.equal(editorH2.getAttribute('tabindex'), '-1', 'Heading must have tabindex="-1"');
 		assert.equal(dom.window.document.activeElement, editorH2, 'Focus must move to Editor h2 heading');
-		assert.equal(scrolledTargets.at(-1), 'editor-preferences');
 
 		// Click Shortcuts button
 		shortcutsBtn.click();
 		flushSync();
+		await tick();
 		assert.equal(shortcutsBtn.getAttribute('aria-current'), 'true');
 		assert.equal(editorBtn.getAttribute('aria-current'), null);
+		assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
 		const shortcutsH2 = dom.window.document.querySelector<HTMLHeadingElement>('#shortcut-preferences');
 		assert.ok(shortcutsH2, 'Shortcuts h2 heading must exist');
 		assert.equal(shortcutsH2.getAttribute('tabindex'), '-1', 'Heading must have tabindex="-1"');
 		assert.equal(dom.window.document.activeElement, shortcutsH2, 'Focus must move to Shortcuts h2 heading');
-		assert.equal(scrolledTargets.at(-1), 'shortcut-preferences');
 
 		// Click Restore defaults button in navigation
 		restoreBtn.click();
 		flushSync();
+		await tick();
 		assert.equal(restoreBtn.getAttribute('aria-current'), 'true');
 		assert.equal(shortcutsBtn.getAttribute('aria-current'), null);
+		assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
 		const restoreH2 = dom.window.document.querySelector<HTMLHeadingElement>('#restore-preferences');
 		assert.ok(restoreH2, 'Restore defaults h2 heading must exist');
 		assert.equal(restoreH2.getAttribute('tabindex'), '-1', 'Heading must have tabindex="-1"');
 		assert.equal(dom.window.document.activeElement, restoreH2, 'Focus must move to Restore defaults h2 heading');
-		assert.equal(scrolledTargets.at(-1), 'restore-preferences');
 
 		// Clicking restore section nav button navigates to section without firing onRestore callback
 		assert.equal(restored, false, 'Navigating to restore section must not trigger onRestore callback');
@@ -388,7 +395,9 @@ test('focused section nav button activation shifts focus to h2 with tabindex -1 
 		// and verify heading focus transfer with tabindex="-1" while marking native Enter/Space pending real browser runtime.
 		shortcutsBtn.click();
 		flushSync();
+		await tick();
 
+		assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
 		const shortcutsH2 = dom.window.document.querySelector<HTMLHeadingElement>('#shortcut-preferences');
 		assert.ok(shortcutsH2);
 		assert.equal(shortcutsH2.getAttribute('tabindex'), '-1');
@@ -455,6 +464,19 @@ test('genuine Svelte runes harness updates locale and preferences without steali
 		// Assert activeElement remains on language select across locale update (no focus steal)
 		assert.equal(dom.window.document.activeElement, langSelect, 'Focus must remain on language select across locale update');
 
+		// Navigate via sidebar to editor section
+		const aside = container.querySelector('aside');
+		assert.ok(aside);
+		const editorBtn = aside.querySelectorAll('button')[2];
+		assert.ok(editorBtn);
+		editorBtn.click();
+		flushSync();
+		await tick();
+		assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
+		const editorH2 = dom.window.document.querySelector<HTMLHeadingElement>('#editor-preferences');
+		assert.ok(editorH2);
+		assert.equal(dom.window.document.activeElement, editorH2, 'Focus must move to Editor heading');
+
 		// 4. User focuses on font size input
 		const fontInput = dom.window.document.querySelector<HTMLInputElement>('#source-font-size');
 		assert.ok(fontInput);
@@ -509,12 +531,39 @@ test('setting controls trigger typed onChange callbacks and validate font size b
 	flushSync();
 
 	try {
+		const aside = container.querySelector('aside');
+		assert.ok(aside);
+		const navButtons = Array.from(aside.querySelectorAll('button'));
+		const [generalBtn, appearanceBtn, editorBtn, shortcutsBtn] = navButtons;
+		assert.ok(generalBtn);
+		assert.ok(appearanceBtn);
+		assert.ok(editorBtn);
+		assert.ok(shortcutsBtn);
+
+		// Navigate to Appearance section
+		appearanceBtn.click();
+		flushSync();
+		await tick();
+		assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
+		const appearanceH2 = dom.window.document.querySelector<HTMLHeadingElement>('#appearance');
+		assert.ok(appearanceH2);
+		assert.equal(dom.window.document.activeElement, appearanceH2, 'Focus must move to Appearance heading');
+
 		// Appearance select
 		const appearanceSelect = dom.window.document.querySelector<HTMLSelectElement>('#appearance-value');
 		assert.ok(appearanceSelect);
 		appearanceSelect.value = 'dark';
 		appearanceSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 		flushSync();
+
+		// Navigate to Editor section
+		editorBtn.click();
+		flushSync();
+		await tick();
+		assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
+		const editorH2 = dom.window.document.querySelector<HTMLHeadingElement>('#editor-preferences');
+		assert.ok(editorH2);
+		assert.equal(dom.window.document.activeElement, editorH2, 'Focus must move to Editor heading');
 
 		// Line numbers checkbox
 		const lineNumbersCheckbox = dom.window.document.querySelector<HTMLInputElement>('#source-line-numbers');
@@ -530,12 +579,28 @@ test('setting controls trigger typed onChange callbacks and validate font size b
 		wrapLinesCheckbox.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 		flushSync();
 
+		// Navigate to Shortcuts section
+		shortcutsBtn.click();
+		flushSync();
+		await tick();
+		assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
+		const shortcutsH2 = dom.window.document.querySelector<HTMLHeadingElement>('#shortcut-preferences');
+		assert.ok(shortcutsH2);
+		assert.equal(dom.window.document.activeElement, shortcutsH2, 'Focus must move to Shortcuts heading');
+
 		// Shortcuts select
 		const shortcutSelect = dom.window.document.querySelector<HTMLSelectElement>('#compile-shortcut');
 		assert.ok(shortcutSelect);
 		shortcutSelect.value = 'mod-shift-b';
 		shortcutSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 		flushSync();
+
+		// Navigate to Editor section for font size validation
+		editorBtn.click();
+		flushSync();
+		await tick();
+		assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
+		assert.equal(dom.window.document.activeElement, dom.window.document.querySelector('#editor-preferences'));
 
 		// Font size invalid bounds check
 		const fontInput = dom.window.document.querySelector<HTMLInputElement>('#source-font-size');
@@ -586,6 +651,19 @@ test('required onRestore executes truthfully and explanatory description clarifi
 	flushSync();
 
 	try {
+		const aside = container.querySelector('aside');
+		assert.ok(aside);
+		const restoreNavBtn = aside.querySelectorAll('button')[4];
+		assert.ok(restoreNavBtn);
+		restoreNavBtn.click();
+		flushSync();
+		await tick();
+
+		assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
+		const restoreH2 = dom.window.document.querySelector<HTMLHeadingElement>('#restore-preferences');
+		assert.ok(restoreH2);
+		assert.equal(dom.window.document.activeElement, restoreH2, 'Focus must move to Restore defaults heading');
+
 		const restoreSection = dom.window.document.querySelector<HTMLElement>('section[aria-labelledby="restore-preferences"]');
 		assert.ok(restoreSection, 'Restore preferences section must exist');
 

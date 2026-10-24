@@ -468,12 +468,16 @@ button.primary {
 			.visual-cell-boundary .boundary-trigger {
 				display: inline-flex;
 				opacity: 0;
-				width: 20px;
-				height: 20px;
+				width: 28px;
+				height: 28px;
+				min-width: 28px;
+				min-height: 28px;
+				flex: 0 0 28px;
+				aspect-ratio: 1;
 				border-radius: 50%;
 				padding: 0;
 				font-size: 13px;
-				line-height: 18px;
+				line-height: 1;
 				align-items: center;
 				justify-content: center;
 				background: var(--surface, #fff);
@@ -481,8 +485,36 @@ button.primary {
 				color: var(--muted, #5d6670);
 				cursor: pointer;
 			}
+			.visual-cell-boundary .boundary-trigger svg {
+				display: block;
+				width: 14px;
+				height: 14px;
+				flex: 0 0 14px;
+				pointer-events: none;
+			}
 			.visual-cell-boundary:hover .boundary-trigger, .visual-cell-boundary.open .boundary-trigger, .visual-cell-boundary:focus-within .boundary-trigger {
 				opacity: 1;
+			}
+			.visual-cell-boundary .boundary-trigger:hover:not(:disabled) {
+				background: var(--selection, #e3ebf1);
+				border-color: var(--accent, #3d617b);
+				color: var(--accent, #3d617b);
+			}
+			.visual-cell-boundary .boundary-trigger:active:not(:disabled) {
+				background: var(--accent, #3d617b);
+				border-color: var(--accent, #3d617b);
+				color: var(--surface, #fff);
+			}
+			.visual-cell-boundary .boundary-trigger:focus-visible {
+				opacity: 1;
+				outline: 2px solid var(--accent, #3d617b);
+				outline-offset: 2px;
+			}
+			.visual-cell-boundary .boundary-trigger:disabled {
+				background: var(--canvas, #f4f3ef);
+				border-color: var(--line, #cdd2d7);
+				color: var(--muted, #5d6670);
+				cursor: not-allowed;
 			}
 			.boundary-menu {
 				display: none;

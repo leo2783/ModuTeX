@@ -1,5 +1,5 @@
 // Original templates authored for the approved document-workbench specification.
-import { SourceDocument } from '@modutex/document-core';
+import { SourceDocument } from '../document-core/core.ts';
 
 export const templateOptions = Object.freeze([
 	Object.freeze({ id: 'blank', title: '空白文件', description: '最小 LaTeX 文件' }),

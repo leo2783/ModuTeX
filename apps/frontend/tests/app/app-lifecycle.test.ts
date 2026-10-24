@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
 import type { CompileIdentity, CompileRequest, FileEvent, FileRef, FileWatchFailure, SaveAsRequest, WriteRequest } from '@modutex/frontend-contracts';
-import type { FrontendFiles as FilesHost } from '../../../../electron/src/frontend-files.ts';
+
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { build, createServer, type ViteDevServer } from 'vite';
+import { build } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { savePreference } from '../../src/state/preferences.ts';
+import { NativeFilesFixture, type NativeFilesWatch } from '../helpers/native-files-fixture.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -34,6 +35,7 @@ type NativeBridge = {
 	readFile(file: FileRef): Promise<unknown>;
 	writeFile(request: WriteRequest): Promise<unknown>;
 	saveAs(request: unknown): Promise<unknown>;
+	getCompileConfig(id: string): Promise<unknown>;
 	startCompile(request: unknown): Promise<unknown>;
 	compileResult(id: string): Promise<unknown>;
 	cancelCompile(id: string): Promise<unknown>;
@@ -64,11 +66,6 @@ type FrontendWatchDependencies = {
 	readonly emit: (event: FileEvent) => void;
 	readonly onError: (failure: FileWatchFailure) => void;
 };
-type FrontendWatchInstance = {
-	start(): Promise<void>;
-	stop(): void;
-};
-type FrontendWatchConstructor = new (dependencies: FrontendWatchDependencies) => FrontendWatchInstance;
 
 const { JSDOM } = require('jsdom') as {
 	JSDOM: new (
@@ -130,10 +127,7 @@ let unmount!: ClientModule['unmount'];
 let flushSync!: ClientModule['flushSync'];
 let tick!: ClientModule['tick'];
 let App!: ClientModule['App'];
-let hostServer: ViteDevServer | null = null;
 let setupWork: Promise<void> | null = null;
-let FrontendFilesConstructor: (new () => FilesHost) | null = null;
-let FrontendWatchConstructor: FrontendWatchConstructor | null = null;
 const originalConsoleError = console.error;
 const clientRuntimeErrors: unknown[][] = [];
 
@@ -176,11 +170,6 @@ test.after(async () => {
 	try {
 		// A timed-out hook does not cancel Vite: drain it before destroying its resources.
 		if (setupWork) await setupWork.catch(() => {});
-		if (hostServer) {
-			const server = hostServer;
-			hostServer = null;
-			await server.close();
-		}
 	} finally {
 		try {
 			if (dom) {
@@ -221,6 +210,7 @@ export { mount, unmount, flushSync, tick, App };
 
 	await build({
 		configFile: false,
+		worker: { format: 'es' },
 		root: frontendRoot,
 		plugins: [svelte()],
 		resolve: {
@@ -241,21 +231,6 @@ export { mount, unmount, flushSync, tick, App };
 		},
 		logLevel: 'silent'
 	});
-
-	// Load the actual filesystem and watcher host implementations through Vite SSR.
-	hostServer = await createServer({
-		root: frontendRoot,
-		server: { middlewareMode: true, hmr: false, ws: false },
-		logLevel: 'error'
-	});
-	const filesModule = await hostServer.ssrLoadModule(
-		fileURLToPath(new URL('../../../../electron/src/frontend-files.ts', import.meta.url))
-	) as { FrontendFiles: new () => FilesHost };
-	const watchModule = await hostServer.ssrLoadModule(
-		fileURLToPath(new URL('../../../../electron/src/frontend-watch.ts', import.meta.url))
-	) as { FrontendWatch: FrontendWatchConstructor };
-	FrontendFilesConstructor = filesModule.FrontendFiles;
-	FrontendWatchConstructor = watchModule.FrontendWatch;
 
 	const jsdom = new JSDOM(
 		'<!DOCTYPE html><html lang="fr" data-theme="dark"><body><div id="app"></div></body></html>',
@@ -367,8 +342,6 @@ async function withHostWorkbench(
 	run: (workbench: HostWorkbenchDriver) => Promise<void>
 ): Promise<void> {
 	assert.ok(dom, 'DOM must be initialized');
-	assert.ok(FrontendFilesConstructor, 'The real FrontendFiles host must be loaded');
-	assert.ok(FrontendWatchConstructor, 'The real FrontendWatch host must be loaded');
 	const win = dom.window;
 	const container = win.document.getElementById('app')!;
 	const previousBridge = Object.getOwnPropertyDescriptor(win, 'modutexFiles');
@@ -376,7 +349,7 @@ async function withHostWorkbench(
 	const previousHash = win.location.hash;
 	const fixturePrefix = 'app-lifecycle-workspace-';
 	let fixtureDir: string | null = null;
-	let files: FilesHost | null = null;
+	let files: NativeFilesFixture | null = null;
 	let mounted: unknown;
 	let confirmCount = 0;
 	let readCount = 0;
@@ -389,7 +362,7 @@ async function withHostWorkbench(
 	let compilePlan: CompilePlan | null = null;
 	let readGate: ReadGate | null = null;
 	const readGates: ReadGate[] = [];
-	const activeWatches = new Map<string, FrontendWatchInstance>();
+	const activeWatches = new Map<string, NativeFilesWatch>();
 	const readyWatches = new Map<string, string>();
 	const eventListeners = new Set<(value: unknown) => void>();
 	const errorListeners = new Set<(value: unknown) => void>();
@@ -423,9 +396,7 @@ async function withHostWorkbench(
 		}
 		await fs.promises.writeFile(path.join(roots[0]!, 'invalid.pdf'), 'not a PDF', 'utf8');
 
-		const Files = FrontendFilesConstructor;
-		const Watch = FrontendWatchConstructor;
-		files = new Files();
+		files = new NativeFilesFixture();
 		let openIndex = 0;
 		const pushWatchError = (subscriptionId: string, failure: FileWatchFailure) => {
 			for (const listener of errorListeners) {
@@ -473,6 +444,7 @@ async function withHostWorkbench(
 			writeFile: async (request) => files!.write(request),
 			saveAs: async (request) =>
 				files!.saveAs(path.join(roots[1]!, 'saved-as.tex'), request as SaveAsRequest),
+			getCompileConfig: async (id) => ({ workspaceId: id, revision: 1, mainFile: null, profile: 'managed', engine: 'managed', outputDir: null, pdf: null, log: null, customCommand: null, canSetCommand: false }),
 			startCompile: async (request) => {
 				compileStartCount++;
 				const plan = compilePlan;
@@ -516,29 +488,18 @@ async function withHostWorkbench(
 				files!.close(id);
 			},
 			startWatch: async (id, subscriptionId) => {
-				const owner = files!.compileOwner();
-				const assertWorkspace = files!.saveAsOwner(id);
-				const watcher = new Watch({
-					root: owner.root,
-					workspaceId: id,
-					assertCurrent() {
-						assertWorkspace();
-						owner.assertCurrent();
-						if (activeWatches.get(subscriptionId) !== watcher) throw new Error('STALE_WORKSPACE');
-					},
-					emit(event: FileEvent) {
+				let watcher!: NativeFilesWatch;
+				watcher = files!.watch(id, (event) => {
 						if (activeWatches.get(subscriptionId) !== watcher) return;
 						emittedCount++;
 						for (const listener of eventListeners) {
 							listener({ subscriptionId, event });
 						}
-					},
-					onError(failure: FileWatchFailure) {
+					}, (failure) => {
 						if (activeWatches.get(subscriptionId) !== watcher) return;
 						activeWatches.delete(subscriptionId);
 						readyWatches.delete(subscriptionId);
 						pushWatchError(subscriptionId, failure);
-					}
 				});
 				activeWatches.set(subscriptionId, watcher);
 				try {
@@ -696,6 +657,10 @@ async function withHostWorkbench(
 			openFolder,
 			pasteIntoSource
 		});
+	} catch (error) {
+		const alert = [...container.querySelectorAll('[role="alert"]')].map(node => node.textContent?.trim()).filter(Boolean).join('; ');
+		if (alert) throw new Error(`Mounted App reported: ${alert}`, { cause: error });
+		throw error;
 	} finally {
 		const pendingCompile = compilePlan as CompilePlan | null;
 		if (pendingCompile) {
@@ -792,13 +757,17 @@ test('real client App mount/unmount restores present root attributes, updates vi
 			await tick();
 			await new Promise((r) => setTimeout(r, 20));
 			flushSync();
-			if (dom.window.document.getElementById('language-value') && dom.window.document.getElementById('source-font-size')) break;
+			if (dom.window.document.getElementById('language-value')) break;
 		}
 
 		const langSelect = dom.window.document.getElementById('language-value') as HTMLSelectElement | null;
 		assert.ok(langSelect, 'Settings language select element must be rendered');
-		const fontInput = dom.window.document.getElementById('source-font-size') as HTMLInputElement | null;
-		assert.ok(fontInput, 'Settings font size input element must be rendered');
+		async function selectSettingsSection(label: string) {
+			const button = Array.from(dom!.window.document.querySelectorAll<HTMLButtonElement>('.settings-page aside button')).find(item => item.textContent?.trim() === label);
+			assert.ok(button, `Settings category ${label} must be available`);
+			button.click();
+			await tick(); flushSync();
+		}
 
 		// Set non-default language 'en' and font size 20 via actual DOM change events
 		langSelect.value = 'en';
@@ -806,6 +775,9 @@ test('real client App mount/unmount restores present root attributes, updates vi
 		flushSync();
 		assert.equal(root.lang, 'en', 'DOM lang must update to en via select change event');
 
+		await selectSettingsSection('Editor');
+		let fontInput = dom.window.document.getElementById('source-font-size') as HTMLInputElement | null;
+		assert.ok(fontInput, 'Editor category must render its font size input');
 		fontInput.value = '20';
 		fontInput.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 		flushSync();
@@ -820,6 +792,7 @@ test('real client App mount/unmount restores present root attributes, updates vi
 		assert.equal(noticeElem.textContent, 'Settings saved', 'Notice must show exact English text for saved setting');
 
 		// 3. Fault injection on Storage prototype descriptor override for Restore defaults button
+		await selectSettingsSection('Restore defaults');
 		const restoreBtn = dom.window.document.querySelector('button.restore-button') as HTMLButtonElement | null;
 		assert.ok(restoreBtn, 'Restore defaults button must be present in settings');
 
@@ -840,7 +813,6 @@ test('real client App mount/unmount restores present root attributes, updates vi
 
 		// Actual UI settings must be preserved rather than corrupted
 		assert.equal(root.lang, 'en', 'UI language must be preserved as non-default en');
-		assert.equal(fontInput.value, '20', 'Font size must be preserved as non-default 20');
 		assert.equal(appDiv.style.getPropertyValue('--source-font-size'), '20px', 'App font size style must be preserved');
 
 		// Assert exact failure notice in current locale (en), not permissive regex
@@ -853,6 +825,10 @@ test('real client App mount/unmount restores present root attributes, updates vi
 			'Storage could not be read. Current settings were preserved.',
 			'Failure notice must match exact English failure message'
 		);
+		await selectSettingsSection('Editor');
+		fontInput = dom.window.document.getElementById('source-font-size') as HTMLInputElement | null;
+		assert.ok(fontInput);
+		assert.equal(fontInput.value, '20', 'Font size must be preserved as non-default 20');
 
 		// 4. Genuine recovery StorageEvent: reread persisted default font 14 and zh-Hant language, clear obsolete error
 		dom.window.dispatchEvent(
@@ -875,6 +851,7 @@ test('real client App mount/unmount restores present root attributes, updates vi
 		assert.equal(fontInput.value, '14', 'Font size input must recover to default 14');
 		assert.equal(appDiv.style.getPropertyValue('--source-font-size'), '14px', 'App root style must reflect recovered default 14px');
 
+		await selectSettingsSection('一般');
 		const currentLangSelect = dom.window.document.getElementById('language-value') as HTMLSelectElement | null;
 		assert.ok(currentLangSelect, 'Language select must exist in live DOM');
 		assert.equal(currentLangSelect.value, 'zh-Hant', 'Language select must reflect recovered default zh-Hant');

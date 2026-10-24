@@ -4,7 +4,7 @@ import { EditorState } from '@codemirror/state';
 import { TextSelection, NodeSelection } from 'prosemirror-state';
 import { createRequire } from 'node:module';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { formatTransaction } from '../../src/features/source-editor/format.ts';
 import { createSourceState, sourceState, historyTransaction } from '../../src/features/source-editor/state.ts';
 const bytes = (text: string) => new TextEncoder().encode(text);
@@ -21,7 +21,7 @@ function selected(text: string, needle: string, collapsed = false) {
 
 for (const [format, command] of formats) {
 	test(`${format} applies to genuine plain Unicode text and shares exact BOM/mixed-EOL undo and redo`, () => {
-		const original = '\uFEFFbefore😀\r\n雪 body\nlast\r';
+		const original = '\uFEFFbefore\ud840\udc00\r\n雪 body\nlast\r';
 		let { source, state } = selected(original, '雪 body');
 		const selection = state.selection;
 		state = formatTransaction(state, parseSource(source), format).state;
@@ -39,7 +39,7 @@ for (const [format, command] of formats) {
 		assert.deepEqual(source.toBytes(), bytes(original));
 	});
 	test(`${format} collapsed plain-text position inserts an empty wrapper and places the genuine CodeMirror cursor inside`, () => {
-		const original = '\uFEFF😀 before\r\nbody\nlast\r';
+		const original = '\uFEFF\ud840\udc00 before\r\nbody\nlast\r';
 		let { source, state } = selected(original, 'body', true);
 		const beforeCursor = state.selection.main.from;
 		state = formatTransaction(state, parseSource(source), format).state;
@@ -58,11 +58,11 @@ for (const [format, command] of formats) {
 for (const [format, command] of [['strong', 'textbf'], ['em', 'textit'], ['em', 'emph'], ['underline', 'underline']] as const) {
 	for (const selection of ['wrapper', 'content'] as const) {
 		test(`${format} cancels the complete known ${command} ${selection} without touching neighboring bytes`, () => {
-			const wrapper = '\\' + command + '{雪😀}';
+			const wrapper = '\\' + command + '{雪\ud840\udc00}';
 			const original = '\uFEFFbefore\r\n' + wrapper + '\nlast\r';
-			let { source, state } = selected(original, selection === 'wrapper' ? wrapper : '雪😀');
+			let { source, state } = selected(original, selection === 'wrapper' ? wrapper : '雪\ud840\udc00');
 			state = formatTransaction(state, parseSource(source), format).state;
-			assert.deepEqual(state.field(sourceState).projection.document.toBytes(), bytes(original.replace(wrapper, '雪😀')));
+			assert.deepEqual(state.field(sourceState).projection.document.toBytes(), bytes(original.replace(wrapper, '雪\ud840\udc00')));
 			assert.equal(state.field(sourceState).undo.length, 1);
 			state = historyTransaction(state, 'undo')!.state;
 			assert.deepEqual(state.field(sourceState).projection.document.toBytes(), bytes(original));
@@ -100,7 +100,7 @@ test('format commands reject old/foreign parser identities and genuine read-only
 
 test('boundary-only format apply and cancel preserve genuine mixed EOL inside the selected text', () => {
 	for (const [format, command] of formats) {
-		const body = '雪\r\n😀\nlast\r';
+		const body = '雪\r\n\ud840\udc00\nlast\r';
 		const original = '\uFEFFprefix ' + body + ' suffix';
 		let { source, state } = selected(original, body.replace(/\r\n|\r/g, '\n'));
 		state = formatTransaction(state, parseSource(source), format).state;

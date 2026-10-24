@@ -273,7 +273,13 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.waitForFunction(index => Number(document.querySelector('.visual-table')?.dataset.cellIndex) === index, indexBefore);
 			await table.getByRole('button', { name: '編輯表格', exact: true }).click();
 			const resizeHandle = page.locator('.column-boundary').first();
-			assert.equal(await resizeHandle.locator('span').evaluate(element => getComputedStyle(element, '::before').content), '"↔"');
+			assert.equal(await resizeHandle.locator('svg').count(), 1);
+			const leftBefore = await resizeHandle.evaluate(element => parseFloat(element.style.left));
+			await resizeHandle.focus();
+			await page.keyboard.press('ArrowRight');
+			assert((await resizeHandle.evaluate(element => parseFloat(element.style.left))) > leftBefore);
+			await page.keyboard.press('ArrowLeft');
+			assert(Math.abs((await resizeHandle.evaluate(element => parseFloat(element.style.left))) - leftBefore) < 0.001);
 			await page.screenshot({ path: screenshotRoot + 'notebook-column-handles-dark.png' });
 			await page.locator('.table-panel td input').first().fill('Discard this draft');
 			await page.locator('.table-panel').getByRole('button', { name: '取消', exact: true }).click();

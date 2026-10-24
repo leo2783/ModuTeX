@@ -1,7 +1,7 @@
 import { Fragment, Schema, type Node as VisualNode, type Mark } from 'prosemirror-model';
 import type { Transaction } from 'prosemirror-state';
 import { parseTable } from '../tables/source.ts';
-import { mapPosition, parseSource, projectionIsCurrent, type SourceDocument, type SourceProjection, type SyntaxNode, type SourcePatch, type SourceChange } from '@modutex/document-core';
+import { mapPosition, parseSource, projectionIsCurrent, type SourceDocument, type SourceProjection, type SyntaxNode, type SourcePatch, type SourceChange } from '../document-core/core.ts';
 
 const anchors = { from: {}, to: {}, editFrom: {}, editTo: {}, role: { default: 'paragraph' }, name: { default: '' }, level: { default: 2 } };
 const visualFormatMarks: Record<string, string> = { textbf: 'strong', textit: 'em', emph: 'em', underline: 'underline' };

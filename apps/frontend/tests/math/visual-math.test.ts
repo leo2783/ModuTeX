@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { EditorState as VisualState } from 'prosemirror-state';
-import { SourceDocument, parseSource, type SourceSpan } from '@modutex/document-core';
+import { SourceDocument, parseSource, type SourceSpan } from '../../src/features/document-core/core.ts';
 import { visualSchema, projectVisual, visualPatches, advanceVisual } from '../../src/features/visual-editor/schema.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { createSourceState, sourceState, sourcePatchTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
@@ -18,7 +18,7 @@ function mathNodes(document: ReturnType<typeof projectVisual>['document']) {
 for (const [opening, closing, inline] of [['$', '$', true], ['$$', '$$', false], ['\\(', '\\)', true], ['\\[', '\\]', false]] as const) {
 	test(`genuine parser projects ${opening} math as a source-backed atom without changing BOM/mixed EOL bytes`, () => {
 		const latex = '\\frac{1}{2}+\\alpha';
-		const text = '\uFEFFBefore😀\r\n' + opening + latex + closing + '\n\\opaque{keep}\r';
+		const text = '\uFEFFBefore\ud840\udc00\r\n' + opening + latex + closing + '\n\\opaque{keep}\r';
 		const source = SourceDocument.open(bytes(text));
 		const projection = projectVisual(source, parseSource(source));
 		const math = mathNodes(projection.document).map(({ node }) => node);
@@ -54,7 +54,7 @@ test('unsupported equation environments stay Raw and ordinary ProseMirror transa
 test('closed math permits exactly 65536 UTF-16 units and leaves oversized content Raw without altering bytes', () => {
 	for (const length of [65536, 65537]) {
 		// Two UTF-16 units per astral scalar: this boundary is not a UTF-8 byte budget.
-		const latex = '😀'.repeat(32768) + (length === 65537 ? 'x' : '');
+		const latex = '\ud840\udc00'.repeat(32768) + (length === 65537 ? 'x' : '');
 		assert.equal(latex.length, length);
 		const original = bytes('\uFEFF% keep\r\n$' + latex + '$\n');
 		const source = SourceDocument.open(original);

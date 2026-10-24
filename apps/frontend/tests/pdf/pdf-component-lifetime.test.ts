@@ -210,6 +210,7 @@ export function observePdfLoadingTasks(prototype, listener) {
 
 await build({
 	configFile: false,
+	worker: { format: 'es' },
 	root: frontendRoot,
 	plugins: [svelte()],
 	resolve: {

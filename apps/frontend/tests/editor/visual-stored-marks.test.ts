@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { TextSelection } from 'prosemirror-state';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { projectVisual } from '../../src/features/visual-editor/schema.ts';
 import { createSourceState, historyTransaction, sourcePatchTransaction, sourceState } from '../../src/features/source-editor/state.ts';
@@ -146,10 +146,10 @@ test('collapsed marks type incrementally, preserve parser receipts, and share so
 		h.visual.sync(parseSource(h.source()));
 		assert.strictEqual(h.visual.view.state, firstReceiptState);
 
-		h.visual.view.dispatch(h.visual.view.state.tr.insertText('😀%&_'));
-		const afterSecond = originalText.replace('startend', 'start\\textbf{A😀\\%\\&\\_}end');
+		h.visual.view.dispatch(h.visual.view.state.tr.insertText('\ud840\udc00%&_'));
+		const afterSecond = originalText.replace('startend', 'start\\textbf{A\ud840\udc00\\%\\&\\_}end');
 		assert.deepEqual(h.source().toBytes(), bytes(afterSecond));
-		assertTextMarks(h.visual, 'A😀%&_', ['strong']);
+		assertTextMarks(h.visual, 'A\ud840\udc00%&_', ['strong']);
 		const secondReceiptState = h.visual.view.state;
 		h.visual.sync(parseSource(h.source()));
 		assert.strictEqual(h.visual.view.state, secondReceiptState);
@@ -157,7 +157,7 @@ test('collapsed marks type incrementally, preserve parser receipts, and share so
 		assert.equal(h.visual.toggleFormat('strong'), true);
 		assert.deepEqual(marksAtCaret(h.visual), []);
 		h.visual.view.dispatch(h.visual.view.state.tr.insertText('B'));
-		const expected = originalText.replace('startend', 'start\\textbf{A😀\\%\\&\\_}Bend');
+		const expected = originalText.replace('startend', 'start\\textbf{A\ud840\udc00\\%\\&\\_}Bend');
 		assert.deepEqual(h.source().toBytes(), bytes(expected));
 		assertTextMarks(h.visual, 'B', []);
 		assert.equal(h.state().field(sourceState).dirty, true);
@@ -238,24 +238,24 @@ test('collapsed marks split at heading boundaries and escape astral text without
 	try {
 		selectCaret(h.visual, 'head', 0);
 		assert.equal(h.visual.toggleFormat('strong'), true);
-		h.visual.view.dispatch(h.visual.view.state.tr.insertText('😀%_'));
-		const first = '\uFEFF\\section{\\textbf{😀\\%\\_}head}\r\n\\textbf{edge}\r';
+		h.visual.view.dispatch(h.visual.view.state.tr.insertText('\ud840\udc00%_'));
+		const first = '\uFEFF\\section{\\textbf{\ud840\udc00\\%\\_}head}\r\n\\textbf{edge}\r';
 		assert.deepEqual(h.source().toBytes(), bytes(first));
-		assertTextMarks(h.visual, '😀%_', ['strong']);
+		assertTextMarks(h.visual, '\ud840\udc00%_', ['strong']);
 		const typedState = h.visual.view.state;
 		h.visual.sync(parseSource(h.source()));
 		assert.strictEqual(h.visual.view.state, typedState);
 
 		assert.equal(h.visual.toggleFormat('strong'), true);
 		h.visual.view.dispatch(h.visual.view.state.tr.insertText('!'));
-		const second = '\uFEFF\\section{\\textbf{😀\\%\\_}!head}\r\n\\textbf{edge}\r';
+		const second = '\uFEFF\\section{\\textbf{\ud840\udc00\\%\\_}!head}\r\n\\textbf{edge}\r';
 		assert.deepEqual(h.source().toBytes(), bytes(second));
 		assertTextMarks(h.visual, '!', []);
 
 		selectCaret(h.visual, 'head', 4);
 		assert.equal(h.visual.toggleFormat('em'), true);
 		h.visual.view.dispatch(h.visual.view.state.tr.insertText('?'));
-		const expected = '\uFEFF\\section{\\textbf{😀\\%\\_}!head\\textit{?}}\r\n\\textbf{edge}\r';
+		const expected = '\uFEFF\\section{\\textbf{\ud840\udc00\\%\\_}!head\\textit{?}}\r\n\\textbf{edge}\r';
 		assert.deepEqual(h.source().toBytes(), bytes(expected));
 		assertTextMarks(h.visual, '?', ['em']);
 		assert.ok(h.target.querySelector('h2 strong'));

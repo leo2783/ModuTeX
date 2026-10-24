@@ -1,8 +1,15 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import type { Preferences } from '../state/preferences.ts';
 	import { text } from '../i18n/text.ts';
 
-	let { preferences, notice, locale, onChange, onRestore }: {
+	let {
+		preferences,
+		notice,
+		locale,
+		onChange,
+		onRestore
+	}: {
 		preferences: Preferences;
 		notice: string;
 		locale?: import('../i18n/text.ts').Language;
@@ -10,7 +17,8 @@
 		onRestore: () => void;
 	} = $props();
 
-	let activeSection = $state('general-preferences');
+	type SettingsSection = 'general-preferences' | 'appearance' | 'editor-preferences' | 'shortcut-preferences' | 'restore-preferences';
+	let activeSection = $state<SettingsSection>('general-preferences');
 
 	const t = (zh: string, en: string) => text(locale ?? preferences.language, zh, en);
 
@@ -95,11 +103,11 @@
 		fontErrorKey = null;
 	}
 
-	function navigateToSection(id: string) {
+	async function navigateToSection(id: SettingsSection) {
 		activeSection = id;
+		await tick();
 		const target = document.getElementById(id);
 		if (target) {
-			target.scrollIntoView?.({ block: 'start' });
 			target.focus();
 		}
 	}
@@ -143,6 +151,10 @@
 			<h1 id="settings-heading" tabindex="-1">{t('設定', 'Settings')}</h1>
 			<a href="#/workbench">{t('返回工作台', 'Back to workbench')}</a>
 		</header>
+		{#if notice}
+			<p class="settings-notice" role="status">{notice}</p>
+		{/if}
+		{#if activeSection === 'general-preferences'}
 		<section aria-labelledby="general-preferences">
 			<h2 id="general-preferences" tabindex="-1">{t('一般', 'General')}</h2>
 			<div class="setting-row">
@@ -157,6 +169,7 @@
 				</select>
 			</div>
 		</section>
+		{:else if activeSection === 'appearance'}
 		<section aria-labelledby="appearance">
 			<h2 id="appearance" tabindex="-1">{t('外觀', 'Appearance')}</h2>
 			<div class="setting-row">
@@ -172,6 +185,7 @@
 				</select>
 			</div>
 		</section>
+		{:else if activeSection === 'editor-preferences'}
 		<section aria-labelledby="editor-preferences">
 			<h2 id="editor-preferences" tabindex="-1">{t('原始碼編輯器', 'Source editor')}</h2>
 			<div class="setting-row">
@@ -216,9 +230,7 @@
 				/>
 			</div>
 		</section>
-		{#if notice}
-			<p class="settings-notice" role="status">{notice}</p>
-		{/if}
+		{:else if activeSection === 'shortcut-preferences'}
 		<section aria-labelledby="shortcut-preferences">
 			<h2 id="shortcut-preferences" tabindex="-1">{t('快捷鍵', 'Shortcuts')}</h2>
 			<div class="setting-row">
@@ -233,15 +245,17 @@
 					<option value="none">{t('不使用快捷鍵', 'Disabled')}</option>
 				</select>
 			</div>
-			<p class="settings-notice">{t('Ctrl／Command + O 開啟文件；Ctrl／Command + S 儲存。編譯快捷鍵僅在工作台使用。', 'Ctrl / Command + O opens a document; Ctrl / Command + S saves. The compile shortcut is available in the workbench.')}</p>
+			<p class="settings-notice">{t('Ctrl／Command + O 開啟文件；Ctrl／Command + S 儲存。', 'Ctrl / Command + O opens a document; Ctrl / Command + S saves.')}</p>
 		</section>
+		{:else if activeSection === 'restore-preferences'}
 		<section aria-labelledby="restore-preferences">
 			<h2 id="restore-preferences" tabindex="-1">{t('恢復預設值', 'Restore defaults')}</h2>
-			<div class="setting-row">
+			<div class="setting-row restore-row">
 				<span>{t('將支援的前端介面設定（語言、色彩模式、編輯器與快捷鍵）恢復為預設值。不會變更文件內容、編譯引擎或快取。', 'Restore supported frontend preferences (language, color mode, editor, shortcuts) to defaults. Document content, compile engine, and cache are not affected.')}</span>
 				<button type="button" class="restore-button" onclick={restoreSettings}>{t('恢復預設值', 'Restore defaults')}</button>
 			</div>
 		</section>
+		{/if}
 	</div>
 </main>
 
@@ -272,6 +286,9 @@
 		overflow-wrap: break-word;
 		word-break: break-word;
 	}
+	aside button:hover {
+		background: var(--selection);
+	}
 	aside button[aria-current='true'] {
 		background: var(--selection);
 		color: var(--accent);
@@ -279,7 +296,7 @@
 	}
 	.settings-content {
 		overflow: auto;
-		padding: 32px clamp(16px, 5vw, 80px);
+		padding: 32px clamp(16px, 4vw, 48px);
 		min-width: 0;
 	}
 	header {
@@ -288,7 +305,7 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 16px;
-		max-width: 900px;
+		max-width: 760px;
 		min-width: 0;
 	}
 	h1 {
@@ -303,8 +320,8 @@
 		text-underline-offset: 3px;
 	}
 	section {
-		max-width: 900px;
-		margin: 32px 0;
+		max-width: 760px;
+		margin: 28px 0;
 		min-width: 0;
 	}
 	h2 {
@@ -322,17 +339,30 @@
 	}
 	.setting-row {
 		display: grid;
-		grid-template-columns: minmax(120px, 1fr) minmax(160px, 280px);
+		grid-template-columns: 200px minmax(180px, 280px);
+		justify-content: start;
 		align-items: center;
 		gap: 16px;
-		padding: 12px 0;
+		min-height: 40px;
+		padding: 8px 0;
 		min-width: 0;
+	}
+	.setting-row.restore-row {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 16px;
 	}
 	.setting-row label,
 	.setting-row span {
 		min-width: 0;
 		overflow-wrap: break-word;
 		word-break: break-word;
+	}
+	.restore-row span {
+		max-width: 65ch;
+		color: var(--muted);
+		line-height: 1.6;
 	}
 	input, select {
 		color: var(--ink);
@@ -385,6 +415,7 @@
 		line-height: 1.6;
 		min-width: 0;
 		overflow-wrap: break-word;
+		margin: 16px 0;
 	}
 	@media (max-width: 620px) {
 		.settings-page {

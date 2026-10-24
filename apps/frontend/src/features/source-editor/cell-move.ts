@@ -1,5 +1,5 @@
 import type { EditorState } from '@codemirror/state';
-import { parseSource, type SourceSpan } from '@modutex/document-core';
+import { parseSource, type SourceSpan } from '../document-core/core.ts';
 import { projectVisual } from '../visual-editor/schema.ts';
 import { sourceState, sourcePatchTransaction } from './state.ts';
 

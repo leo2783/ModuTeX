@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { TextSelection, NodeSelection, AllSelection } from 'prosemirror-state';
-import { SourceDocument, parseSource, type SourceSpan } from '@modutex/document-core';
+import { SourceDocument, parseSource, type SourceSpan } from '../../src/features/document-core/core.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { createSourceState, sourceState, visualInsertionTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
 import { equationSource, matrixSource } from '../../src/features/math/source.ts';
@@ -32,7 +32,7 @@ function textPosition(view: VisualEditor, needle: string) {
 
 test('real visual text selection maps Unicode/escaped mixed-EOL source and does not use hidden CM selection', () => {
 	const fixture = domFixture();
-	const text = '\uFEFFleft😀\r\n雪\\%right\nlast\r', original = SourceDocument.open(bytes(text));
+	const text = '\uFEFFleft\ud840\udc00\r\n雪\\%right\nlast\r', original = SourceDocument.open(bytes(text));
 	let editor = createSourceState(original);
 	editor = editor.update({ selection: { anchor: editor.doc.length } }).state;
 	const view = new VisualEditor(fixture.target, 'insert.tex', { source: () => editor.field(sourceState).projection.document,

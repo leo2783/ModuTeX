@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorState as VisualState } from 'prosemirror-state';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { createSourceState, sourceState, historyTransaction, sourcePatchTransaction } from '../../src/features/source-editor/state.ts';
 import { colorTransaction, formatTransaction } from '../../src/features/source-editor/format.ts';
 import { projectVisual, prepareVisualEdit } from '../../src/features/visual-editor/schema.ts';

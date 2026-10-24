@@ -1,6 +1,6 @@
 import type { HelpTopic } from '../features/help/topics.ts';
 export const helpTitles: Readonly<Record<HelpTopic, string>> = Object.freeze({
-	'getting-started': 'Getting started', editing: 'Editing documents', 'tables-math': 'Tables and equations', compilation: 'PDF compilation', shortcuts: 'Shortcuts', installation: 'Installation guide', licenses: 'License scope', apache: 'Apache full text', notices: 'Third-party notices'
+	'getting-started': 'Getting started', editing: 'Editing documents', 'tables-math': 'Tables and equations', compilation: 'PDF compilation', shortcuts: 'Shortcuts', licenses: 'License scope', apache: 'Apache full text', notices: 'Third-party notices'
 });
 export const helpEnglish: Readonly<Partial<Record<HelpTopic, string>>> = Object.freeze({
 	'getting-started': '## Open a document\nChoose Open document to select a UTF-8 TeX file. The desktop app can also open a folder; select its files in the sidebar.\n## Save and preview\nThe desktop app saves documents and compiles PDFs. A browser file picker does not grant permission to write back to disk.\nSave changes you want to keep before opening another document. Unsaved changes require confirmation before switching.',

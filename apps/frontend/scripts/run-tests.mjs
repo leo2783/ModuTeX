@@ -1,6 +1,6 @@
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 
 const EXCLUDED_DIRS = new Set(['helpers', 'performance', 'production']);
@@ -54,6 +54,7 @@ async function runCli() {
   }
 
   const args = ['--max-old-space-size=512', '--test', '--test-concurrency=1', ...testFiles];
+  args.splice(1, 0, '--import', pathToFileURL(path.join(frontendWorkspace, 'tests', 'helpers', 'document-core-wasm.mjs')).href);
   // This is an independent test invocation, not a worker of an enclosing suite.
   // Inheriting Node's internal context silently skips the discovered files.
   const env = { ...process.env };

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Worker } from 'node:worker_threads';
 import { once } from 'node:events';
-import { SourceDocument, parseSource, type SourceProjection } from '@modutex/document-core';
+import { SourceDocument, parseSource, type SourceProjection } from '../../src/features/document-core/core.ts';
 import { ParserClient, type ParserTransport } from '../../src/features/parser/client.ts';
 import type { ParserReply, ParserRequest } from '../../src/features/parser/engine.ts';
 const createWorker = () => new Worker(new URL('.././helpers/parser-worker.ts', import.meta.url));

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { EditorState as VisualState, TextSelection } from 'prosemirror-state';
-import { SourceDocument, parseSource, type SourceSpan } from '@modutex/document-core';
+import { SourceDocument, parseSource, type SourceSpan } from '../../src/features/document-core/core.ts';
 import { projectVisual, visualPatches, advanceVisual, escapeVisualText } from '../../src/features/visual-editor/schema.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { createSourceState, sourceState, sourcePatchTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
@@ -55,7 +55,7 @@ test('consecutive real PM text edits around two atoms preserve local bytes, esca
 	const text = '\uFEFF%keep\r\nStart $x^2$ middle \\(y^2\\) end\r\n\\opaque{raw}\n';
 	const original = SourceDocument.open(bytes(text));
 	let editor = createSourceState(original), source = original, projection = projectVisual(source, parseSource(source)), expected = text;
-	for (const [needle, replacement] of [['Start', 'Begin%😀'], ['middle', 'mid&雪'], ['end', 'finish$']] as const) {
+	for (const [needle, replacement] of [['Start', 'Begin%\ud840\udc00'], ['middle', 'mid&雪'], ['end', 'finish$']] as const) {
 		const position = textPosition(projection.document, needle);
 		const transaction = VisualState.create({ doc: projection.document }).tr.insertText(replacement, position, position + needle.length);
 		const patches = visualPatches(source, projection, transaction);

@@ -242,6 +242,35 @@ test('watch generation and abort discard late events and serialize stop after st
 	assert.equal(wire.calls.at(-1).name, 'frontend_close_workspace');
 });
 
+test('periodic resync stays separate from failures and rejects stale or disposed subscriptions', async () => {
+	const controller = new AbortController();
+	const wire = transport(() => null);
+	const files = createTauriFilesAdapter(controller.signal, wire);
+	const resyncs = [], failures = [], events = [];
+	const stop = await files.watchFiles('ws-1', event => events.push(event), failure => failures.push(failure), reason => resyncs.push(reason));
+	const start = wire.calls.find(call => call.name === 'frontend_watch_start').args;
+	const message = { subscriptionId: start.subscriptionId, generation: start.generation, reason: 'PERIODIC_RECONCILE_DUE' };
+	wire.emit('frontend://files/resync', message);
+	assert.deepEqual(resyncs, ['PERIODIC_RECONCILE_DUE']);
+	assert.deepEqual(failures, []);
+	assert.deepEqual(events, []);
+	for (const invalid of [
+		{ ...message, subscriptionId: 'foreign' },
+		{ ...message, generation: start.generation + 1 },
+		{ ...message, reason: 'UNKNOWN' },
+		{ ...message, extra: true }
+	]) wire.emit('frontend://files/resync', invalid);
+	assert.equal(resyncs.length, 1);
+	const late = wire.registrations.find(item => item.name === 'frontend://files/resync').listener;
+	stop();
+	late(message);
+	assert.equal(resyncs.length, 1);
+	controller.abort();
+	await files.closeWorkspace('ws-1');
+	late(message);
+	assert.equal(resyncs.length, 1);
+});
+
 test('compile cancellation is idempotent and preserves the cancelled result identity', async () => {
 	let finishResult;
 	const pendingResult = new Promise((resolve) => {

@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { foldable, foldEffect, foldedRanges, unfoldEffect, foldCode, unfoldAll } from '@codemirror/language';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { createSourceState, sourceState, historyTransaction } from '../../src/features/source-editor/state.ts';
 import { foldProjection, foldIndex, sourceFolding } from '../../src/features/source-editor/folding.ts';
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
@@ -25,7 +25,7 @@ test('real folding service respects heading hierarchy and matched environment de
 	assert.deepEqual(state.field(sourceState).projection.document.toBytes(), original.toBytes());
 });
 test('comments, literal bodies, unmatched syntax and surrogate prefixes cannot invent fold ranges', () => {
-	const original = source('% \\section{Comment}\n\\begin{verbatim}\n\\section{Literal}\n\\end{verbatim}\n\\x{ab😀}\n\\begin{broken}\nvalue');
+	const original = source('% \\section{Comment}\n\\begin{verbatim}\n\\section{Literal}\n\\end{verbatim}\n\\x{ab\ud840\udc00}\n\\begin{broken}\nvalue');
 	const state = publish(createSourceState(original, undefined, sourceFolding()));
 	assert.equal(rangeAt(state, '% \\section'), null);
 	assert.equal(rangeAt(state, '\\section{Literal}'), null);

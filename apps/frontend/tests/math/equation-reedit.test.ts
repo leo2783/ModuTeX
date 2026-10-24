@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { equationAt, equationSource, equationReplacement } from '../../src/features/math/source.ts';
 import { equationEditTransaction } from '../../src/features/math/editor.ts';
 import { createSourceState, sourceState, rangeInsertionTarget, insertionTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
@@ -9,7 +9,7 @@ const bytes = (text: string) => new TextEncoder().encode(text);
 for (const [opening, closing, inline] of [['$', '$', true], ['$$', '$$', false], ['\\(', '\\)', true], ['\\[', '\\]', false]] as const) {
 	test(`closed ${opening} equation lookup uses genuine parser spans without changing source bytes`, () => {
 		const body = '\\frac{1}{2}+雪^2';
-		const text = '\uFEFF😀 prefix\r\n' + opening + body + closing + '\n\\opaque{untouched}\r';
+		const text = '\uFEFF\ud840\udc00 prefix\r\n' + opening + body + closing + '\n\\opaque{untouched}\r';
 		const source = SourceDocument.open(bytes(text)), parsed = parseSource(source);
 		const from = source.read().indexOf(opening);
 		for (const position of [from, from + opening.length + 2, from + opening.length + body.length]) {
@@ -68,7 +68,7 @@ test('old and foreign parser identities cannot grant equation editing authority'
 
 test('unchanged equation replacement preserves all original delimiters, whitespace and mixed EOL bytes', () => {
 	for (const [open, close] of [['$', '$'], ['$$', '$$'], ['\\(', '\\)'], ['\\[', '\\]']]) {
-		const text = '\uFEFF😀 prefix\r\n' + open + ' \r\nx^2% keep\n +雪\r ' + close + '\nend\r';
+		const text = '\uFEFF\ud840\udc00 prefix\r\n' + open + ' \r\nx^2% keep\n +雪\r ' + close + '\nend\r';
 		const source = SourceDocument.open(bytes(text));
 		const located = equationAt(source, parseSource(source), source.read().indexOf('x^2'));
 		assert.ok(located);
@@ -103,7 +103,7 @@ test('equation replacement rejects stale, foreign and malformed span authority',
 
 for (const originalEquation of ['$x^2$', '$$x^2$$', '\\(x^2\\)', '\\[x^2\\]']) {
 	test(`${originalEquation} local re-edit uses real CodeMirror history and restores BOM/mixed EOL bytes`, () => {
-		const original = bytes('\uFEFF😀% keep\r\n' + originalEquation + '\r\n\\opaque{雪}\nlast\r');
+		const original = bytes('\uFEFF\ud840\udc00% keep\r\n' + originalEquation + '\r\n\\opaque{雪}\nlast\r');
 		const initial = SourceDocument.open(original);
 		let state = createSourceState(initial);
 		const found = equationAt(initial, parseSource(initial), initial.read().indexOf('x'));
@@ -114,7 +114,7 @@ for (const originalEquation of ['$x^2$', '$$x^2$$', '\\(x^2\\)', '\\[x^2\\]']) {
 		assert.equal(changed.documentId, initial.documentId);
 		assert.equal(state.field(sourceState).undo.length, 1);
 		assert.equal(state.field(sourceState).dirty, true);
-		assert.match(changed.read(), /^😀% keep\r\n/);
+		assert.match(changed.read(), /^\ud840\udc00% keep\r\n/);
 		assert.match(changed.read(), /\r\n\\opaque\{雪\}\nlast\r$/);
 		assert.throws(() => insertionTransaction(state, target, 'stale'), /STALE_INSERTION/);
 		assert.throws(() => rangeInsertionTarget(state, found.span), /STALE_INSERTION/);
@@ -139,7 +139,7 @@ for (const originalEquation of ['$x^2$', '$$x^2$$', '\\(x^2\\)', '\\[x^2\\]']) {
 }
 
 test('unchanged genuine mixed-EOL equation edit is a no-op without dirty state or history', () => {
-	const original = bytes('\uFEFF😀 prefix\r\n\\[ \r\nx^2% keep\n +雪\r \\]\r\n\\opaque{untouched}\nlast\r');
+	const original = bytes('\uFEFF\ud840\udc00 prefix\r\n\\[ \r\nx^2% keep\n +雪\r \\]\r\n\\opaque{untouched}\nlast\r');
 	const source = SourceDocument.open(original), state = createSourceState(source);
 	const located = equationAt(source, parseSource(source), source.read().indexOf('x^2'));
 	assert.ok(located);
@@ -153,7 +153,7 @@ test('unchanged genuine mixed-EOL equation edit is a no-op without dirty state o
 });
 
 test('real equation edit helper accepts CRLF inner source, preserves surrounding bytes and undoes exactly', () => {
-	const prefix = '\uFEFF😀% keep\r\n';
+	const prefix = '\uFEFF\ud840\udc00% keep\r\n';
 	const suffix = '\r\n\\opaque{雪}\nlast\r';
 	const original = bytes(prefix + '\\[\r\nx^2\r\n\\]' + suffix);
 	const source = SourceDocument.open(original);

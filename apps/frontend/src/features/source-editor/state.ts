@@ -1,5 +1,5 @@
 import { Annotation, ChangeSet, EditorSelection, EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
-import { EditorProjection, SourceDocument, type EditorPatch, type SourcePatch, type SourceSpan } from '@modutex/document-core';
+import { EditorProjection, SourceDocument, type EditorPatch, type SourcePatch, type SourceSpan } from '../document-core/core.ts';
 import { sourceLimit } from '../files/read.ts';
 
 interface HistoryEntry {

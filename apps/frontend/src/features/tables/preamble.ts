@@ -1,4 +1,4 @@
-import { parseSource, projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan } from '@modutex/document-core';
+import { parseSource, projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan } from '../document-core/core.ts';
 import type { EditorState } from '@codemirror/state';
 import type { Transaction } from '@codemirror/state';
 import { insertionTransaction, rangeInsertionTarget, sourceState, visualInsertionTransaction, type InsertionTarget } from '../source-editor/state.ts';

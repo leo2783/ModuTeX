@@ -63,8 +63,9 @@ test('production startup defers the actual editor and retains its emitted assets
 		releaseNotes.file, ...(releaseNotes.css ?? [])
 	];
 	for (const file of pending) assert.ok((await stat(new URL(file, dist))).size > 0, `Missing/empty emitted asset: ${file}`);
-	assert.match(await readFile(new URL(help.file, dist), 'utf8'), /GNU AFFERO GENERAL PUBLIC LICENSE/);
-	for (const file of initial) assert.doesNotMatch(await readFile(new URL(file, dist), 'utf8'), /GNU AFFERO GENERAL PUBLIC LICENSE/);
+	const licenseHeading = 'TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION';
+	assert.ok((await readFile(new URL(help.file, dist), 'utf8')).includes(licenseHeading));
+	for (const file of initial) assert.equal((await readFile(new URL(file, dist), 'utf8')).includes(licenseHeading), false);
 });
 
 test('real MathLive and its font assets are deferred and shipped locally', async () => {

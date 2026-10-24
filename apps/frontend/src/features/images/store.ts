@@ -1,6 +1,6 @@
 import { imageType, validateImageFile, IMAGE_BYTES_LIMIT } from '@modutex/frontend-contracts';
 import type { FileDesktopPort } from '../files/desktop.ts';
-import { parseSource, SourceDocument, type SyntaxNode } from '@modutex/document-core';
+import { parseSource, SourceDocument, type SyntaxNode } from '../document-core/core.ts';
 
 export interface ImageContext { desktop: FileDesktopPort | null; workspaceId: string | null; path: string; documentId: string; documentVersion: number }
 const prefix = 'modutex-image-';

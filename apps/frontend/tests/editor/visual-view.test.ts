@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { EditorView as CodeMirrorView } from '@codemirror/view';
 import type { Node as VisualNode } from 'prosemirror-model';
 import { TextSelection } from 'prosemirror-state';
-import { SourceDocument, parseSource, type SourceSpan } from '@modutex/document-core';
+import { SourceDocument, parseSource, type SourceSpan } from '../../src/features/document-core/core.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { projectVisual } from '../../src/features/visual-editor/schema.ts';
 import { createSourceState, sourcePatchTransaction, sourceState, historyTransaction, rangeInsertionTarget, insertionTransaction, visualInsertionTransaction } from '../../src/features/source-editor/state.ts';
@@ -564,7 +564,7 @@ test('multi-block length-changing edits preserve canonical tail anchors and shar
 		transaction = transaction.insertText('雪', gamma.offset + 1 + gamma.text.indexOf('Gamma') + 2);
 		transaction = transaction.delete(beta.offset + 1 + beta.text.indexOf('Beta'),
 			beta.offset + 1 + beta.text.indexOf('Beta') + 'Beta '.length);
-		transaction = transaction.insertText('🧪', alpha.offset + 1 + alpha.text.indexOf('Alpha') + 2);
+		transaction = transaction.insertText('\ud840\udc00', alpha.offset + 1 + alpha.text.indexOf('Alpha') + 2);
 		const betaContentStart = transaction.mapping.map(beta.offset + 1, -1);
 		transaction = transaction.setSelection(TextSelection.create(transaction.doc, betaContentStart + 1));
 		const expectedSelection = transaction.selection;
@@ -573,7 +573,7 @@ test('multi-block length-changing edits preserve canonical tail anchors and shar
 		assert.ok(view.view.state.selection.eq(expectedSelection));
 		const visibleText: string[] = [];
 		view.view.state.doc.forEach((node) => { if (node.type.name === 'source_block') visibleText.push(node.textContent); });
-		assert.ok(visibleText.some((value) => value.includes('Al🧪pha block')));
+		assert.ok(visibleText.some((value) => value.includes('Al\ud840\udc00pha block')));
 		assert.ok(visibleText.some((value) => value.includes('Ga雪mma block')));
 		const expectedBeta = beta.text.slice(0, beta.text.indexOf('Beta')) + beta.text.slice(beta.text.indexOf('Beta') + 'Beta '.length);
 		assert.ok(visibleText.some((value) => value === expectedBeta));
@@ -581,9 +581,9 @@ test('multi-block length-changing edits preserve canonical tail anchors and shar
 		assert.equal(rejected, 0);
 
 		const current = sourceView.state.field(sourceState).projection.document, currentText = current.read();
-		assert.ok(currentText.includes('Al🧪pha block'));
+		assert.ok(currentText.includes('Al\ud840\udc00pha block'));
 		assert.ok(currentText.includes('Ga雪mma block'));
-		assert.equal(currentText.indexOf(rawSource), originalText.indexOf(rawSource) + '🧪'.length + '雪'.length - 'Beta '.length);
+		assert.equal(currentText.indexOf(rawSource), originalText.indexOf(rawSource) + '\ud840\udc00'.length + '雪'.length - 'Beta '.length);
 		assert.deepEqual(original.toBytes(), originalBytes);
 
 		const rawButton = visualTarget.querySelector('.visual-raw button') as HTMLButtonElement | null;

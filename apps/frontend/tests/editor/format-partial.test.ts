@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { TextSelection } from 'prosemirror-state';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { formatTransaction, formatShortcut } from '../../src/features/source-editor/format.ts';
 import { createSourceState, sourceState, historyTransaction } from '../../src/features/source-editor/state.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
@@ -46,7 +46,7 @@ for (const [format, command] of formats) {
 	] as const) {
 		test(`${command} cancels ${label} selection with exact source selection and shared undo/redo`, () => {
 			const wrapper = '\\' + command + '{abcdef}';
-			const original = '\uFEFF😀before\r\n' + wrapper + '\nlast\r';
+			const original = '\uFEFF\ud840\udc00before\r\n' + wrapper + '\nlast\r';
 			let { source, state } = selected(original, chosen);
 			const selection = state.selection;
 			state = formatTransaction(state, parseSource(source), format).state;
@@ -66,7 +66,7 @@ for (const [format, command] of formats) {
 		});
 	}
 	test(`${command} partial cancellation preserves Unicode scalars and mixed EOL inside and outside wrapper`, () => {
-		const left = 'ab\r\n', chosen = '雪😀\nlast', right = '\ref';
+		const left = 'ab\r\n', chosen = '雪\ud840\udc00\nlast', right = '\ref';
 		const wrapper = '\\' + command + '{' + left + chosen + right + '}';
 		const original = '\uFEFFprefix\n' + wrapper + '\r\n\\opaque{keep}\r';
 		let { source, state } = selected(original, chosen);
