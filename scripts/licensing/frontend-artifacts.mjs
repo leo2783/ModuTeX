@@ -4,15 +4,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
-const digest = bytes => createHash('sha256').update(bytes).digest('hex');
-const inside = (root, candidate) => {
+export const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+export const inside = (root, candidate) => {
   const relative = path.relative(root, candidate);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 };
 const portable = value => value.split(path.sep).join('/');
 
 // Evidence collector, not a license decision or a replacement for build-graph review.
-export async function inventoryFrontend(rootDirectory, distDirectory = 'apps/frontend/dist') {
+export async function inventoryFrontend(rootDirectory, distDirectory = 'apps/frontend/dist-tauri') {
   const root = await realpath(rootDirectory);
   const dist = await realpath(path.resolve(root, distDirectory));
   if (!inside(root, dist)) throw new Error('DIST_OUTSIDE_REPOSITORY');
@@ -107,8 +107,11 @@ export async function inventoryFrontend(rootDirectory, distDirectory = 'apps/fro
         unresolved.push({ kind: 'non-file-map-source', map: relative(filename), source: name });
         continue;
       }
-      const urlModule = name.endsWith('?url');
-      const sourceName = urlModule ? name.slice(0, -4) : name;
+      const queryIndex = name.indexOf('?');
+      const query = queryIndex === -1 ? [] : name.slice(queryIndex + 1).split('&');
+      const urlModule = query.includes('url');
+      const rawModule = query.includes('raw');
+      const sourceName = urlModule || rawModule ? name.slice(0, queryIndex) : name;
       const candidate = path.resolve(path.dirname(filename), map.sourceRoot ?? '', sourceName);
       if (!inside(root, candidate)) throw new Error(`SOURCE_OUTSIDE_REPOSITORY: ${name}`);
       let absolute;
@@ -127,11 +130,34 @@ export async function inventoryFrontend(rootDirectory, distDirectory = 'apps/fro
       if (urlModule && !trace) unresolved.push({ kind: 'url-resource-unverified', map: relative(filename), source: relative(absolute) });
       else if (!urlModule && !matches) unresolved.push({ kind: 'source-content-unverified', map: relative(filename), source: relative(absolute) });
       const key = relative(absolute);
-      if (!sources.has(key)) sources.set(key, { path: key, sha256: digest(sourceBytes), package: await packageFor(absolute), maps: [] });
-      sources.get(key).maps.push(relative(filename));
-      if (trace) (sources.get(key).generatedResources ??= []).push({ map: relative(filename), ...trace });
+      let source = sources.get(key);
+      if (!source) {
+        source = {
+          path: key,
+          sha256: digest(sourceBytes),
+          package: rawModule ? null : await packageFor(absolute),
+          maps: [],
+          rawDocumentEvidence: []
+        };
+        sources.set(key, source);
+      }
+      source.maps.push(relative(filename));
+      if (rawModule && matches) {
+        const emittedPath = filename.slice(0, -4);
+        const emitted = artifacts.find(item => item.path === relative(emittedPath));
+        if (emitted) {
+          source.rawDocumentEvidence.push({
+            map: relative(filename),
+            emittedPath: emitted.path,
+            emittedSha256: emitted.sha256
+          });
+        }
+      }
+      if (trace) (source.generatedResources ??= []).push({ map: relative(filename), ...trace });
     }
   }
+
+
   const fileSet = new Set(files);
   for (const filename of files) {
     if (/\.(?:m?js|cjs)$/.test(filename) && !fileSet.has(`${filename}.map`)) {
@@ -146,7 +172,10 @@ export async function inventoryFrontend(rootDirectory, distDirectory = 'apps/fro
       'Raw bundled documents and generated CSS/assets require separate review.',
       'Installed transitive dependencies omitted by tree shaking are not the shipped module closure.'],
     artifacts, sources: [...sources.values()].sort((a, b) => a.path.localeCompare(b.path)),
-    packages: [...packages.values()].sort((a, b) => a.path.localeCompare(b.path)), unresolved };
+    bundledDocuments: [],
+    packages: [...packages.values()].sort((a, b) => a.path.localeCompare(b.path)),
+    unresolved,
+    resolved: [] };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

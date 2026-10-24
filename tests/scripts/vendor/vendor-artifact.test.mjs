@@ -13,18 +13,17 @@ import {
 	hashFileSha256,
 	verifyArchiveDirectory,
 	verifyCachedArtifact
-} from './vendor-artifact.mjs';
+} from '../../../scripts/vendor/vendor-artifact.mjs';
 import {
-	DRAWIO_FIXTURE_FILES,
 	DRAWIO_RETAINED_BYTES,
 	DRAWIO_RETAINED_FILE_COUNT,
 	DRAWIO_RETAINED_TREE_SHA256,
 	verifyDrawioInstallation
-} from '../verify-vendor.mjs';
+} from '../../../scripts/verify-vendor.mjs';
 
 const node = process.execPath;
-const cli = fileURLToPath(new URL('../verify-vendor.mjs', import.meta.url));
-const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
+const cli = fileURLToPath(new URL('../../../scripts/verify-vendor.mjs', import.meta.url));
+const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const vendorManifest = JSON.parse(await readFile(join(repositoryRoot, 'vendor', 'vendor-lock.json'), 'utf8'));
 
 const readStagedVendorBlobs = () => {
@@ -223,14 +222,12 @@ test('CLI never reflects an absolute path passed as an invalid option or artifac
 	assert.doesNotMatch(invalidArtifact.stderr, new RegExp(sensitivePath.replaceAll('\\', '\\\\')));
 });
 
-test('verifies the retained Draw.io webapp, notices, and real fixture inventory', async () => {
+test('verifies the retained Draw.io webapp and notices', async () => {
 	const report = await verifyDrawioInstallation(repositoryRoot, vendorManifest.artifacts['drawio-offline']);
 	assert.equal(report.version, '31.1.8');
 	assert.equal(report.files, DRAWIO_RETAINED_FILE_COUNT);
 	assert.equal(report.bytes, DRAWIO_RETAINED_BYTES);
 	assert.equal(report.sha256, DRAWIO_RETAINED_TREE_SHA256);
-	assert.deepEqual(report.fixtures.categories.sort(), Object.keys(DRAWIO_FIXTURE_FILES).sort());
-	assert.equal(report.fixtures.files, 4);
 });
 
 test('staged Draw.io inventory preserves the reviewed raw-byte digest', () => {

@@ -6,11 +6,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { collectAssetProvenance } from './frontend-asset-origins.mjs';
+import { collectAssetProvenance } from '../../../scripts/licensing/frontend-asset-origins.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const root = path.resolve(__dirname, '../..');
+const root = path.resolve(__dirname, '../../..');
 
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const normalizeEol = str => str.replace(/\r\n/g, '\n').trim();
@@ -128,9 +128,9 @@ test('embedded name13 declarations and official OFL-1.1 text are faithfully docu
 
 test('existing asset origins collector validates byte identity of emitted fonts against installed MathLive fonts in production distribution', async () => {
   // Production distribution is strictly required; absence must fail closed rather than early return
-  const distPath = path.join(root, 'apps/frontend/dist');
+  const distPath = path.join(root, 'apps/frontend/dist-tauri');
   const distStat = await stat(distPath);
-  assert.ok(distStat.isDirectory(), 'Production distribution directory apps/frontend/dist must exist');
+  assert.ok(distStat.isDirectory(), 'Production distribution directory apps/frontend/dist-tauri must exist');
 
   const provenance = await collectAssetProvenance(root);
   assert.equal(provenance.verdict, 'asset-evidence-only-not-license-clearance');
@@ -144,15 +144,15 @@ test('existing asset origins collector validates byte identity of emitted fonts 
     assert.equal(fontRecord.byteMatch, true, `Emitted font ${fontRecord.originalFilename} must byte-match installed source`);
     assert.equal(
       fontRecord.licenseStatus,
-      'license-document-missing',
-      'MathLive package distributes fonts without top-level OFL file; licenseStatus reflects this limitation'
+      'hash-and-notice-evidence-verified',
+      'Actual font hashes, embedded declarations and complete OFL notices must agree'
     );
   }
 
   // Emitted notice file in production dist is strictly required
   const emittedNoticePath = path.join(distPath, 'THIRD_PARTY_NOTICES.md');
   const emittedNoticeStat = await stat(emittedNoticePath);
-  assert.ok(emittedNoticeStat.isFile(), 'Production distribution file apps/frontend/dist/THIRD_PARTY_NOTICES.md must exist');
+  assert.ok(emittedNoticeStat.isFile(), 'Production distribution file apps/frontend/dist-tauri/THIRD_PARTY_NOTICES.md must exist');
 
   const srcNotice = await readFile(path.join(root, 'apps/frontend/THIRD_PARTY_NOTICES.md'), 'utf8');
   const emittedNotice = await readFile(emittedNoticePath, 'utf8');
@@ -166,7 +166,7 @@ test('existing asset origins collector validates byte identity of emitted fonts 
 test('isolated filesystem fixture with modified installed font bytes produces tampered-or-unknown-font and missing-emitted-font in real collector', async () => {
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), 'modutex-font-fixture-'));
   try {
-    const dist = path.join(fixtureRoot, 'apps/frontend/dist');
+    const dist = path.join(fixtureRoot, 'apps/frontend/dist-tauri');
     const distAssets = path.join(dist, 'assets');
     await mkdir(distAssets, { recursive: true });
 

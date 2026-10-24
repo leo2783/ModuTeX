@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Original ModuTeX tests; licensing scope is recorded in ../../LICENSING.md.
+// Original ModuTeX tests; licensing scope is recorded in ../../../LICENSING.md.
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { validateVendorManifest } from './vendor-manifest.mjs';
+import { validateVendorManifest } from '../../../scripts/vendor/vendor-manifest.mjs';
 
 const validManifest = {
 	schemaVersion: 1,
@@ -39,7 +39,7 @@ test('accepts the reviewed Draw.io and Tectonic manifest', () => {
 
 test('validates the checked-in manifest', async () => {
 	const manifest = JSON.parse(
-		await readFile(new URL('../../vendor/vendor-lock.json', import.meta.url), 'utf8')
+		await readFile(new URL('../../../vendor/vendor-lock.json', import.meta.url), 'utf8')
 	);
 	assert.deepEqual(manifest, validManifest);
 	assert.deepEqual(validateVendorManifest(manifest), manifest);

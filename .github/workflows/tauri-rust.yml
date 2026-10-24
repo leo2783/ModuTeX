@@ -1,0 +1,324 @@
+name: Tauri CI - Rust and document-core WASM
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Validated full source commit SHA from source admission.
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  document-core-wasm:
+    name: Document-core WASM and resource-limit tests
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.19.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          test "$(node --version)" = 'v24.19.0'
+          test "$(npm --version)" = '11.17.0'
+      - name: Install document-core test dependencies
+        run: npm ci --ignore-scripts
+      - name: Install Rust 1.97.1 with the WebAssembly target
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --target wasm32-unknown-unknown
+          rustup default 1.97.1
+          rustup target add wasm32-unknown-unknown --toolchain 1.97.1
+          test "$(rustc --version | cut -d ' ' -f 2)" = '1.97.1'
+      - name: Fetch locked document-core dependencies
+        run: cargo fetch --locked --manifest-path crates/document-core/Cargo.toml --target wasm32-unknown-unknown
+      - name: Build document-core for WebAssembly
+        run: cargo build --locked --manifest-path crates/document-core/Cargo.toml --target wasm32-unknown-unknown
+      - name: Run document-core WASM and resource-limit regression tests
+        run: node --test crates/document-core/tests/wasm.test.mjs crates/document-core/tests/resource-limits.test.mjs
+  rust-format:
+    name: Rust formatting
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install Rust toolchain 1.97.1 with rustfmt
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain installation failed with exit code $LASTEXITCODE" }
+          rustup default 1.97.1-x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain selection failed with exit code $LASTEXITCODE" }
+      - name: Verify Rust toolchain versions
+        run: |
+          $rustcVer = rustc --version
+          if ($LASTEXITCODE -ne 0) { throw 'rustc is unavailable' }
+          if ($rustcVer -notmatch 'rustc 1\.97\.1') { throw "rustc 1.97.1 required, got $rustcVer" }
+          $cargoVer = cargo --version
+          if ($LASTEXITCODE -ne 0) { throw 'cargo is unavailable' }
+          if ($cargoVer -notmatch 'cargo 1\.97\.1') { throw "cargo 1.97.1 required, got $cargoVer" }
+      - name: Check Rust formatting
+        run: |
+          cargo fmt --manifest-path apps/desktop-tauri/Cargo.toml --check
+          if ($LASTEXITCODE -ne 0) { throw "desktop-tauri formatting check failed with exit code $LASTEXITCODE" }
+          cargo fmt --manifest-path crates/document-core/Cargo.toml --check
+          if ($LASTEXITCODE -ne 0) { throw "document-core formatting check failed with exit code $LASTEXITCODE" }
+  rust-clippy:
+    name: Rust Clippy and all-target check
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install Rust toolchain 1.97.1 with Clippy
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt,clippy --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain installation failed with exit code $LASTEXITCODE" }
+          rustup default 1.97.1-x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain selection failed with exit code $LASTEXITCODE" }
+      - name: Verify Rust toolchain versions
+        run: |
+          $rustcVer = rustc --version
+          if ($LASTEXITCODE -ne 0) { throw 'rustc is unavailable' }
+          if ($rustcVer -notmatch 'rustc 1\.97\.1') { throw "rustc 1.97.1 required, got $rustcVer" }
+          $cargoVer = cargo --version
+          if ($LASTEXITCODE -ne 0) { throw 'cargo is unavailable' }
+          if ($cargoVer -notmatch 'cargo 1\.97\.1') { throw "cargo 1.97.1 required, got $cargoVer" }
+      - name: Run Clippy on all targets and features
+        run: >
+          cargo clippy --manifest-path apps/desktop-tauri/Cargo.toml --locked --release --target x86_64-pc-windows-msvc
+          --all-targets --all-features -- -D warnings
+
+          if ($LASTEXITCODE -ne 0) { throw "desktop-tauri clippy failed with exit code $LASTEXITCODE" }
+
+          cargo clippy --manifest-path crates/document-core/Cargo.toml --locked --release --target
+          x86_64-pc-windows-msvc --all-targets --all-features -- -D warnings
+
+          if ($LASTEXITCODE -ne 0) { throw "document-core clippy failed with exit code $LASTEXITCODE" }
+      - name: Check all targets and all features
+        run: >
+          cargo check --manifest-path apps/desktop-tauri/Cargo.toml --locked --release --target x86_64-pc-windows-msvc
+          --all-targets --all-features
+
+          if ($LASTEXITCODE -ne 0) { throw "desktop-tauri check failed with exit code $LASTEXITCODE" }
+
+          cargo check --manifest-path crates/document-core/Cargo.toml --locked --release --target x86_64-pc-windows-msvc
+          --all-targets --all-features
+
+          if ($LASTEXITCODE -ne 0) { throw "document-core check failed with exit code $LASTEXITCODE" }
+  rust-tests:
+    name: Rust tests
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install Rust toolchain 1.97.1
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain installation failed with exit code $LASTEXITCODE" }
+          rustup default 1.97.1-x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain selection failed with exit code $LASTEXITCODE" }
+      - name: Verify Rust toolchain versions
+        run: |
+          $rustcVer = rustc --version
+          if ($LASTEXITCODE -ne 0) { throw 'rustc is unavailable' }
+          if ($rustcVer -notmatch 'rustc 1\.97\.1') { throw "rustc 1.97.1 required, got $rustcVer" }
+          $cargoVer = cargo --version
+          if ($LASTEXITCODE -ne 0) { throw 'cargo is unavailable' }
+          if ($cargoVer -notmatch 'cargo 1\.97\.1') { throw "cargo 1.97.1 required, got $cargoVer" }
+      - name: Install isolated basic MiKTeX and prewarm LuaLaTeX
+        id: miktex
+        run: >
+          $miktexRoot = Join-Path $env:RUNNER_TEMP ('modutex-miktex-' + [guid]::NewGuid().ToString('N'))
+
+          if (Test-Path -LiteralPath $miktexRoot) { throw 'MiKTeX temporary directory unexpectedly exists' }
+
+          New-Item -ItemType Directory -Path $miktexRoot -ErrorAction Stop | Out-Null
+
+          $archivePath = Join-Path $miktexRoot 'miktexsetup-5.5.0+1763023-x64.zip'
+
+          Invoke-WebRequest -Uri
+          'https://miktex.org/download/ctan/systems/win32/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip'
+          -OutFile $archivePath -ErrorAction Stop
+
+          $archiveSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($archiveSha256 -ne '0571e90f6d94353089b4f189fd82a532f9fe559a388c7e7f1102b14b3c1ae27d') {
+            throw "MiKTeX setup archive SHA-256 mismatch: $archiveSha256"
+          }
+
+
+          $setupDirectory = Join-Path $miktexRoot 'setup'
+
+          $repository = Join-Path $miktexRoot 'repository'
+
+          $installDirectory = Join-Path $miktexRoot 'portable'
+
+          New-Item -ItemType Directory -Path $setupDirectory, $repository, $installDirectory -ErrorAction Stop |
+          Out-Null
+
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $setupDirectory
+
+          $setupExecutables = @(Get-ChildItem -LiteralPath $setupDirectory -Filter 'miktexsetup_standalone.exe' -File
+          -Recurse)
+
+          if ($setupExecutables.Count -ne 1) {
+            throw "Expected exactly one miktexsetup_standalone.exe in the verified archive, found $($setupExecutables.Count)"
+          }
+
+          $setupPath = $setupExecutables[0].FullName
+
+          $setupOptions = @(
+            "--local-package-repository=$repository",
+            '--package-set=basic',
+            "--portable=$installDirectory",
+            '--shared=no',
+            '--use-registry=no',
+            '--modify-path=no'
+          )
+
+          $downloadArguments = $setupOptions + @('download')
+
+          & $setupPath @downloadArguments
+
+          if ($LASTEXITCODE -ne 0) { throw "MiKTeX basic package download failed with exit code $LASTEXITCODE" }
+
+          $installArguments = $setupOptions + @('install')
+
+          & $setupPath @installArguments
+
+          if ($LASTEXITCODE -ne 0) { throw "MiKTeX portable installation failed with exit code $LASTEXITCODE" }
+
+
+          $mpmExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'mpm.exe' -File -Recurse)
+
+          if ($mpmExecutables.Count -ne 1) {
+            throw "Expected exactly one installed mpm.exe, found $($mpmExecutables.Count)"
+          }
+
+          $mpmPath = $mpmExecutables[0].FullName
+
+          & $mpmPath --pick-repository-url
+
+          if ($LASTEXITCODE -ne 0) { throw "MiKTeX online package repository selection failed with exit code
+          $LASTEXITCODE" }
+
+          & $mpmPath --update-db
+
+          if ($LASTEXITCODE -ne 0) { throw "MiKTeX online package catalog update failed with exit code $LASTEXITCODE" }
+
+          foreach ($package in @(
+            'ltxbase',
+            'miktex-luatex',
+            'miktex-luatex-bin-x64-2.9',
+            'luaotfload',
+            'fontspec',
+            'lm'
+          )) {
+            & $mpmPath "--install=$package"
+            if ($LASTEXITCODE -ne 0) { throw "MiKTeX package installation failed for '$package' with exit code $LASTEXITCODE" }
+          }
+
+
+          $lualatexExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'lualatex.exe' -File -Recurse)
+
+          if ($lualatexExecutables.Count -ne 1) {
+            throw "Expected exactly one installed lualatex.exe, found $($lualatexExecutables.Count)"
+          }
+
+          $lualatexPath = $lualatexExecutables[0].FullName
+
+          $versionOutput = & $lualatexPath --version 2>&1
+
+          $versionExitCode = $LASTEXITCODE
+
+          $versionText = $versionOutput | Out-String
+
+          if ($versionExitCode -ne 0 -or $versionText -notmatch '(?i)Lua(?:HB)?TeX') {
+            throw "MiKTeX LuaLaTeX executable failed version verification: $versionText"
+          }
+
+
+          $sourcePath = Join-Path $miktexRoot 'luaotfload-prewarm.tex'
+
+          @'
+
+          \documentclass{article}
+
+          \usepackage{fontspec}
+
+          \setmainfont{Latin Modern Roman}
+
+          \begin{document}
+
+          ModuTeX LuaLaTeX prerequisite verification.
+
+          \end{document}
+
+          '@ | Set-Content -LiteralPath $sourcePath -Encoding ascii
+
+          $prewarmDirectory = Join-Path $miktexRoot 'prewarm-output'
+
+          New-Item -ItemType Directory -Path $prewarmDirectory -ErrorAction Stop | Out-Null
+
+          $prewarmArguments = @(
+            '-interaction=nonstopmode',
+            '-halt-on-error',
+            '-no-shell-escape',
+            "-output-directory=$prewarmDirectory",
+            $sourcePath
+          )
+
+          & $lualatexPath @prewarmArguments
+
+          if ($LASTEXITCODE -ne 0) { throw "LuaLaTeX article/font-database prewarm failed with exit code $LASTEXITCODE"
+          }
+
+          $prewarmPdf = Join-Path $prewarmDirectory 'luaotfload-prewarm.pdf'
+
+          if (-not (Test-Path -LiteralPath $prewarmPdf -PathType Leaf)) { throw 'LuaLaTeX prewarm did not produce its
+          PDF' }
+
+          $pdfBytes = [System.IO.File]::ReadAllBytes($prewarmPdf)
+
+          if ($pdfBytes.Length -lt 5 -or [System.Text.Encoding]::ASCII.GetString($pdfBytes, 0, 5) -ne '%PDF-') {
+            throw 'LuaLaTeX prewarm output is not a PDF'
+          }
+
+          "lualatex=$lualatexPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Run Rust tests for desktop-tauri with serialized process cleanup
+        env:
+          MODUTEX_TEST_LUALATEX: ${{ steps.miktex.outputs.lualatex }}
+        run: >
+          cargo test --manifest-path apps/desktop-tauri/Cargo.toml --locked --release --target x86_64-pc-windows-msvc -p
+          modutex-desktop-tauri -- --test-threads=1
+
+          if ($LASTEXITCODE -ne 0) { throw "desktop-tauri tests failed with exit code $LASTEXITCODE" }
+
+          cargo test --manifest-path crates/document-core/Cargo.toml --locked --release --target x86_64-pc-windows-msvc
+          --all-targets --all-features
+
+          if ($LASTEXITCODE -ne 0) { throw "document-core tests failed with exit code $LASTEXITCODE" }

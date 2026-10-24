@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { collectAssetProvenance } from './frontend-asset-origins.mjs';
+import { collectAssetProvenance } from '../../../scripts/licensing/frontend-asset-origins.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const realRepoRoot = path.resolve(__dirname, '../..');
+const realRepoRoot = path.resolve(__dirname, '../../..');
 
 const FONT_NAMES = [
   'KaTeX_AMS-Regular.woff2',
@@ -36,7 +36,7 @@ const FONT_NAMES = [
 
 async function createFixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'modutex-asset-fixture-'));
-  const dist = path.join(root, 'apps/frontend/dist');
+  const dist = path.join(root, 'apps/frontend/dist-tauri');
   const distAssets = path.join(dist, 'assets');
   await mkdir(distAssets, { recursive: true });
 
@@ -177,7 +177,7 @@ test('jointly truncated repo and installed font licenses with adjusted notices f
   try {
     const repoLicensePath = path.join(root, 'LICENSES/OFL-1.1.txt');
     const srcNoticesPath = path.join(root, 'apps/frontend/THIRD_PARTY_NOTICES.md');
-    const distNoticesPath = path.join(root, 'apps/frontend/dist/THIRD_PARTY_NOTICES.md');
+    const distNoticesPath = path.join(root, 'apps/frontend/dist-tauri/THIRD_PARTY_NOTICES.md');
 
     const truncated = oflSrc.slice(0, 300);
     await writeFile(repoLicensePath, truncated);
@@ -204,7 +204,7 @@ test('jointly appended terms to repo and installed font licenses with adjusted n
   try {
     const repoLicensePath = path.join(root, 'LICENSES/OFL-1.1.txt');
     const srcNoticesPath = path.join(root, 'apps/frontend/THIRD_PARTY_NOTICES.md');
-    const distNoticesPath = path.join(root, 'apps/frontend/dist/THIRD_PARTY_NOTICES.md');
+    const distNoticesPath = path.join(root, 'apps/frontend/dist-tauri/THIRD_PARTY_NOTICES.md');
 
     const appended = oflSrc + '\n\nADDITIONAL NON-STANDARD RESTRICTION: COMMERCIAL REDISTRIBUTION FORBIDDEN.\n';
     await writeFile(repoLicensePath, appended);
@@ -231,7 +231,7 @@ test('jointly replaced MIT text under OFL.txt with adjusted notices fails canoni
   try {
     const repoLicensePath = path.join(root, 'LICENSES/OFL-1.1.txt');
     const srcNoticesPath = path.join(root, 'apps/frontend/THIRD_PARTY_NOTICES.md');
-    const distNoticesPath = path.join(root, 'apps/frontend/dist/THIRD_PARTY_NOTICES.md');
+    const distNoticesPath = path.join(root, 'apps/frontend/dist-tauri/THIRD_PARTY_NOTICES.md');
 
     const mitText = 'Copyright (c) Arno Gourdol. Permission is hereby granted, free of charge (MIT)...';
     await writeFile(repoLicensePath, mitText);
@@ -292,7 +292,7 @@ test('legitimate fixture passes full evidence collection without clearance overc
     // 20 MathLive fonts verification
     assert.equal(result.fonts.length, 20);
     assert.ok(result.fonts.every(f => f.byteMatch === true));
-    assert.ok(result.fonts.every(f => f.licenseStatus === 'license-document-present'));
+    assert.ok(result.fonts.every(f => f.licenseStatus === 'hash-and-notice-evidence-verified'));
     assert.ok(result.fonts.every(f => f.version === '0.110.0'));
 
     const fileFonts = result.fonts.filter(f => f.sourceType === 'emitted-file');
@@ -441,7 +441,7 @@ test('bundled embedded declarations evidence is verified when metadata and full 
     const noticeSrc = await readFile(path.join(realRepoRoot, 'apps/frontend/THIRD_PARTY_NOTICES.md'), 'utf8');
     await mkdir(path.join(root, 'apps/frontend'), { recursive: true });
     await writeFile(path.join(root, 'apps/frontend/THIRD_PARTY_NOTICES.md'), noticeSrc);
-    await writeFile(path.join(root, 'apps/frontend/dist/THIRD_PARTY_NOTICES.md'), noticeSrc);
+    await writeFile(path.join(root, 'apps/frontend/dist-tauri/THIRD_PARTY_NOTICES.md'), noticeSrc);
 
     const result = await collectAssetProvenance(root);
     assert.equal(result.verdict, 'asset-evidence-only-not-license-clearance');
@@ -451,7 +451,7 @@ test('bundled embedded declarations evidence is verified when metadata and full 
     assert.equal(result.fontEmbeddedDeclarations.oflTextIncludedInSourceNotice, true);
     assert.equal(result.fontEmbeddedDeclarations.oflTextIncludedInEmittedNotice, true);
 
-    assert.ok(result.fonts.every(f => f.licenseStatus === 'license-document-present'));
+    assert.ok(result.fonts.every(f => f.licenseStatus === 'hash-and-notice-evidence-verified'));
     assert.ok(!result.unresolved.some(u => u.kind.startsWith('font-')));
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -475,7 +475,7 @@ test('tampered font metadata hash or entry count is detected and reported as unr
     const noticeSrc = await readFile(path.join(realRepoRoot, 'apps/frontend/THIRD_PARTY_NOTICES.md'), 'utf8');
     await mkdir(path.join(root, 'apps/frontend'), { recursive: true });
     await writeFile(path.join(root, 'apps/frontend/THIRD_PARTY_NOTICES.md'), noticeSrc);
-    await writeFile(path.join(root, 'apps/frontend/dist/THIRD_PARTY_NOTICES.md'), noticeSrc);
+    await writeFile(path.join(root, 'apps/frontend/dist-tauri/THIRD_PARTY_NOTICES.md'), noticeSrc);
 
     const result = await collectAssetProvenance(root);
     assert.equal(result.fontEmbeddedDeclarations, null);
@@ -501,7 +501,7 @@ test('absent or incomplete OFL text in emitted notices is flagged as unresolved 
     await mkdir(path.join(root, 'apps/frontend'), { recursive: true });
     await writeFile(path.join(root, 'apps/frontend/THIRD_PARTY_NOTICES.md'), noticeSrc);
     // Emitted notice omits the OFL text
-    await writeFile(path.join(root, 'apps/frontend/dist/THIRD_PARTY_NOTICES.md'), '# Third-party notices\nIncomplete\n');
+    await writeFile(path.join(root, 'apps/frontend/dist-tauri/THIRD_PARTY_NOTICES.md'), '# Third-party notices\nIncomplete\n');
 
     const result = await collectAssetProvenance(root);
     assert.equal(result.fontEmbeddedDeclarations, null);
@@ -539,7 +539,7 @@ test('missing LICENSES/OFL-1.1.txt file is detected and fail-closed unresolved',
 test('missing source or emitted THIRD_PARTY_NOTICES.md is detected and fail-closed unresolved', async () => {
   const { root } = await createFixture();
   try {
-    await rm(path.join(root, 'apps/frontend/dist/THIRD_PARTY_NOTICES.md'));
+    await rm(path.join(root, 'apps/frontend/dist-tauri/THIRD_PARTY_NOTICES.md'));
     const result = await collectAssetProvenance(root);
     assert.equal(result.fontEmbeddedDeclarations, null);
     assert.ok(result.unresolved.some(u => u.kind === 'missing-emitted-notices-file'));
@@ -816,18 +816,19 @@ test('extra content appended to installed font license text fails agreement and 
   }
 });
 
-test('absent installed font license resource fails closed and reports missing evidence without legal verdict', async () => {
+test('canonical notices and exact embedded font evidence do not require a standalone npm OFL filename', async () => {
   const { root, installedOflPath } = await createFixture();
   try {
     await rm(installedOflPath);
     const result = await collectAssetProvenance(root);
-    assert.equal(result.fontEmbeddedDeclarations, null);
+    assert.equal(result.fontEmbeddedDeclarations.installedLicenseAgreesWithRepoLicense, null);
+    assert.equal(result.fontEmbeddedDeclarations.auditedFontCount, 20);
     assert.equal(result.verdict, 'asset-evidence-only-not-license-clearance');
     assert.ok(
-      result.unresolved.some(u => u.kind === 'missing-installed-font-license-resource' && u.package === 'mathlive'),
-      'Must report missing-installed-font-license-resource naming missing evidence'
+      result.unresolved.length === 0,
+      'Full hash and notice evidence must remain valid without an upstream filename'
     );
-    assert.ok(result.fonts.every(f => f.licenseStatus === 'license-document-missing'));
+    assert.ok(result.fonts.every(f => f.licenseStatus === 'hash-and-notice-evidence-verified'));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -886,9 +887,9 @@ for (const location of ['fonts', 'package']) {
       await mkdir(candidate);
       const result = await collectAssetProvenance(root);
       assert.equal(result.fonts.length, 20);
-      assert.ok(result.fonts.every(font => font.licenseStatus === 'license-document-missing'));
-      assert.equal(result.fontEmbeddedDeclarations, null);
-      assert.ok(result.unresolved.some(item => item.kind === 'missing-installed-font-license-resource'));
+      assert.ok(result.fonts.every(font => font.licenseStatus === 'hash-and-notice-evidence-verified'));
+      assert.equal(result.fontEmbeddedDeclarations.installedLicenseAgreesWithRepoLicense, null);
+      assert.equal(result.unresolved.length, 0);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -900,15 +901,16 @@ test('LICENSE.txt containing package MIT text is never accepted as trusted OFL r
   try {
     // Remove the valid OFL license file so only package-level LICENSE.txt (MIT) exists
     await rm(installedOflPath);
+    await rm(path.join(root, 'LICENSES/OFL-1.1.txt'));
     await writeFile(path.join(mathliveDir, 'LICENSE.txt'), 'Copyright (c) Arno Gourdol. Permission is hereby granted (MIT)...');
 
     const result = await collectAssetProvenance(root);
     assert.equal(result.fontEmbeddedDeclarations, null);
     assert.ok(
-      result.unresolved.some(u => u.kind === 'missing-installed-font-license-resource' && u.package === 'mathlive'),
+      result.unresolved.some(u => u.kind === 'missing-ofl-license-file'),
       'Package MIT LICENSE.txt must never satisfy OFL resource requirement'
     );
-    assert.ok(result.fonts.every(f => f.licenseStatus === 'license-document-missing'));
+    assert.ok(result.fonts.every(f => f.licenseStatus === 'provenance-unverified'));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -918,15 +920,16 @@ test('README mentioning OFL is never accepted as trusted OFL resource', async ()
   const { root, installedOflPath, mathliveDir } = await createFixture();
   try {
     await rm(installedOflPath);
+    await rm(path.join(root, 'LICENSES/OFL-1.1.txt'));
     await writeFile(path.join(mathliveDir, 'README.md'), '# MathLive\nThis package uses KaTeX fonts under SIL Open Font License 1.1.\n');
 
     const result = await collectAssetProvenance(root);
     assert.equal(result.fontEmbeddedDeclarations, null);
     assert.ok(
-      result.unresolved.some(u => u.kind === 'missing-installed-font-license-resource' && u.package === 'mathlive'),
+      result.unresolved.some(u => u.kind === 'missing-ofl-license-file'),
       'README.md mentioning OFL must never count as contained font license document'
     );
-    assert.ok(result.fonts.every(f => f.licenseStatus === 'license-document-missing'));
+    assert.ok(result.fonts.every(f => f.licenseStatus === 'provenance-unverified'));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

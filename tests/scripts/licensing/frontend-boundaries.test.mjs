@@ -3,9 +3,28 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { inspectFrontendBoundaries } from './frontend-boundaries.mjs';
+import { inspectFrontendBoundaries } from '../../../scripts/licensing/frontend-boundaries.mjs';
 
 const portable = value => value.split(path.sep).join('/');
+
+test('CSS scanner preserves escaped and quoted URLs while ignoring comments and strings', async () => {
+  const root = await createBaseTree();
+  try {
+    await writeFile(path.join(root, 'apps/frontend/src/ab.png'), TINY_PNG_BUFFER);
+    await writeFile(path.join(root, 'apps/frontend/src/styles.css'), [
+      '/* url(missing-comment.png) */',
+      '.a { content: "url(missing-string.png)"; background: url(\\61 b.png); }',
+      '.b { background: URL("ab.png"); }',
+      '.c { background: url( ab.png ); }'
+    ].join('\n'));
+    const result = await inspectFrontendBoundaries(root);
+    const references = result.references.filter(item => item.path.endsWith('styles.css'));
+    assert.deepEqual(references.map(item => item.specifier), ['ab.png', 'ab.png', 'ab.png']);
+    assert.deepEqual(result.findings, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 // 1x1 transparent PNG binary bytes
 const TINY_PNG_BUFFER = Buffer.from(
@@ -27,7 +46,7 @@ async function createBaseTree() {
       moduleResolution: 'bundler',
       baseUrl: '.',
       paths: {
-        '@doc/*': ['../../packages/document-core/src/*'],
+        '@doc/*': ['../../packages/frontend-contracts/src/*'],
         '@contract/*': ['../../packages/frontend-contracts/src/*']
       }
     }
@@ -64,7 +83,7 @@ test('frontend boundary inspector: accepted local TS, Svelte, and template dynam
   try {
     // Local modules across the 3 approved source roots
     await writeFile(
-      path.join(root, 'packages/document-core/src/model.ts'),
+      path.join(root, 'packages/frontend-contracts/src/model.ts'),
       'export interface Doc { id: string; }\n',
       'utf8'
     );
@@ -83,7 +102,7 @@ test('frontend boundary inspector: accepted local TS, Svelte, and template dynam
     await writeFile(
       path.join(root, 'apps/frontend/src/main.ts'),
       `import { helper } from './utils';
-import type { Doc } from '@doc/model';
+import type { Doc } from '@contract/model';
 import { version } from '@contract/api';
 export async function run() {
   const mod = await import('./utils');
@@ -571,6 +590,82 @@ export { answer, dummyString, currentAssetUrl };
 
     assert.equal(globFindings.length, 0, 'Negative controls must produce zero unresolved-glob-expansion findings');
     assert.deepEqual(result.findings, [], `Expected 0 total findings for valid local files, got: ${JSON.stringify(result.findings)}`);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('frontend boundary inspector treats only statically import.meta-rooted URLs as build assets and ignores runtime URLs', async () => {
+  const root = await createBaseTree();
+  try {
+    await writeFile(path.join(root, 'apps/frontend/src/worker.js'), 'export default 1;\n', 'utf8');
+    await writeFile(path.join(root, 'apps/frontend/src/urls.ts'), `
+const runtimePath = '/workspace/file.tex';
+new URL(runtimePath);
+new URL('./worker.js', window.location.href);
+new URL('./worker.js', import.meta.url);
+`, 'utf8');
+    await writeFile(path.join(root, 'apps/frontend/src/Urls.svelte'), `
+<script>
+  const runtimePath = '/workspace/file.tex';
+  new URL(runtimePath);
+  new URL('./worker.js', location.href);
+  new URL('./worker.js', import.meta.url);
+</script>
+`, 'utf8');
+
+    const result = await inspectFrontendBoundaries(root);
+    const assets = result.references.filter(item => item.kind === 'asset-url');
+    assert.deepEqual(assets.map(item => item.specifier), ['./worker.js', './worker.js']);
+    assert.deepEqual(result.findings, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('frontend boundary inspector: rejects dynamic new URL with import.meta.url as computed module reference', async () => {
+  const root = await createBaseTree();
+  try {
+    await writeFile(path.join(root, 'apps/frontend/src/dynamic-url.ts'), `
+const dynamicPath = './worker.js';
+new URL(dynamicPath, import.meta.url);
+`, 'utf8');
+    await writeFile(path.join(root, 'apps/frontend/src/DynamicUrl.svelte'), `
+<script>
+  const dynamicPath = './worker.js';
+  new URL(dynamicPath, import.meta.url);
+</script>
+`, 'utf8');
+
+    const result = await inspectFrontendBoundaries(root);
+    const dynamicFindings = result.findings.filter(item => item.kind === 'computed-module-reference');
+    assert.equal(dynamicFindings.length, 2);
+    assert.ok(dynamicFindings.some(item => item.path === 'apps/frontend/src/dynamic-url.ts' && item.detail === 'asset-url'));
+    assert.ok(dynamicFindings.some(item => item.path === 'apps/frontend/src/DynamicUrl.svelte' && item.detail === 'asset-url'));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('frontend boundary inspector: rejects forbidden paths in new URL with import.meta.url', async () => {
+  const root = await createBaseTree();
+  try {
+    await mkdir(path.join(root, 'legacy/src'), { recursive: true });
+    await writeFile(path.join(root, 'legacy/src/forbidden.js'), 'export const forbidden = true;\n', 'utf8');
+    await writeFile(path.join(root, 'apps/frontend/src/forbidden-url.ts'), `
+new URL('../../../legacy/src/forbidden.js', import.meta.url);
+`, 'utf8');
+    await writeFile(path.join(root, 'apps/frontend/src/ForbiddenUrl.svelte'), `
+<script>
+  new URL('../../../legacy/src/forbidden.js', import.meta.url);
+</script>
+`, 'utf8');
+
+    const result = await inspectFrontendBoundaries(root);
+    const outsideFindings = result.findings.filter(item => item.kind === 'reference-outside-new-frontend');
+    assert.equal(outsideFindings.length, 2);
+    assert.ok(outsideFindings.some(item => item.path === 'apps/frontend/src/forbidden-url.ts' && item.detail === 'legacy/src/forbidden.js'));
+    assert.ok(outsideFindings.some(item => item.path === 'apps/frontend/src/ForbiddenUrl.svelte' && item.detail === 'legacy/src/forbidden.js'));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -1,0 +1,224 @@
+name: Tauri CI - Native Windows E2E
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Validated full source commit SHA from source admission.
+        required: true
+        type: string
+      package_version:
+        description: Package version verified by source admission.
+        required: true
+        type: string
+      built_exe_sha256:
+        description: SHA-256 of the accepted release executable.
+        required: true
+        type: string
+      built_exe_artifact_id:
+        description: Artifact ID of the accepted release executable.
+        required: true
+        type: string
+      built_exe_artifact_name:
+        description: Artifact name of the accepted release executable.
+        required: true
+        type: string
+      built_exe_artifact_run_id:
+        description: Workflow run ID containing the accepted executable.
+        required: true
+        type: string
+      built_exe_artifact_digest:
+        description: Artifact digest of the accepted executable upload.
+        required: true
+        type: string
+      built_exe_workflow_sha:
+        description: Workflow source SHA associated with the executable.
+        required: true
+        type: string
+      built_exe_source_commit:
+        description: Source commit used to build the executable.
+        required: true
+        type: string
+      built_exe_package_version:
+        description: Package version associated with the executable.
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  native-e2e:
+    name: Native Windows WebView E2E (${{ matrix.lane }})
+    runs-on: windows-2025
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: g2-workbench
+            script: tests/scripts/tauri-g2-workbench-e2e.mjs
+          - lane: g4-files
+            script: tests/scripts/tauri-g4-files-e2e.mjs
+          - lane: g4-git
+            script: tests/scripts/tauri-g4-git-e2e.mjs
+          - lane: g4-terminal
+            script: tests/scripts/tauri-g4-terminal-e2e.mjs
+          - lane: compile-config
+            script: tests/scripts/tauri-compile-config-e2e.mjs
+          - lane: close
+            script: tests/scripts/tauri-native-close-e2e.mjs
+          - lane: multiwindow
+            script: tests/scripts/tauri-multiwindow-e2e.mjs
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.19.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          if ((node --version) -ne 'v24.19.0') { throw 'Node.js 24.19.0 required' }
+          if ((npm --version) -ne '11.17.0') { throw 'npm 11.17.0 required' }
+      - name: Install E2E dependencies
+        run: npm ci --ignore-scripts
+      - name: Prepare clean native E2E artifact destinations
+        run: |
+          $dist = 'apps/frontend/dist-tauri'
+          if (Test-Path -LiteralPath $dist) { Remove-Item -LiteralPath $dist -Recurse -Force }
+          $targetExe = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe'
+          if (Test-Path -LiteralPath $targetExe) { Remove-Item -LiteralPath $targetExe -Force }
+          $releaseExe = 'apps/desktop-tauri/target/release/modutex-desktop-tauri.exe'
+          if (Test-Path -LiteralPath $releaseExe) { Remove-Item -LiteralPath $releaseExe -Force }
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $targetExe) | Out-Null
+      - name: Download frontend assets built for this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FRONTEND_ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir .
+          if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
+      - name: Verify and download the exact release executable artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXE_ARTIFACT_ID: ${{ inputs.built_exe_artifact_id }}
+          EXE_ARTIFACT_NAME: ${{ inputs.built_exe_artifact_name }}
+          EXE_ARTIFACT_RUN_ID: ${{ inputs.built_exe_artifact_run_id }}
+          EXE_ARTIFACT_DIGEST: ${{ inputs.built_exe_artifact_digest }}
+          EXE_WORKFLOW_SHA: ${{ inputs.built_exe_workflow_sha }}
+          EXPECTED_EXE_SHA: ${{ inputs.built_exe_sha256 }}
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.checkout_ref }}
+          EXPECTED_PACKAGE_VERSION: ${{ inputs.package_version }}
+          EXE_SOURCE_COMMIT: ${{ inputs.built_exe_source_commit }}
+          EXE_PACKAGE_VERSION: ${{ inputs.built_exe_package_version }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: >
+          if ($env:EXE_ARTIFACT_ID -notmatch '^\d+$') { throw 'Executable artifact ID is invalid' }
+
+          if ($env:EXE_ARTIFACT_NAME -ne 'ModuTeX-Release-Executable') { throw 'Executable artifact name mismatch' }
+
+          if ($env:EXE_ARTIFACT_RUN_ID -ne $env:CURRENT_RUN_ID) { throw 'Executable artifact belongs to another workflow
+          run' }
+
+          if ($env:EXPECTED_EXE_SHA -notmatch '^[0-9a-f]{64}$') { throw 'Verified executable SHA-256 is invalid' }
+
+          if (-not [string]::Equals($env:EXPECTED_SOURCE_COMMIT, $env:EXE_SOURCE_COMMIT,
+          [System.StringComparison]::Ordinal)) { throw 'Executable source commit differs from verified source identity'
+          }
+
+          if (-not [string]::Equals($env:EXPECTED_PACKAGE_VERSION, $env:EXE_PACKAGE_VERSION,
+          [System.StringComparison]::Ordinal)) { throw 'Executable version differs from verified package version' }
+
+          $expectedDigest = $env:EXE_ARTIFACT_DIGEST.ToLowerInvariant()
+
+          if ($expectedDigest -notmatch '^(sha256:)?[0-9a-f]{64}$') { throw 'Executable artifact digest is invalid' }
+
+          if (-not $expectedDigest.StartsWith('sha256:')) { $expectedDigest = "sha256:$expectedDigest" }
+
+          $artifactJson = gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:EXE_ARTIFACT_ID"
+
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to retrieve executable artifact metadata' }
+
+          $artifact = $artifactJson | ConvertFrom-Json
+
+          if ([string]$artifact.id -ne $env:EXE_ARTIFACT_ID) { throw 'Executable artifact ID differs from the verified
+          build output' }
+
+          if ($artifact.name -ne $env:EXE_ARTIFACT_NAME) { throw 'Executable artifact metadata name mismatch' }
+
+          if ($artifact.expired -ne $false -or $artifact.size_in_bytes -le 0) { throw 'Executable artifact is expired or
+          empty' }
+
+          if ($artifact.digest.ToLowerInvariant() -ne $expectedDigest) { throw 'Executable artifact digest differs from
+          the verified build output' }
+
+          if ([string]$artifact.workflow_run.id -ne $env:EXE_ARTIFACT_RUN_ID) { throw 'Executable artifact workflow run
+          mismatch' }
+
+          if ($artifact.workflow_run.head_sha -ne $env:EXE_WORKFLOW_SHA) { throw 'Executable artifact workflow source
+          SHA mismatch' }
+
+          $destDir = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release'
+
+          New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+
+          gh run download $env:EXE_ARTIFACT_RUN_ID --name $env:EXE_ARTIFACT_NAME --dir $destDir
+
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to download the release executable artifact from this run' }
+
+          $exe = Join-Path $destDir 'modutex-desktop-tauri.exe'
+
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Downloaded release executable is missing' }
+
+          $actualSha = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($actualSha -ne $env:EXPECTED_EXE_SHA) { throw 'Downloaded executable differs from the tested build output'
+          }
+      - name: Verify executable identity and stage for native E2E
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.checkout_ref }}
+          EXPECTED_EXE_SHA: ${{ inputs.built_exe_sha256 }}
+          EXPECTED_PACKAGE_VERSION: ${{ inputs.package_version }}
+        run: |
+          $commit = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Source revision unavailable' }
+          if ($commit -ne $env:EXPECTED_SOURCE_COMMIT) { throw 'Native E2E checked out an unexpected source commit' }
+          $exe = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Downloaded release executable is missing' }
+          $actualSha = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha -ne $env:EXPECTED_EXE_SHA.ToLowerInvariant()) {
+            throw "Native E2E executable SHA-256 ($actualSha) differs from build output ($env:EXPECTED_EXE_SHA)"
+          }
+          $releaseExe = 'apps/desktop-tauri/target/release/modutex-desktop-tauri.exe'
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $releaseExe) | Out-Null
+          Copy-Item -LiteralPath $exe -Destination $releaseExe -Force
+      - name: Verify downloaded Tauri frontend assets
+        run: |
+          $dist = 'apps/frontend/dist-tauri'
+          if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
+            throw 'Native E2E frontend artifact did not contain apps/frontend/dist-tauri'
+          }
+          if (@(Get-ChildItem -LiteralPath $dist -File -Recurse).Count -eq 0) {
+            throw 'Native E2E frontend artifact is empty'
+          }
+      - name: Run native E2E lane (${{ matrix.lane }})
+        env:
+          MODUTEX_TEST_PERIODIC_WATCH: ${{ matrix.lane == 'compile-config' && '1' || '0' }}
+        run: |
+          node ${{ matrix.script }}
+          if ($LASTEXITCODE -ne 0) { throw "Native ${{ matrix.lane }} E2E failed with exit code $LASTEXITCODE" }
+      - name: Upload native E2E evidence and diagnostics
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Tauri-Native-E2E-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .verification-artifacts/tauri/*-e2e.*
+          if-no-files-found: warn

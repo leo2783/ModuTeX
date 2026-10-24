@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const root = path.resolve(__dirname, '../..');
+const root = path.resolve(__dirname, '../../..');
 
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const normalizeEol = str => str.replace(/\r\n/g, '\n').trim();

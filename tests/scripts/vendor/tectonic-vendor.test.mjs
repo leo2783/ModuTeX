@@ -17,11 +17,11 @@ import {
 	verifyPeAmd64,
 	verifyPackagedTectonicResources,
 	verifyTectonicInstallation
-} from './tectonic-vendor.mjs';
-import { createProvenanceRecord } from './vendor-artifact.mjs';
+} from '../../../scripts/vendor/tectonic-vendor.mjs';
+import { createProvenanceRecord } from '../../../scripts/vendor/vendor-artifact.mjs';
 
-const repositoryRoot = new URL('../../', import.meta.url);
-const vendorManifest = JSON.parse(await readFile(new URL('../../vendor/vendor-lock.json', import.meta.url), 'utf8'));
+const repositoryRoot = new URL('../../..', import.meta.url);
+const vendorManifest = JSON.parse(await readFile(new URL('../../../vendor/vendor-lock.json', import.meta.url), 'utf8'));
 const tectonicEntry = vendorManifest.artifacts['tectonic-windows-x64'];
 const tectonicArchivePath = (directory) => join(directory, tectonicEntry.archive);
 const writeTectonicProvenance = async (
@@ -122,9 +122,9 @@ const createRetainedVendorCopy = async (vendorRoot) => {
 	await mkdir(executableRoot, { recursive: true });
 	await mkdir(noticeRoot);
 	await writeFile(join(tectonicRoot, 'VERSION'), '0.17.0\n');
-	await copyFile(new URL('../../vendor/tectonic/windows-x64/tectonic.exe', import.meta.url), join(executableRoot, 'tectonic.exe'));
-	await copyFile(new URL('../../vendor/notices/TECTONIC-LICENSE.txt', import.meta.url), join(noticeRoot, 'TECTONIC-LICENSE.txt'));
-	await copyFile(new URL('../../vendor/notices/TECTONIC-NOTICE.md', import.meta.url), join(noticeRoot, 'TECTONIC-NOTICE.md'));
+	await copyFile(new URL('../../../vendor/tectonic/windows-x64/tectonic.exe', import.meta.url), join(executableRoot, 'tectonic.exe'));
+	await copyFile(new URL('../../../vendor/notices/TECTONIC-LICENSE.txt', import.meta.url), join(noticeRoot, 'TECTONIC-LICENSE.txt'));
+	await copyFile(new URL('../../../vendor/notices/TECTONIC-NOTICE.md', import.meta.url), join(noticeRoot, 'TECTONIC-NOTICE.md'));
 	return { tectonicRoot };
 };
 
@@ -370,8 +370,8 @@ test('reviewed executable constants are not placeholders', async () => {
 	assert.match(TECTONIC_EXECUTABLE_SHA256, /^[0-9a-f]{64}$/);
 	assert.notEqual(TECTONIC_EXECUTABLE_SHA256, '0'.repeat(64));
 	assert.ok(TECTONIC_EXECUTABLE_SIZE > 50_000_000);
-	const notice = await readFile(new URL('../../vendor/notices/TECTONIC-NOTICE.md', import.meta.url));
-	const license = await readFile(new URL('../../vendor/notices/TECTONIC-LICENSE.txt', import.meta.url));
+	const notice = await readFile(new URL('../../../vendor/notices/TECTONIC-NOTICE.md', import.meta.url));
+	const license = await readFile(new URL('../../../vendor/notices/TECTONIC-LICENSE.txt', import.meta.url));
 	assert.equal(sha256(notice), TECTONIC_NOTICE_SHA256);
 	assert.equal(sha256(license), TECTONIC_LICENSE_SHA256);
 });

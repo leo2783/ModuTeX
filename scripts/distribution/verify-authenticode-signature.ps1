@@ -90,6 +90,10 @@ if ($CheckPeMetadata) {
     Write-Error "PE ProductVersion mismatch on ${FilePath}: got '$peProductVer', expected '$expectedProductVersion'"
     exit 1
   }
+  if ($expectedVersion.Build -lt 0) {
+    Write-Error "PE ProductVersion mismatch on ${FilePath}: expected a full product version, got '$expectedProductVersion'"
+    exit 1
+  }
 
   $peResourceNumericVersion = @(
     $peVersion.Major

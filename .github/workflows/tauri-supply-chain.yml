@@ -1,0 +1,63 @@
+name: Tauri CI - Supply chain and registry security
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Validated full source commit SHA from source admission.
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  supply-chain:
+    name: Dependency and registry security
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.19.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          if ((node --version) -ne 'v24.19.0') { throw 'Node.js 24.19.0 required' }
+          if ((npm --version) -ne '11.17.0') { throw 'npm 11.17.0 required' }
+      - run: npm ci --ignore-scripts
+      - run: npm run verify:install-policy
+      - run: npm ci
+      - run: npm run test:install-policy
+      - run: npm run test:dependency-security
+      - name: Verify npm registry signatures and capture JSON
+        id: registry-signatures
+        shell: pwsh
+        run: |
+          npm audit signatures --json > signature-report.json
+          $signatureExitCode = $LASTEXITCODE
+          exit $signatureExitCode
+      - name: Run high-severity audit and capture JSON
+        id: high-audit
+        if: always() && steps.registry-signatures.outcome != 'skipped'
+        shell: pwsh
+        run: |
+          npm audit --audit-level=high --json > audit-report.json
+          $auditExitCode = $LASTEXITCODE
+          exit $auditExitCode
+      - name: Upload supply-chain reports
+        if: always() && (steps.registry-signatures.outcome != 'skipped')
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Tauri-Supply-Chain-Reports
+          path: |
+            signature-report.json
+            audit-report.json
+          if-no-files-found: error

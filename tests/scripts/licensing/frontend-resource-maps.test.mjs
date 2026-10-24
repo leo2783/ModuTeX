@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { inventoryFrontend } from './frontend-artifacts.mjs';
+import { inventoryFrontend } from '../../../scripts/licensing/frontend-artifacts.mjs';
 
 const portable = value => value.split(path.sep).join('/');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');

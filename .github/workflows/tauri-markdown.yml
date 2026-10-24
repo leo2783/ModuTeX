@@ -1,0 +1,55 @@
+name: Tauri CI - Maintained Markdown
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Validated full source commit SHA from source admission.
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  markdown-format:
+    name: Markdown formatting
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.19.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          test "$(node --version)" = 'v24.19.0'
+          test "$(npm --version)" = '11.17.0'
+      - name: Install pinned project tools
+        run: npm ci --ignore-scripts
+      - name: Check maintained project Markdown with pinned Prettier
+        run: |
+          npm exec --no -- prettier --check \
+            README.md \
+            CONTRIBUTING.md \
+            'docs/**/*.md' \
+            '!docs/archive/**' \
+            '!docs/history/**' \
+            '!docs/historical/**' \
+            '!docs/legacy/**' \
+            '!docs/agents/**' \
+            '!docs/**/AGENTS.md' \
+            '!docs/**/agent-rules/**' \
+            '!**/vendor/**' \
+            '!**/LICENSE*.md' \
+            '!**/NOTICE*.md'
