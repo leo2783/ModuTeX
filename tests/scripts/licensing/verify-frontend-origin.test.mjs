@@ -89,6 +89,29 @@ async function inventory(root) {
   return inventoryFrontend(root, 'apps/frontend/dist-tauri');
 }
 
+async function readEvidence(root) {
+  return JSON.parse(await readFile(path.join(root, 'apps/frontend/dist-tauri/frontend-build-evidence.json'), 'utf8'));
+}
+
+async function writeEvidence(root, evidence) {
+  await writeFile(path.join(root, 'apps/frontend/dist-tauri/frontend-build-evidence.json'), JSON.stringify(evidence));
+}
+
+function graphModule(id, sourcePath, source, code, flags = {}) {
+  return {
+    id,
+    sourcePath,
+    sourceSha256: sourcePath === null ? null : digest(Buffer.from(source)),
+    codeSha256: code === null ? null : digest(Buffer.from(code)),
+    renderedLength: null,
+    raw: false,
+    style: false,
+    wasm: false,
+    virtual: sourcePath === null && id.startsWith('\0'),
+    ...flags
+  };
+}
+
 test('missing build evidence remains a finding', async () => {
   const { root } = await fixture({ evidence: false });
   try {
@@ -181,6 +204,169 @@ test('source-content mismatch resolves only with a verified generated transform 
   }
 });
 
+test('Rolldown facade evidence fills an otherwise empty no-map script graph', async () => {
+  const { root, dist } = await fixture();
+  try {
+    const sourcePath = 'node_modules/example/facade.js';
+    const source = 'export default 1;\n';
+    const output = 'export default 1;\n';
+    await writeFile(path.join(root, sourcePath), source);
+    await mkdir(path.join(dist, 'assets'), { recursive: true });
+    await writeFile(path.join(dist, 'assets/facade.js'), output);
+
+    const evidence = await readEvidence(root);
+    evidence.outputs.push({
+      path: 'assets/facade.js',
+      kind: 'chunk',
+      sha256: digest(Buffer.from(output)),
+      modules: [graphModule(sourcePath, sourcePath, source, source)],
+      facadeModuleId: sourcePath
+    });
+    await writeEvidence(root, evidence);
+
+    const artifacts = await inventory(root);
+    assert.ok(artifacts.unresolved.some(item =>
+      item.kind === 'script-without-source-map' && item.path === 'apps/frontend/dist-tauri/assets/facade.js'
+    ));
+    const result = await consumeFrontendBuildEvidence(root, artifacts);
+    assert.equal(result.verified, true);
+    assert.ok(!artifacts.unresolved.some(item =>
+      item.kind === 'script-without-source-map' && item.path === 'apps/frontend/dist-tauri/assets/facade.js'
+    ));
+    assert.ok(artifacts.resolved.some(item =>
+      item.finding.path === 'apps/frontend/dist-tauri/assets/facade.js' &&
+      item.evidence.kind === 'verified-script-module-graph'
+    ));
+
+    evidence.outputs.at(-1).facadeModuleId = 'node_modules/example/NOTICE.txt';
+    await writeEvidence(root, evidence);
+    const stale = await inventory(root);
+    assert.equal((await consumeFrontendBuildEvidence(root, stale)).verified, false);
+    assert.ok(stale.unresolved.some(item => item.kind === 'frontend-build-evidence-invalid'));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('compiler virtual modules require captured transformed code to resolve no-map scripts', async () => {
+  const { root, dist } = await fixture();
+  try {
+    const output = '/* compiler runtime chunk */\n';
+    const runtimeCode = 'function __runtime() { return 1; }\n';
+    await mkdir(path.join(dist, 'assets'), { recursive: true });
+    await writeFile(path.join(dist, 'assets/runtime.js'), output);
+    const evidence = await readEvidence(root);
+    const runtime = graphModule('\0rolldown/runtime.js', null, null, runtimeCode, { renderedLength: 154 });
+    evidence.outputs.push({
+      path: 'assets/runtime.js',
+      kind: 'chunk',
+      sha256: digest(Buffer.from(output)),
+      modules: [runtime]
+    });
+    await writeEvidence(root, evidence);
+
+    const artifacts = await inventory(root);
+    assert.equal((await consumeFrontendBuildEvidence(root, artifacts)).verified, true);
+    assert.ok(!artifacts.unresolved.some(item =>
+      item.kind === 'script-without-source-map' && item.path === 'apps/frontend/dist-tauri/assets/runtime.js'
+    ));
+
+    runtime.codeSha256 = null;
+    await writeEvidence(root, evidence);
+    const missingTransform = await inventory(root);
+    assert.equal((await consumeFrontendBuildEvidence(root, missingTransform)).verified, true);
+    assert.ok(missingTransform.unresolved.some(item =>
+      item.kind === 'frontend-build-transform-unverified' && item.id === '\0rolldown/runtime.js'
+    ));
+    assert.ok(missingTransform.unresolved.some(item =>
+      item.kind === 'script-without-source-map' && item.path === 'apps/frontend/dist-tauri/assets/runtime.js'
+    ));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Vite URL resources resolve only through compiler graph and exact emitted-byte evidence', async () => {
+  const { root, dist } = await fixture();
+  try {
+    const sourcePath = 'node_modules/pdfjs-dist/build/pdf.worker.mjs';
+    const source = Buffer.from('/* @licstart PDF.js license @licend */\nworker();\n');
+    const sourceText = source.toString('utf8');
+    const output = 'export default "./assets/pdf.worker-test.mjs";\n';
+    const emittedPath = 'apps/frontend/dist-tauri/assets/pdf.worker-test.mjs';
+    const map = {
+      version: 3,
+      sources: ['../../../' + sourcePath + '?url'],
+      sourcesContent: ['export default "__VITE_ASSET__worker__";\n']
+    };
+    await mkdir(path.dirname(path.join(root, sourcePath)), { recursive: true });
+    await writeFile(path.join(root, 'node_modules/pdfjs-dist/package.json'), JSON.stringify({
+      name: 'pdfjs-dist', version: '6.2.108', license: 'Apache-2.0'
+    }));
+    await writeFile(path.join(root, 'node_modules/pdfjs-dist/LICENSE'), 'Apache license terms\n');
+    await writeFile(path.join(root, sourcePath), source);
+    await mkdir(path.join(dist, 'assets'), { recursive: true });
+    await writeFile(path.join(dist, 'index.js'), output);
+    await writeFile(path.join(dist, 'index.js.map'), JSON.stringify(map));
+    await writeFile(path.join(root, emittedPath), source);
+
+    const evidence = await readEvidence(root);
+    const script = evidence.outputs.find(item => item.path === 'index.js');
+    script.sha256 = digest(Buffer.from(output));
+    script.modules = [graphModule(`${sourcePath}?url`, sourcePath, sourceText, output)];
+    evidence.outputs.push({
+      path: 'assets/pdf.worker-test.mjs',
+      kind: 'asset',
+      sha256: digest(source),
+      modules: [],
+      sourceFile: { path: sourcePath, sha256: digest(source) }
+    });
+    await writeEvidence(root, evidence);
+
+    const pdfWorker = {
+      emittedPath,
+      installedSourcePath: sourcePath,
+      package: 'pdfjs-dist',
+      version: '6.2.108',
+      declaredLicense: 'Apache-2.0',
+      sha256: digest(source),
+      installedSha256: digest(source),
+      bytes: source.length,
+      byteMatch: true,
+      licenseNoticeHeaderPresent: true
+    };
+    const artifacts = await inventory(root);
+    assert.ok(artifacts.unresolved.some(item =>
+      item.kind === 'url-resource-unverified' && item.source === sourcePath
+    ));
+    const result = await consumeFrontendBuildEvidence(root, artifacts, { pdfWorker });
+    assert.equal(result.verified, true);
+    assert.ok(!artifacts.unresolved.some(item =>
+      item.kind === 'url-resource-unverified' && item.source === sourcePath
+    ));
+    assert.ok(artifacts.resolved.some(item =>
+      item.finding.kind === 'url-resource-unverified' &&
+      item.evidence.kind === 'verified-url-resource-byte-trace' &&
+      item.evidence.resourcePath === emittedPath
+    ));
+
+    const unmatched = await inventory(root);
+    await consumeFrontendBuildEvidence(root, unmatched, {
+      pdfWorker: { ...pdfWorker, byteMatch: false }
+    });
+    assert.ok(unmatched.unresolved.some(item =>
+      item.kind === 'url-resource-unverified' && item.source === sourcePath
+    ));
+
+    await writeFile(path.join(root, emittedPath), 'tampered worker bytes');
+    const tampered = await inventory(root);
+    assert.equal((await consumeFrontendBuildEvidence(root, tampered, { pdfWorker })).verified, false);
+    assert.ok(tampered.unresolved.some(item => item.kind === 'frontend-build-evidence-invalid'));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('verified CSS module graph does not require a nonexistent CSS source map', async () => {
   const { root, dist } = await fixture();
   try {
@@ -189,17 +375,14 @@ test('verified CSS module graph does not require a nonexistent CSS source map', 
     const output = '.example{color:red}';
     await writeFile(path.join(root, sourcePath), source);
     await writeFile(path.join(dist, 'style.css'), output);
-    const mapPath = path.join(dist, 'index.js.map');
-    const map = JSON.parse(await readFile(mapPath, 'utf8'));
-    map.sources.push('../../../' + sourcePath);
-    map.sourcesContent.push(source);
-    await writeFile(mapPath, JSON.stringify(map));
     const evidencePath = path.join(dist, 'frontend-build-evidence.json');
     const evidence = JSON.parse(await readFile(evidencePath, 'utf8'));
-    evidence.outputs.push({path:'style.css',kind:'css',sha256:digest(Buffer.from(output)),modules:[{
-      id:sourcePath,sourcePath,sourceSha256:digest(Buffer.from(source)),codeSha256:digest(Buffer.from('')),
-      renderedLength:null,raw:false,style:true,wasm:false,virtual:false
-    }]});
+    evidence.outputs.push({
+      path: 'style.css',
+      kind: 'css',
+      sha256: digest(Buffer.from(output)),
+      modules: [graphModule(sourcePath, sourcePath, source, '', { style: true })]
+    });
     await writeFile(evidencePath, JSON.stringify(evidence));
     const artifacts = await inventory(root);
     assert(artifacts.unresolved.some(item=>item.path==='apps/frontend/dist-tauri/style.css'));

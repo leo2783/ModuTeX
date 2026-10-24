@@ -11,7 +11,7 @@ const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 
 async function createBaseTree() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'package-containment-root-'));
-  const dist = path.join(root, 'apps/frontend/dist');
+  const dist = path.join(root, 'apps/frontend/dist-tauri');
   await mkdir(dist, { recursive: true });
   return { root, dist };
 }

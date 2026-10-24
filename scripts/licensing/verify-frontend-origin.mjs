@@ -2,7 +2,7 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inspectFrontendBoundaries } from './frontend-boundaries.mjs';
-import { digest, inside, inventoryFrontend } from './frontend-artifacts.mjs';
+import { digest, inside, inventoryFrontend, packageEvidenceFor } from './frontend-artifacts.mjs';
 import { collectAssetProvenance } from './frontend-asset-origins.mjs';
 
 const HASH = /^[0-9a-f]{64}$/;
@@ -186,7 +186,11 @@ async function verifyFrontendBuildEvidence(rootDirectory, inventory) {
     let moduleCount = 0;
     for (const item of evidence.outputs) {
       if (!plainRecord(item) || !['chunk', 'css', 'asset'].includes(item.kind) ||
-        !HASH.test(item.sha256 ?? '') || !Array.isArray(item.modules)) throw new Error('OUTPUT_RECORD_INVALID');
+        !HASH.test(item.sha256 ?? '') || !Array.isArray(item.modules) ||
+        (item.facadeModuleId !== undefined &&
+          (item.kind !== 'chunk' || typeof item.facadeModuleId !== 'string' || item.facadeModuleId.length > 32767))) {
+        throw new Error('OUTPUT_RECORD_INVALID');
+      }
       const rootPath = `${scope}/${item.path}`;
       safePath(root, rootPath, 'output');
       if (outputs.has(rootPath)) throw new Error(`OUTPUT_DUPLICATED: ${rootPath}`);
@@ -224,6 +228,9 @@ async function verifyFrontendBuildEvidence(rootDirectory, inventory) {
         if (module.codeSha256 === null) warnings.push({ kind: 'frontend-build-transform-unverified', output: rootPath, id: module.id });
         moduleCount++;
         if (moduleCount > 100000) throw new Error('MODULE_LIMIT_EXCEEDED');
+      }
+      if (item.facadeModuleId !== undefined && !seen.has(item.facadeModuleId)) {
+        throw new Error(`OUTPUT_FACADE_MODULE_INVALID: ${rootPath}`);
       }
       if ((item.kind === 'chunk' || item.kind === 'css') && item.modules.length === 0) {
         warnings.push({ kind: item.kind === 'css' ? 'frontend-build-css-graph-unavailable' : 'frontend-build-module-graph-empty', path: rootPath });
@@ -263,7 +270,7 @@ async function verifyFrontendBuildEvidence(rootDirectory, inventory) {
   }
 }
 
-export async function consumeFrontendBuildEvidence(root, artifacts) {
+export async function consumeFrontendBuildEvidence(root, artifacts, assetEvidence = null) {
   artifacts.unresolved = artifacts.unresolved.filter(item => !oldDocumentFindings.has(item.kind));
   artifacts.bundledDocuments = [];
   const evidence = await verifyFrontendBuildEvidence(root, artifacts);
@@ -273,8 +280,92 @@ export async function consumeFrontendBuildEvidence(root, artifacts) {
   }
   artifacts.bundledDocuments = evidence.rawDocuments;
   const sourceRows = new Map(artifacts.sources.map(item => [item.path, item]));
+  const packageRows = new Map((artifacts.packages ?? []).map(item => [item.path, item]));
+  const packageFindings = [];
+  const modulePackages = new Map();
+  async function modulePackage(sourcePath) {
+    if (!modulePackages.has(sourcePath)) {
+      modulePackages.set(sourcePath, await packageEvidenceFor(root, sourcePath, packageRows, packageFindings));
+    }
+    return modulePackages.get(sourcePath);
+  }
   const resolved = artifacts.resolved ?? [];
   const remaining = [];
+  async function urlResourceProof(finding, output) {
+    if (!output || output.kind !== 'chunk' || finding.map !== `${output.rootPath}.map`) return null;
+    const source = sourceRows.get(finding.source);
+    if (!source || source.package === null || source.sha256 !== sourceRows.get(finding.source)?.sha256) return null;
+    const modules = output.modules.filter(module =>
+      module.sourcePath === finding.source &&
+      module.sourceSha256 === source.sha256 &&
+      queryOf(module.id).has('url') &&
+      module.codeSha256 !== null &&
+      !module.raw &&
+      !module.style &&
+      !module.virtual
+    );
+    if (modules.length !== 1) return null;
+    const packagePath = await modulePackage(finding.source);
+    const packageRecord = packagePath === null ? null : packageRows.get(packagePath);
+    if (!packageRecord || packagePath !== source.package) return null;
+
+    const traces = (source.generatedResources ?? []).filter(trace =>
+      trace.kind === 'vite-url-module' &&
+      trace.map === finding.map &&
+      trace.script === output.rootPath &&
+      trace.resourceSha256 === source.sha256 &&
+      HASH.test(trace.wrapperSha256 ?? '')
+    );
+    if (traces.length > 1) return null;
+    const sourceAssets = [...evidence.outputs.values()].filter(item =>
+      item.kind === 'asset' &&
+      item.sourceFile?.path === finding.source &&
+      item.sourceFile.sha256 === source.sha256 &&
+      item.sha256 === source.sha256
+    );
+    let resourceOutput;
+    let trace = null;
+    if (traces.length === 1) {
+      trace = traces[0];
+      resourceOutput = evidence.outputs.get(trace.emitted);
+      if (!resourceOutput || resourceOutput.kind !== 'asset' ||
+        resourceOutput.sha256 !== trace.resourceSha256 ||
+        (sourceAssets.length > 0 && !sourceAssets.includes(resourceOutput))) return null;
+    } else {
+      if (sourceAssets.length !== 1) return null;
+      [resourceOutput] = sourceAssets;
+    }
+    if (resourceOutput.sha256 !== source.sha256 ||
+      (resourceOutput.sourceFile &&
+        (resourceOutput.sourceFile.path !== finding.source || resourceOutput.sourceFile.sha256 !== source.sha256))) {
+      return null;
+    }
+
+    const worker = assetEvidence?.pdfWorker;
+    if (plainRecord(worker) && worker.installedSourcePath === finding.source) {
+      if (worker.byteMatch !== true ||
+        worker.licenseNoticeHeaderPresent !== true ||
+        worker.sha256 !== worker.installedSha256 ||
+        worker.installedSha256 !== source.sha256 ||
+        worker.emittedPath !== resourceOutput.rootPath ||
+        worker.sha256 !== resourceOutput.sha256 ||
+        worker.package !== packageRecord.name ||
+        worker.version !== packageRecord.version) return null;
+    }
+    return {
+      kind: 'verified-url-resource-byte-trace',
+      sourcePath: finding.source,
+      sourceSha256: source.sha256,
+      moduleId: modules[0].id,
+      moduleCodeSha256: modules[0].codeSha256,
+      outputPath: output.rootPath,
+      outputSha256: output.sha256,
+      resourcePath: resourceOutput.rootPath,
+      resourceSha256: resourceOutput.sha256,
+      ...(trace ? { mapWrapperSha256: trace.wrapperSha256 } : {}),
+      compilers: evidence.compilerSummary
+    };
+  }
   for (const finding of artifacts.unresolved) {
     const output = typeof finding.map === 'string' && finding.map.endsWith('.map')
       ? evidence.outputs.get(finding.map.slice(0, -4))
@@ -300,6 +391,8 @@ export async function consumeFrontendBuildEvidence(root, artifacts) {
         codeSha256: module.codeSha256, outputPath: output.rootPath,
         outputSha256: output.sha256, compilers: evidence.compilerSummary
       };
+    } else if (finding.kind === 'url-resource-unverified') {
+      proof = await urlResourceProof(finding, output);
     }
     if (proof) resolved.push({ finding, evidence: proof });
     else remaining.push(finding);
@@ -307,17 +400,25 @@ export async function consumeFrontendBuildEvidence(root, artifacts) {
   const unresolvedSources = new Set(remaining
     .filter(item => item.kind === 'source-content-unverified').map(item => item.source));
   const pending = [];
+  async function completeModuleGraph(modules, styleOnly) {
+    if (modules.length === 0) return false;
+    const compilerBackedVirtualModules = evidence.compilerSummary.some(item => item.role === 'bundler');
+    for (const module of modules) {
+      if (!module.codeSha256 || (styleOnly && !module.style)) return false;
+      if (module.sourcePath === null) {
+        if (styleOnly || !module.virtual || !compilerBackedVirtualModules) return false;
+      } else {
+        if (unresolvedSources.has(module.sourcePath) || await modulePackage(module.sourcePath) === null) return false;
+      }
+    }
+    return true;
+  }
   for (const finding of remaining) {
     const output = evidence.outputs.get(finding.path);
     let proof = null;
     if (finding.kind === 'asset-origin-review-required' &&
       path.posix.extname(finding.path).toLowerCase() === '.css' && output?.kind === 'css') {
-      const complete = output.modules.length > 0 && output.modules.every(module => {
-        const source = module.sourcePath && sourceRows.get(module.sourcePath);
-        return module.style && module.codeSha256 && source &&
-          source.sha256 === module.sourceSha256 && source.package !== null &&
-          !unresolvedSources.has(module.sourcePath);
-      });
+      const complete = await completeModuleGraph(output.modules, true);
       if (complete) proof = {
         kind: 'verified-css-module-graph', outputPath: output.rootPath,
         outputSha256: output.sha256,
@@ -330,20 +431,14 @@ export async function consumeFrontendBuildEvidence(root, artifacts) {
       const source = sourceRows.get(output.sourceFile.path);
       const traced = generatedCoreWasm(output.sourceFile.path)
         ? evidence.compilerSummary.some(item => item.role === 'rust-wasm')
-        : source?.sha256 === output.sourceFile.sha256 && source.package !== null;
+        : source?.sha256 === output.sourceFile.sha256 && await modulePackage(output.sourceFile.path) !== null;
       if (traced) proof = {
         kind: 'verified-wasm-byte-trace', outputPath: output.rootPath,
         outputSha256: output.sha256, sourcePath: output.sourceFile.path,
         sourceSha256: output.sourceFile.sha256, compilers: evidence.compilerSummary
       };
     } else if (finding.kind === 'script-without-source-map' && output?.kind === 'chunk') {
-      const complete = output.modules.length > 0 && output.modules.every(module => {
-        if (!module.codeSha256) return false;
-        if (!module.sourcePath) return module.virtual;
-        const source = sourceRows.get(module.sourcePath);
-        return source?.sha256 === module.sourceSha256 && source.package !== null &&
-          !unresolvedSources.has(module.sourcePath);
-      });
+      const complete = await completeModuleGraph(output.modules, false);
       if (complete) proof = {
         kind: 'verified-script-module-graph', outputPath: output.rootPath,
         outputSha256: output.sha256, modules: output.modules.length,
@@ -353,7 +448,8 @@ export async function consumeFrontendBuildEvidence(root, artifacts) {
     if (proof) resolved.push({ finding, evidence: proof });
     else pending.push(finding);
   }
-  artifacts.unresolved = [...pending, ...evidence.warnings];
+  artifacts.packages = [...packageRows.values()].sort((a, b) => a.path.localeCompare(b.path));
+  artifacts.unresolved = [...pending, ...evidence.warnings, ...packageFindings];
   artifacts.resolved = resolved;
   return {
     verified: true, findings: evidence.warnings,
@@ -428,7 +524,7 @@ export async function verifyFrontendOrigin(root) {
   const assets = await collectAssetProvenance(root, dist);
   const artifacts = await inventoryFrontend(root, dist);
   reconcileAssetFindings(artifacts, assets);
-  const buildEvidence = await consumeFrontendBuildEvidence(root, artifacts);
+  const buildEvidence = await consumeFrontendBuildEvidence(root, artifacts, assets);
   const blockers = [
     ...boundaries.findings,
     ...artifacts.unresolved,

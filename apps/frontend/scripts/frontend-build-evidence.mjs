@@ -179,11 +179,20 @@ async function cargoCompilerLock(version) {
 export function frontendBuildEvidencePlugin(enabled) {
 	const snapshots = new Map();
 	const currentInputs = new Map();
+	const transformedCodeHashes = new Map();
 	return {
 		name: 'frontend-build-evidence',
 		enforce: 'pre',
-		async transform(_code, id) {
+		async transform(code, id) {
 			if (!enabled) return null;
+			if (typeof code === 'string') {
+				const codeHash = sha256(Buffer.from(code));
+				const previous = transformedCodeHashes.get(id);
+				if (previous !== undefined && previous !== codeHash) {
+					throw new Error(`FRONTEND_BUILD_EVIDENCE_TRANSFORM_CHANGED_DURING_BUILD: ${id}`);
+				}
+				transformedCodeHashes.set(id, codeHash);
+			}
 			const candidate = pathFromId(id);
 			if (!candidate) return null;
 			const input = await inputFromAbsolute(candidate);
@@ -218,11 +227,14 @@ export function frontendBuildEvidencePlugin(enabled) {
 				const stableId = input
 					? `${input.path}${queryAt < 0 ? '' : id.slice(queryAt)}`
 					: id;
+				const codeSha256 = typeof info?.code === 'string'
+					? sha256(Buffer.from(info.code))
+					: transformedCodeHashes.get(id) ?? null;
 				return {
 					id: stableId,
 					sourcePath: input?.path ?? null,
 					sourceSha256: input?.sha256 ?? null,
-					codeSha256: typeof info?.code === 'string' ? sha256(Buffer.from(info.code)) : null,
+					codeSha256,
 					renderedLength: Number.isSafeInteger(rendered?.renderedLength) ? rendered.renderedLength : null,
 					raw: queryOf(id).has('raw'),
 					style: styleModule(id),
@@ -239,10 +251,15 @@ export function frontendBuildEvidencePlugin(enabled) {
 					} catch {
 						return null;
 					}
-				} else if (!path.isAbsolute(candidate) && !/^[A-Za-z]:[\\/]/.test(candidate)) {
-					candidate = path.resolve(appRoot, candidate);
 				}
-				return inputFromAbsolute(candidate);
+				const candidates = path.isAbsolute(candidate) || /^[A-Za-z]:[\\/]/.test(candidate)
+					? [candidate]
+					: [path.resolve(root, candidate), path.resolve(appRoot, candidate)];
+				for (const absolute of candidates) {
+					const input = await inputFromAbsolute(absolute);
+					if (input) return input;
+				}
+				return null;
 			}
 
 			const ids = [...pluginContext.getModuleIds()];
@@ -283,11 +300,25 @@ export function frontendBuildEvidencePlugin(enabled) {
 						? 'css'
 						: 'asset';
 				let modules = [];
+				let facadeModuleId;
 				if (output.type === 'chunk') {
 					modules = await Promise.all(Object.entries(output.modules).map(([id, rendered]) => moduleRecord(id, rendered)));
+					if (modules.length === 0 && typeof output.facadeModuleId === 'string') {
+						const facade = graphRecords.get(output.facadeModuleId);
+						if (facade) {
+							modules = [facade];
+							facadeModuleId = facade.id;
+						}
+					}
 				} else if (kind === 'css') {
 					const owners = cssOwners.get(fileName) ?? [];
-					const roots = new Set(owners.flatMap(chunk => Object.keys(chunk.modules)));
+					const roots = new Set();
+					for (const chunk of owners) {
+						for (const id of Object.keys(chunk.modules)) roots.add(id);
+						if (typeof chunk.facadeModuleId === 'string' && graphRecords.has(chunk.facadeModuleId)) {
+							roots.add(chunk.facadeModuleId);
+						}
+					}
 					if (roots.size > 0) {
 						for (const [id, info] of infos) {
 							if (info && !info.isExternal && styleModule(id) && reachesChunk(id, roots)) {
@@ -306,6 +337,7 @@ export function frontendBuildEvidencePlugin(enabled) {
 					kind,
 					sha256: sha256(bytes),
 					modules,
+					...(facadeModuleId === undefined ? {} : { facadeModuleId }),
 					...(sourceFile ? { sourceFile: { path: sourceFile.path, sha256: sourceFile.sha256 } } : {})
 				});
 			}

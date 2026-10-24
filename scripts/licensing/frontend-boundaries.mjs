@@ -50,12 +50,16 @@ export async function inspectFrontendBoundaries(rootDirectory) {
       add('external-module-reference', filename, value); return;
     }
     let candidate;
-    if (clean.startsWith('.')) {
+    const relativeAsset = kind === 'asset-url' || kind === 'css-asset';
+    // Relative asset URLs need not begin with "./" or "../".
+    if (relativeAsset || clean.startsWith('.')) {
       candidate = path.resolve(path.dirname(filename), clean);
       try { candidate = await realpath(candidate); }
       catch (error) {
         if (error.code !== 'ENOENT') throw error;
-        candidate = ts.resolveModuleName(clean, filename, options, ts.sys).resolvedModule?.resolvedFileName;
+        candidate = relativeAsset
+          ? undefined
+          : ts.resolveModuleName(clean, filename, options, ts.sys).resolvedModule?.resolvedFileName;
       }
     } else {
       candidate = ts.resolveModuleName(clean, filename, options, ts.sys).resolvedModule?.resolvedFileName;
@@ -228,16 +232,68 @@ export async function inspectFrontendBoundaries(rootDirectory) {
     return i;
   }
 
-  function unescapeCss(str) {
-    return str.replace(/\\(?:([0-9a-fA-F]{1,6})\s?|(\r\n|[\r\n\f])|([\s\S]))/g, (_, hex, nl, ch) => {
-      if (hex) {
-        const code = parseInt(hex, 16);
-        if (code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return '\ufffd';
-        return String.fromCodePoint(code);
+  function cssWhitespaceLength(css, index) {
+    const ch = css[index];
+    if (ch === '\r' && css[index + 1] === '\n') return 2;
+    return ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\f' ? 1 : 0;
+  }
+
+  function consumeCssEscape(css, index) {
+    let next = index + 1;
+    if (next >= css.length) return css.length;
+    const ch = css[next];
+    if (ch === '\r' && css[next + 1] === '\n') return next + 2;
+    if (ch === '\r' || ch === '\n' || ch === '\f') return next + 1;
+    if (/[0-9a-fA-F]/.test(ch)) {
+      let digits = 0;
+      while (next < css.length && digits < 6 && /[0-9a-fA-F]/.test(css[next])) {
+        next++;
+        digits++;
       }
-      if (nl) return '';
-      return ch ?? '';
-    });
+      return next + cssWhitespaceLength(css, next);
+    }
+    return next + (css.codePointAt(next) > 0xffff ? 2 : 1);
+  }
+
+  function unescapeCss(str) {
+    let output = '';
+    let i = 0;
+    while (i < str.length) {
+      if (str[i] !== '\\') {
+        output += str[i++];
+        continue;
+      }
+      let next = i + 1;
+      if (next >= str.length) {
+        i++;
+        continue;
+      }
+      if (/[0-9a-fA-F]/.test(str[next])) {
+        let digits = 0;
+        while (next < str.length && digits < 6 && /[0-9a-fA-F]/.test(str[next])) {
+          next++;
+          digits++;
+        }
+        const code = parseInt(str.slice(i + 1, next), 16);
+        output += code === 0 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)
+          ? '\ufffd'
+          : String.fromCodePoint(code);
+        i = next + cssWhitespaceLength(str, next);
+        continue;
+      }
+      if (str[next] === '\r' && str[next + 1] === '\n') {
+        i = next + 2;
+        continue;
+      }
+      if (str[next] === '\r' || str[next] === '\n' || str[next] === '\f') {
+        i = next + 1;
+        continue;
+      }
+      const escaped = String.fromCodePoint(str.codePointAt(next));
+      output += escaped;
+      i = next + escaped.length;
+    }
+    return output;
   }
 
   function cssReferences(css, filename) {
@@ -262,7 +318,7 @@ export async function inspectFrontendBoundaries(rootDirectory) {
         i++;
         while (i < len) {
           if (css[i] === '\\') {
-            i += 2;
+            i = consumeCssEscape(css, i);
           } else if (css[i] === quote) {
             i++;
             break;
@@ -287,8 +343,9 @@ export async function inspectFrontendBoundaries(rootDirectory) {
               while (i < len) {
                 const c = css[i];
                 if (c === '\\') {
-                  if (i + 1 < len) { raw += css.slice(i, i + 2); i += 2; }
-                  else i++;
+                  const end = consumeCssEscape(css, i);
+                  raw += css.slice(i, end);
+                  i = end;
                 } else if (c === quote) {
                   closed = true;
                   i++;
@@ -320,7 +377,7 @@ export async function inspectFrontendBoundaries(rootDirectory) {
                   const q = css[i];
                   i++;
                   while (i < len && css[i] !== q && css[i] !== '\n' && css[i] !== '\r') {
-                    if (css[i] === '\\') i += 2; else i++;
+                    if (css[i] === '\\') i = consumeCssEscape(css, i); else i++;
                   }
                   if (i < len && css[i] === q) i++;
                 } else {
@@ -347,8 +404,9 @@ export async function inspectFrontendBoundaries(rootDirectory) {
             while (p < len) {
               const c = css[p];
               if (c === '\\') {
-                if (p + 1 < len) { raw += css.slice(p, p + 2); p += 2; }
-                else p++;
+                const end = consumeCssEscape(css, p);
+                raw += css.slice(p, end);
+                p = end;
               } else if (c === quote) {
                 closedQuote = true;
                 p++;
@@ -387,8 +445,9 @@ export async function inspectFrontendBoundaries(rootDirectory) {
             while (p < len) {
               const c = css[p];
               if (c === '\\') {
-                if (p + 1 < len) { raw += css.slice(p, p + 2); p += 2; }
-                else p++;
+                const end = consumeCssEscape(css, p);
+                raw += css.slice(p, end);
+                p = end;
               } else if (c === ')') {
                 closed = true;
                 p++;
@@ -413,7 +472,7 @@ export async function inspectFrontendBoundaries(rootDirectory) {
             if (badUrl) {
               while (p < len) {
                 if (p + 1 < len && css[p] === '\\') {
-                  p += 2;
+                  p = consumeCssEscape(css, p);
                 } else if (css[p] === ')') {
                   p++;
                   break;

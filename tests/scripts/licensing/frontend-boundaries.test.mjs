@@ -670,3 +670,26 @@ new URL('../../../legacy/src/forbidden.js', import.meta.url);
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('frontend boundary inspector resolves bare relative asset URLs from import.meta.url', async () => {
+  const root = await createBaseTree();
+  try {
+    const generatedDir = path.join(root, 'apps/frontend/src/features/document-core/generated');
+    await mkdir(generatedDir, { recursive: true });
+    const assetName = 'modutex_document_core_bg.wasm';
+    const sourcePath = 'apps/frontend/src/features/document-core/generated/modutex_document_core.js';
+    await writeFile(path.join(generatedDir, assetName), 'wasm fixture', 'utf8');
+    await writeFile(path.join(root, sourcePath), `
+const wasm = new URL("${assetName}", import.meta.url);
+`, 'utf8');
+
+    const result = await inspectFrontendBoundaries(root);
+    assert.deepEqual(
+      result.references.filter(item => item.path === sourcePath),
+      [{ path: sourcePath, specifier: assetName, kind: 'asset-url' }]
+    );
+    assert.deepEqual(result.findings, []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

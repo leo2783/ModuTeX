@@ -1,5 +1,5 @@
 <script lang="ts">
-	import apache from '../../../desktop-tauri/LICENSE?raw';
+	import apache from '../../../../LICENSE?raw';
 	import tectonicNotice from '../../../../vendor/notices/TECTONIC-NOTICE.md?raw';
 	import tectonicLicense from '../../../../vendor/notices/TECTONIC-LICENSE.txt?raw';
 	import frontendNotices from '../../THIRD_PARTY_NOTICES.md?raw';

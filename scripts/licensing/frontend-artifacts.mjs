@@ -11,6 +11,62 @@ export const inside = (root, candidate) => {
 };
 const portable = value => value.split(path.sep).join('/');
 
+export async function packageEvidenceFor(rootDirectory, sourcePath, packages = new Map(), unresolved = []) {
+	if (typeof sourcePath !== 'string' || sourcePath.length === 0 || sourcePath.length > 4096 ||
+		sourcePath.startsWith('/') || sourcePath.includes('\\') || /[\x00-\x1f\x7f]/.test(sourcePath) ||
+		sourcePath.split('/').some(part => !part || part === '.' || part === '..')) {
+		throw new Error('SOURCE_PACKAGE_PATH_INVALID');
+	}
+	const root = await realpath(rootDirectory);
+	const candidate = path.resolve(root, sourcePath);
+	if (!inside(root, candidate) || portable(path.relative(root, candidate)) !== sourcePath) {
+		throw new Error(`SOURCE_PACKAGE_PATH_OUTSIDE_REPOSITORY: ${sourcePath}`);
+	}
+	const source = await realpath(candidate);
+	if (!inside(root, source) || portable(path.relative(root, source)) !== sourcePath) {
+		throw new Error(`SOURCE_PACKAGE_PATH_NOT_CANONICAL: ${sourcePath}`);
+	}
+	if (!(await stat(source)).isFile()) throw new Error(`SOURCE_PACKAGE_PATH_NOT_FILE: ${sourcePath}`);
+	const relative = value => portable(path.relative(root, value));
+	async function readContained(file) {
+		const actual = await realpath(file);
+		if (!inside(root, actual)) throw new Error(`PACKAGE_FILE_OUTSIDE_REPOSITORY: ${relative(file)}`);
+		if (!(await stat(actual)).isFile()) throw new Error(`PACKAGE_FILE_NOT_FILE: ${relative(file)}`);
+		return readFile(actual);
+	}
+
+	let directory = path.dirname(source);
+	while (inside(root, directory)) {
+		const manifestPath = path.join(directory, 'package.json');
+		let bytes;
+		try { bytes = await readContained(manifestPath); }
+		catch (error) { if (error.code !== 'ENOENT') throw error; }
+		if (bytes) {
+			const manifest = JSON.parse(bytes);
+			const key = relative(directory);
+			if (!packages.has(key)) {
+				const documents = [];
+				for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+					if (!(entry.isFile() || entry.isSymbolicLink()) || !/^(?:licen[sc]e|copying|notice)(?:[._-].*)?$/i.test(entry.name)) continue;
+					const documentPath = path.join(directory, entry.name);
+					const content = await readContained(documentPath);
+					documents.push({ path: relative(documentPath), sha256: digest(content), text: content.toString('utf8') });
+				}
+				packages.set(key, {
+					path: key, name: manifest.name ?? null, version: manifest.version ?? null,
+					declaredLicense: manifest.license ?? null, manifestSha256: digest(bytes), documents,
+					reviewStatus: 'pending-independent-review'
+				});
+				if (documents.length === 0) unresolved.push({ kind: 'missing-license-documents', path: key });
+			}
+			return key;
+		}
+		if (directory === root) break;
+		directory = path.dirname(directory);
+	}
+	return null;
+}
+
 // Evidence collector, not a license decision or a replacement for build-graph review.
 export async function inventoryFrontend(rootDirectory, distDirectory = 'apps/frontend/dist-tauri') {
   const root = await realpath(rootDirectory);
@@ -33,7 +89,7 @@ export async function inventoryFrontend(rootDirectory, distDirectory = 'apps/fro
   const unresolved = [];
   // Vite maps its generated ?url module, not the resource bytes. Trace both.
   async function resourceTrace(mapFile, embedded, sourceBytes) {
-    if (typeof embedded !== 'string' || !/^export default ["']__VITE_ASSET__[A-Za-z\d_$]+__["'];?\s*$/.test(embedded)) return null;
+    if (typeof embedded !== 'string') return null;
     const scriptFile = mapFile.slice(0, -4);
     if (!files.includes(scriptFile)) return null;
     const script = ts.createSourceFile(scriptFile, (await readFile(scriptFile)).toString('utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
@@ -56,42 +112,13 @@ export async function inventoryFrontend(rootDirectory, distDirectory = 'apps/fro
     return { kind: 'vite-url-module', wrapperSha256: digest(Buffer.from(embedded)), resourceSha256: resourceHash,
       emitted: [...matched][0], script: relative(scriptFile) };
   }
-  // Reads a regular file only if its real path stays inside root (symlinks cannot escape).
-  async function readContained(file) {
-    const actual = await realpath(file);
-    if (!inside(root, actual)) throw new Error(`PACKAGE_FILE_OUTSIDE_REPOSITORY: ${relative(file)}`);
-    if (!(await stat(actual)).isFile()) throw new Error(`PACKAGE_FILE_NOT_FILE: ${relative(file)}`);
-    return readFile(actual);
-  }
+  const packageBySource = new Map();
   async function packageFor(source) {
-    let directory = path.dirname(source);
-    while (inside(root, directory)) {
-      const manifestPath = path.join(directory, 'package.json');
-      let bytes;
-      try { bytes = await readContained(manifestPath); }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
-      if (bytes) {
-        const manifest = JSON.parse(bytes);
-        const key = relative(directory);
-        if (!packages.has(key)) {
-          const documents = [];
-          for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
-            if (!(entry.isFile() || entry.isSymbolicLink()) || !/^(?:licen[sc]e|copying|notice)(?:[._-].*)?$/i.test(entry.name)) continue;
-            const documentPath = path.join(directory, entry.name);
-            const content = await readContained(documentPath);
-            documents.push({ path: relative(documentPath), sha256: digest(content), text: content.toString('utf8') });
-          }
-          packages.set(key, { path: key, name: manifest.name ?? null, version: manifest.version ?? null,
-            declaredLicense: manifest.license ?? null, manifestSha256: digest(bytes), documents,
-            reviewStatus: 'pending-independent-review' });
-          if (documents.length === 0) unresolved.push({ kind: 'missing-license-documents', path: key });
-        }
-        return key;
-      }
-      if (directory === root) break;
-      directory = path.dirname(directory);
+    const sourcePath = relative(source);
+    if (!packageBySource.has(sourcePath)) {
+      packageBySource.set(sourcePath, await packageEvidenceFor(root, sourcePath, packages, unresolved));
     }
-    return null;
+    return packageBySource.get(sourcePath);
   }
   for (const filename of files) {
     const bytes = await readFile(filename);
@@ -108,9 +135,9 @@ export async function inventoryFrontend(rootDirectory, distDirectory = 'apps/fro
         continue;
       }
       const queryIndex = name.indexOf('?');
-      const query = queryIndex === -1 ? [] : name.slice(queryIndex + 1).split('&');
-      const urlModule = query.includes('url');
-      const rawModule = query.includes('raw');
+      const query = new URLSearchParams(queryIndex === -1 ? '' : name.slice(queryIndex + 1).split('#', 1)[0]);
+      const urlModule = query.has('url');
+      const rawModule = query.has('raw');
       const sourceName = urlModule || rawModule ? name.slice(0, queryIndex) : name;
       const candidate = path.resolve(path.dirname(filename), map.sourceRoot ?? '', sourceName);
       if (!inside(root, candidate)) throw new Error(`SOURCE_OUTSIDE_REPOSITORY: ${name}`);
@@ -127,7 +154,7 @@ export async function inventoryFrontend(rootDirectory, distDirectory = 'apps/fro
       const embedded = map.sourcesContent?.[index];
       const trace = urlModule ? await resourceTrace(filename, embedded, sourceBytes) : null;
       const matches = !urlModule && typeof embedded === 'string' && embedded === sourceBytes.toString('utf8');
-      if (urlModule && !trace) unresolved.push({ kind: 'url-resource-unverified', map: relative(filename), source: relative(absolute) });
+      if (urlModule) unresolved.push({ kind: 'url-resource-unverified', map: relative(filename), source: relative(absolute) });
       else if (!urlModule && !matches) unresolved.push({ kind: 'source-content-unverified', map: relative(filename), source: relative(absolute) });
       const key = relative(absolute);
       let source = sources.get(key);

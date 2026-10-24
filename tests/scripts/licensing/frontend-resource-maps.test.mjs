@@ -11,7 +11,7 @@ const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 
 async function createBaseTree() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'resource-maps-root-'));
-  const dist = path.join(root, 'apps/frontend/dist');
+  const dist = path.join(root, 'apps/frontend/dist-tauri');
   await mkdir(dist, { recursive: true });
   await mkdir(path.join(dist, 'assets'), { recursive: true });
   await mkdir(path.join(root, 'node_modules/test-pkg'), { recursive: true });
@@ -32,11 +32,11 @@ async function createBaseTree() {
 }
 
 // 1. Valid resource trace (e.g. worker / asset script)
-test('valid worker / url module resource trace resolves emitted asset with matching hash', async () => {
+test('valid worker URL records matching bytes and awaits compiler evidence before closure', async () => {
   const { root, dist } = await createBaseTree();
   try {
     const assetBytes = Buffer.from('worker-thread-byte-content-123');
-    const assetRelPath = 'apps/frontend/dist/assets/worker.js';
+    const assetRelPath = 'apps/frontend/dist-tauri/assets/worker.js';
     await writeFile(path.join(dist, 'assets/worker.js'), assetBytes);
 
     const sourcePath = path.join(root, 'packages/document-core/src/worker.ts');
@@ -46,7 +46,7 @@ test('valid worker / url module resource trace resolves emitted asset with match
     const scriptCode = `const workerUrl = "/assets/worker.js";\nexport default workerUrl;\n`;
     await writeFile(path.join(dist, 'entry.js'), scriptCode, 'utf8');
 
-    // From apps/frontend/dist/entry.js.map, relative to root is 3 levels up: ../../../packages/...
+    // From apps/frontend/dist-tauri/entry.js.map, relative to root is 3 levels up: ../../../packages/...
     await writeFile(
       path.join(dist, 'entry.js.map'),
       JSON.stringify({
@@ -70,7 +70,7 @@ test('valid worker / url module resource trace resolves emitted asset with match
     assert.equal(res.emitted, assetRelPath);
     assert.equal(res.resourceSha256, digest(assetBytes));
     assert.equal(res.wrapperSha256, digest(Buffer.from(wrapperExport)));
-    assert.ok(!result.unresolved.some(u => u.kind === 'url-resource-unverified'));
+    assert.ok(result.unresolved.some(u => u.kind === 'url-resource-unverified'), 'byte inventory alone cannot claim verified compiler provenance');
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -229,7 +229,7 @@ test('resourceTrace deduplicates equivalent normalized URL spellings resolving t
   const { root, dist } = await createBaseTree();
   try {
     const assetBytes = Buffer.from('dedup-logo-content-bytes');
-    const assetRelPath = 'apps/frontend/dist/assets/logo.png';
+    const assetRelPath = 'apps/frontend/dist-tauri/assets/logo.png';
     await writeFile(path.join(dist, 'assets/logo.png'), assetBytes);
 
     const sourcePath = path.join(root, 'packages/document-core/src/logo.png');
@@ -268,7 +268,7 @@ export const logo = u1;
     assert.equal(res.emitted, assetRelPath);
     assert.equal(res.resourceSha256, digest(assetBytes));
     assert.equal(res.wrapperSha256, digest(Buffer.from(wrapperExport)));
-    assert.ok(!result.unresolved.some(u => u.kind === 'url-resource-unverified'));
+    assert.ok(result.unresolved.some(u => u.kind === 'url-resource-unverified'), 'deduplicated bytes still require verified compiler provenance');
   } finally {
     await rm(root, { recursive: true, force: true });
   }
