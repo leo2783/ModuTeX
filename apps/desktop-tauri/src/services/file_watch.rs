@@ -16,14 +16,12 @@ use std::{
 };
 
 use crate::{
-    schemas::protocol::{
-        FileWatchFailure, OwnerId, WorkspaceId,
-    },
+    schemas::protocol::{FileWatchFailure, FileWatchResyncReason, OwnerId, WorkspaceId},
     services::{
         filesystem::{FilesystemService, TaskDrainHandle, WatchNotification},
         watch_native::{
             DefaultWatchValidator, DirectoryIdentity, NativeWatchRegistry, NativeWatchSubscription,
-            RawNotifyAction, ValidatorDisposition, WatchAccessError, WatchConfig,
+            RawNotifyAction, ResyncReason, ValidatorDisposition, WatchAccessError, WatchConfig,
             WatchGeneration, WatchSignal, WatchValidatorSeam,
         },
     },
@@ -55,7 +53,8 @@ impl WatchValidatorSeam for HostWatchValidator {
         path: &RelativePath,
         action: RawNotifyAction,
     ) -> ValidatorDisposition {
-        self.inner.validate_notified_path(root_identity, path, action)
+        self.inner
+            .validate_notified_path(root_identity, path, action)
     }
 }
 
@@ -80,10 +79,7 @@ impl WatchDeliveryGate {
     }
 
     pub(crate) fn activate(&self) -> bool {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         if *state != DeliveryGateState::Pending {
             return false;
         }
@@ -93,19 +89,13 @@ impl WatchDeliveryGate {
     }
 
     pub(crate) fn deactivate(&self) {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         *state = DeliveryGateState::Closed;
         self.condvar.notify_all();
     }
 
     pub(crate) fn wait_until_active(&self) -> bool {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         while *state == DeliveryGateState::Pending {
             state = self
                 .condvar
@@ -119,10 +109,7 @@ impl WatchDeliveryGate {
     // emission.  Close/replacement therefore linearizes before or after that
     // emission, never in its middle.
     pub(crate) fn enter(&self) -> Option<MutexGuard<'_, DeliveryGateState>> {
-        let state = self
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         if *state == DeliveryGateState::Active {
             Some(state)
         } else {
@@ -192,10 +179,7 @@ impl WatchCleanupReaper {
 fn watch_cleanup_worker(queue: Arc<WatchCleanupQueue>) {
     loop {
         let task = {
-            let mut state = queue
-                .state
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let mut state = queue.state.lock().unwrap_or_else(PoisonError::into_inner);
             while state.tasks.is_empty() {
                 state = queue
                     .condvar
@@ -206,10 +190,7 @@ fn watch_cleanup_worker(queue: Arc<WatchCleanupQueue>) {
         };
         if let Some(task) = task {
             let _ = catch_unwind(AssertUnwindSafe(task));
-            let mut state = queue
-                .state
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let mut state = queue.state.lock().unwrap_or_else(PoisonError::into_inner);
             state.reservations = state.reservations.saturating_sub(1);
             queue.condvar.notify_all();
         }
@@ -293,11 +274,7 @@ pub(crate) fn queue_watch_cleanup(permit: WatchCleanupPermit, resources: WatchCl
         // This runs only on a reserved reaper worker, never on a Tauri command
         // or window-close callback.  The exact-generation unsubscribe cannot
         // remove a replacement subscription.
-        let _ = native_registry.unsubscribe(
-            &owner,
-            &workspace_id,
-            Some(native_generation),
-        );
+        let _ = native_registry.unsubscribe(&owner, &workspace_id, Some(native_generation));
         let bridge_joined = if let Some(worker) = drain_worker {
             let _ = worker.join();
             true
@@ -384,11 +361,16 @@ pub(crate) fn valid_watch_identity(subscription_id: &str, generation: u64) -> bo
         && generation <= crate::schemas::protocol::MAX_SAFE_INTEGER
 }
 
+/// Identity of a renderer watch subscription within its owner and workspace.
+pub(crate) struct WatchBridgeIdentity {
+    pub(crate) owner: OwnerId,
+    pub(crate) workspace_id: WorkspaceId,
+    pub(crate) subscription_id: String,
+    pub(crate) renderer_generation: u64,
+}
+
 pub(crate) fn spawn_watch_bridge(
-    owner: OwnerId,
-    workspace_id: WorkspaceId,
-    subscription_id: String,
-    renderer_generation: u64,
+    identity: WatchBridgeIdentity,
     service: &FilesystemService,
     native_watch: &Arc<NativeWatchRegistry>,
     sink: Arc<dyn Fn(WatchNotification) + Send + Sync + 'static>,
@@ -396,6 +378,12 @@ pub(crate) fn spawn_watch_bridge(
     stopped: Arc<AtomicBool>,
     delivery_gate: Arc<WatchDeliveryGate>,
 ) -> Result<Arc<ActiveWatch>, String> {
+    let WatchBridgeIdentity {
+        owner,
+        workspace_id,
+        subscription_id,
+        renderer_generation,
+    } = identity;
     let verified_dir = match service.open_verified_watch_target(&owner, &workspace_id) {
         Ok(handle) => handle,
         Err(error) => return Err(error.to_string()),
@@ -483,8 +471,7 @@ pub(crate) fn spawn_watch_bridge(
     let drain_gate = Arc::clone(&delivery_gate);
     let drain_handle = drain_fs.clone();
     let native_watch_registry = Arc::clone(native_watch);
-    let cleanup_trigger: Arc<Mutex<Option<Weak<ActiveWatch>>>> =
-        Arc::new(Mutex::new(None));
+    let cleanup_trigger: Arc<Mutex<Option<Weak<ActiveWatch>>>> = Arc::new(Mutex::new(None));
     let cleanup_trigger_for_worker = Arc::clone(&cleanup_trigger);
 
     let spawn_res = thread::Builder::new()
@@ -495,7 +482,12 @@ pub(crate) fn spawn_watch_bridge(
                 return;
             }
             while !drain_stopped.load(Ordering::Acquire) && !drain_sub.is_stopped() {
-                match drain_sub.wait_and_drain(&drain_owner, &drain_ws, native_gen, Duration::from_millis(150)) {
+                match drain_sub.wait_and_drain(
+                    &drain_owner,
+                    &drain_ws,
+                    native_gen,
+                    Duration::from_millis(150),
+                ) {
                     Ok(signals) => {
                         if signals.is_empty() {
                             continue;
@@ -512,16 +504,27 @@ pub(crate) fn spawn_watch_bridge(
                                     }
                                     match signal {
                                         WatchSignal::Event { event, .. } => {
-                                            let _ = drain_handle.emit_file_event(event.path.clone(), event.kind);
+                                            let _ = drain_handle
+                                                .emit_file_event(event.path.clone(), event.kind);
                                         }
                                         WatchSignal::Failure { failure, .. } => {
                                             let _ = drain_handle.emit_failure(*failure);
                                         }
-                                        WatchSignal::ResyncRequired { .. } => {
-                                            // DesktopPort has no resync payload;
-                                            // surface the lost event stream as
-                                            // one terminal contract failure.
-                                            let _ = drain_handle.emit_failure(FileWatchFailure::FileOperationFailed);
+                                        WatchSignal::ResyncRequired { reason, .. } => {
+                                            match reason {
+                                                ResyncReason::PeriodicReconcileDue => {
+                                                    let _ = drain_handle.emit_resync(
+                                                        FileWatchResyncReason::PeriodicReconcileDue,
+                                                    );
+                                                }
+                                                ResyncReason::KernelBufferOverflow
+                                                | ResyncReason::EventQueueOverflow
+                                                | ResyncReason::CorruptNotifyBuffer(_) => {
+                                                    let _ = drain_handle.emit_failure(
+                                                        FileWatchFailure::FileOperationFailed,
+                                                    );
+                                                }
+                                            }
                                         }
                                     }
                                 }

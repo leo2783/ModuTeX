@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-frontend-settings"
+description = "Allow trusted document windows to read, update, reset, and import frontend preferences."
+commands.allow = [
+    "frontend_settings_read",
+    "frontend_settings_set",
+    "frontend_settings_reset",
+    "frontend_settings_import",
+]

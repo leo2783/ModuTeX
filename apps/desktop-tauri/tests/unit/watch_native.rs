@@ -505,9 +505,18 @@ fn pending_reservation_cancellation_returns_before_start_cleanup_finishes() {
     let finished_before_proof = reservation.lock_state().finished;
     reservation.finish();
     waiter.join().expect("reservation cancellation worker");
-    assert!(returned_before_finish, "cancel must not block the UI waiting for start cleanup");
-    assert!(observed_cancel, "admission must be revoked before cancel returns");
-    assert!(!finished_before_proof, "cancellation is not cleanup completion proof");
+    assert!(
+        returned_before_finish,
+        "cancel must not block the UI waiting for start cleanup"
+    );
+    assert!(
+        observed_cancel,
+        "admission must be revoked before cancel returns"
+    );
+    assert!(
+        !finished_before_proof,
+        "cancellation is not cleanup completion proof"
+    );
     assert!(reservation.lock_state().finished);
 }
 

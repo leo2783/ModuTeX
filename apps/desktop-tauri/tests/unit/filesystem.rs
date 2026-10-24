@@ -339,6 +339,57 @@ fn close_revokes_admission_first_invokes_cancellers_outside_lock_and_drops_late_
 }
 
 #[test]
+fn periodic_resync_uses_the_same_drained_and_stale_generation_fences_as_file_events() {
+    use crate::schemas::protocol::FileWatchResyncReason;
+
+    let tmp = TempWorkspace::new("resync-fence");
+    let svc = tmp.service(Duration::from_millis(80));
+    let main = owner("main");
+    let folder = tmp.base.join("watched");
+    fs::create_dir_all(&folder).unwrap();
+    let first = svc
+        .open_workspace_folder(&main, &folder, None, ts(1))
+        .unwrap()
+        .opened
+        .id;
+    let delivered = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&delivered);
+    let mut watch = svc
+        .start_watch(
+            &main,
+            &first,
+            Arc::new(move |event| sink.lock().unwrap().push(event)),
+            Box::new(|| Ok(())),
+        )
+        .unwrap();
+    let drain = watch.drain_handle().unwrap();
+    let reason = FileWatchResyncReason::PeriodicReconcileDue;
+
+    drain.emit_resync(reason).unwrap();
+    assert_eq!(
+        *delivered.lock().unwrap(),
+        vec![WatchNotification::ResyncRequired {
+            workspace_id: first.clone(),
+            reason,
+        }]
+    );
+    drain.finish_drain().unwrap();
+    watch.finish_drain();
+    assert!(drain.emit_resync(reason).is_err());
+    svc.close_workspace(&main, &first).unwrap();
+
+    let second = svc
+        .open_workspace_folder(&main, &folder, None, ts(2))
+        .unwrap()
+        .opened
+        .id;
+    assert_ne!(first, second);
+    assert!(drain.emit_resync(reason).is_err());
+    assert_eq!(delivered.lock().unwrap().len(), 1);
+    svc.close_workspace(&main, &second).unwrap();
+}
+
+#[test]
 fn reopen_recent_save_as_batch_rollback_and_reparse_rejection() {
     let tmp = TempWorkspace::new("recent-saveas");
     let svc = tmp.service(DEFAULT_CLOSE_DRAIN_TIMEOUT);
@@ -843,8 +894,8 @@ fn bounded_admission_limits_reject_when_stuck_tasks_or_retiring_workspaces_accum
 mod reviewer_acceptance {
     // Independent service lifecycle acceptance; controlled temp directories only.
     use crate::{
-        services::filesystem::FilesystemService,
         schemas::protocol::{OwnerId, Timestamp},
+        services::filesystem::FilesystemService,
         state::recent::RecentStore,
         state::sessions::SessionRegistry,
         state::settings::SettingsStore,
@@ -951,8 +1002,10 @@ mod reviewer_acceptance {
     #[test]
     fn dropping_compile_ticket_does_not_release_input_lease_without_drain_proof() {
         use crate::{
+            schemas::protocol::{
+                CompileRequest, DocumentId, DocumentVersion, Engine, RunId, WriteRequest,
+            },
             services::filesystem::FilesystemError,
-            schemas::protocol::{CompileRequest, DocumentId, DocumentVersion, Engine, RunId, WriteRequest},
             shared::relative_path::RelativePath,
         };
         let f = Fixture::new();
@@ -1004,7 +1057,8 @@ mod reviewer_acceptance {
     #[test]
     fn workspace_close_waits_for_admitted_delivery_and_blocks_later_callbacks() {
         use crate::{
-            services::filesystem::TaskDrainHandle, schemas::protocol::FileEventKind, shared::relative_path::RelativePath,
+            schemas::protocol::FileEventKind, services::filesystem::TaskDrainHandle,
+            shared::relative_path::RelativePath,
         };
         use std::{
             sync::{

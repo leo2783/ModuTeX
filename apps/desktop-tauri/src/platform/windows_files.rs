@@ -4,12 +4,13 @@
 //! pre-allocation size-checked reads, and crash-safe exclusive revision-checked writes.
 
 use std::{
+    ffi::c_void,
     fmt,
     mem::{align_of, offset_of, size_of, zeroed},
     os::windows::ffi::OsStrExt,
     path::Path,
     ptr::{null, null_mut},
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use sha2::{Digest, Sha256};
@@ -33,12 +34,11 @@ use windows_sys::{
         },
         Storage::FileSystem::{
             CreateFileW, FileDispositionInfo, FileIdBothDirectoryInfo,
-            FileIdBothDirectoryRestartInfo, FileIdInfo, FlushFileBuffers,
-            GetFileInformationByHandle, GetFileInformationByHandleEx, ReadFile,
-            SetFileInformationByHandle, WriteFile, BY_HANDLE_FILE_INFORMATION, DELETE,
-            FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL,
+            FileIdBothDirectoryRestartInfo, FlushFileBuffers, GetFileInformationByHandleEx,
+            ReadFile, SetFileInformationByHandle, WriteFile, DELETE, FILE_ADD_FILE,
+            FILE_ADD_SUBDIRECTORY, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL,
             FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_INFO, FILE_FLAG_BACKUP_SEMANTICS,
-            FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_BOTH_DIR_INFO, FILE_ID_INFO, FILE_LIST_DIRECTORY,
+            FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_BOTH_DIR_INFO, FILE_LIST_DIRECTORY,
             FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_RENAME_INFO, FILE_SHARE_DELETE,
             FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE, FILE_WRITE_ATTRIBUTES,
             FILE_WRITE_DATA, OPEN_EXISTING, SYNCHRONIZE,
@@ -58,16 +58,52 @@ const DIR_BUFFER_BYTES: usize = 64 * 1024;
 const INITIAL_READ_CAP_BYTES: usize = 64 * 1024;
 const MAX_READ_CAP_BYTES: usize = 64 * 1024 * 1024;
 const MAX_SEGMENT_BYTES: usize = 1024;
+const MAX_SEGMENT_UTF16_UNITS: usize = 255;
 const STAGE_PREFIX: &str = ".modutex-stage-";
 const BACKUP_PREFIX: &str = ".modutex-bak-";
 const TXN_PREFIX: &str = ".modutex-txn-";
+const DELETE_TRASH_PREFIX: &str = ".modutex-trash-";
+const COPY_STAGE_PREFIX: &str = ".modutex-copy-";
+const RECYCLE_STAGE_PREFIX: &str = ".modutex-recycle-";
+const MAX_COPY_TREE_BYTES: usize = 64 * 1024 * 1024;
 static STAGE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct FileIdentity {
-    pub volume_serial: u64,
-    pub file_id: u128,
+#[repr(C)]
+struct ShFileOpStructW {
+    hwnd: *mut c_void,
+    w_func: u32,
+    p_from: *const u16,
+    p_to: *const u16,
+    flags: u16,
+    any_operations_aborted: i32,
+    name_mappings: *mut c_void,
+    progress_title: *const u16,
 }
+
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetFinalPathNameByHandleW(
+        file: HANDLE,
+        file_name: *mut u16,
+        file_name_len: u32,
+        flags: u32,
+    ) -> u32;
+}
+
+#[link(name = "shell32")]
+extern "system" {
+    fn SHFileOperationW(operation: *mut ShFileOpStructW) -> i32;
+    fn ShellExecuteW(
+        hwnd: *mut c_void,
+        operation: *const u16,
+        file: *const u16,
+        parameters: *const u16,
+        directory: *const u16,
+        show_command: i32,
+    ) -> *mut c_void;
+}
+
+pub use crate::platform::file_identity::FileIdentity;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReadOutput {
@@ -80,6 +116,12 @@ pub struct ReadOutput {
 pub struct WriteOutput {
     pub revision: Revision,
     pub identity: FileIdentity,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StatOutput {
+    pub kind: FileKind,
+    pub size_bytes: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -106,6 +148,7 @@ pub enum FsError {
         size: u64,
         limit: usize,
     },
+    Cancelled,
     RevisionConflict {
         expected: Option<Revision>,
         actual: Option<Revision>,
@@ -453,6 +496,13 @@ fn is_any_recovery_artifact(name: &str) -> bool {
     name.starts_with(STAGE_PREFIX)
         || name.starts_with(BACKUP_PREFIX)
         || name.starts_with(TXN_PREFIX)
+        || is_private_workspace_artifact(name)
+}
+
+fn is_private_workspace_artifact(name: &str) -> bool {
+    name.starts_with(DELETE_TRASH_PREFIX)
+        || name.starts_with(COPY_STAGE_PREFIX)
+        || name.starts_with(RECYCLE_STAGE_PREFIX)
 }
 
 fn is_artifact_for_leaf(name: &str, leaf: &str) -> bool {
@@ -498,35 +548,13 @@ fn map_win32_error(err: u32) -> FsError {
 }
 
 fn query_handle_meta(handle: HANDLE) -> Result<(FileIdentity, u32, u64), FsError> {
-    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { zeroed() };
-    if unsafe { GetFileInformationByHandle(handle, &mut info) } == 0 {
-        return Err(map_win32_error(unsafe { GetLastError() }));
-    }
-    if (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
+    let (identity, attributes, size) =
+        crate::platform::file_identity::query_raw_handle_metadata(handle)
+            .map_err(|error| map_win32_error(error.raw_os_error().unwrap_or(1) as u32))?;
+    if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
         return Err(FsError::LinkNotAllowed);
     }
-    let size = ((info.nFileSizeHigh as u64) << 32) | (info.nFileSizeLow as u64);
-    let mut id_info: FILE_ID_INFO = unsafe { zeroed() };
-    let identity = if unsafe {
-        GetFileInformationByHandleEx(
-            handle,
-            FileIdInfo,
-            (&mut id_info as *mut FILE_ID_INFO).cast(),
-            size_of::<FILE_ID_INFO>() as u32,
-        )
-    } != 0
-    {
-        FileIdentity {
-            volume_serial: id_info.VolumeSerialNumber,
-            file_id: u128::from_le_bytes(id_info.FileId.Identifier),
-        }
-    } else {
-        FileIdentity {
-            volume_serial: info.dwVolumeSerialNumber as u64,
-            file_id: (((info.nFileIndexHigh as u64) << 32) | (info.nFileIndexLow as u64)) as u128,
-        }
-    };
-    Ok((identity, info.dwFileAttributes, size))
+    Ok((identity, attributes, size))
 }
 
 fn nt_open_segment(
@@ -539,6 +567,11 @@ fn nt_open_segment(
 ) -> Result<OwnedHandle, FsError> {
     if segment.is_empty()
         || segment.len() > MAX_SEGMENT_BYTES
+        || segment
+            .encode_utf16()
+            .take(MAX_SEGMENT_UTF16_UNITS + 1)
+            .count()
+            > MAX_SEGMENT_UTF16_UNITS
         || segment.contains('/')
         || segment.contains('\\')
         || segment.contains(':')
@@ -595,6 +628,11 @@ fn rename_relative(
 ) -> Result<(), FsError> {
     if target_name.is_empty()
         || target_name.len() > MAX_SEGMENT_BYTES
+        || target_name
+            .encode_utf16()
+            .take(MAX_SEGMENT_UTF16_UNITS + 1)
+            .count()
+            > MAX_SEGMENT_UTF16_UNITS
         || target_name.contains('/')
         || target_name.contains('\\')
         || target_name.contains(':')
@@ -720,20 +758,26 @@ fn parse_dir_buffer_raw(
         }
         let name = String::from_utf16(u16_slice).map_err(|_| FsError::InvalidPath)?;
         if name != "." && name != ".." {
-            if is_any_recovery_artifact(&name) {
+            // Managed recoverable deletes and atomic-copy staging are private
+            // host state, not user files and not an interrupted write journal.
+            if is_private_workspace_artifact(&name) {
+                // Deliberately omit it from ordinary listings.
+            } else if is_any_recovery_artifact(&name) {
                 if !allow_artifacts {
                     return Err(FsError::RecoveryRequired);
                 }
             } else {
                 RelativePath::parse(&name).map_err(|_| FsError::InvalidPath)?;
             }
-            if records.len() >= MAX_LIST_ENTRIES {
-                return Err(FsError::TreeTooLarge);
+            if !is_private_workspace_artifact(&name) {
+                if records.len() >= MAX_LIST_ENTRIES {
+                    return Err(FsError::TreeTooLarge);
+                }
+                records.push(ParsedDirRecord {
+                    name,
+                    is_dir: (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0,
+                });
             }
-            records.push(ParsedDirRecord {
-                name,
-                is_dir: (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0,
-            });
         }
         if next == 0 {
             break;
@@ -791,13 +835,18 @@ impl TrustedRoot {
         let raw = unsafe {
             CreateFileW(
                 wide.as_ptr(),
+                // Keep the root handle to traversal, metadata, and child creation;
+                // read/write/delete access is requested on pinned leaf handles.
                 FILE_LIST_DIRECTORY
                     | FILE_TRAVERSE
                     | FILE_READ_ATTRIBUTES
                     | FILE_ADD_FILE
                     | FILE_ADD_SUBDIRECTORY
                     | SYNCHRONIZE,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                // Pin each directory name while an operation uses its handle.
+                // In particular, shell handoff and rename cannot follow a
+                // replaced parent after validation.
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
                 null(),
                 OPEN_EXISTING,
                 FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
@@ -829,7 +878,19 @@ impl TrustedRoot {
         path: &RelativePath,
         create_missing_dirs: bool,
     ) -> Result<PinnedParent, FsError> {
+        self.pin_parent_impl(path, create_missing_dirs, false)
+    }
+
+    fn pin_parent_impl(
+        &self,
+        path: &RelativePath,
+        create_missing_dirs: bool,
+        allow_private: bool,
+    ) -> Result<PinnedParent, FsError> {
         self.verify_alive()?;
+        if !allow_private && path.as_str().split('/').any(is_private_workspace_artifact) {
+            return Err(FsError::InvalidPath);
+        }
         let mut segments = Vec::with_capacity(MAX_DIRECTORY_DEPTH);
         for seg in path.as_str().split('/') {
             if segments.len() >= MAX_DIRECTORY_DEPTH {
@@ -855,7 +916,7 @@ impl TrustedRoot {
                     | FILE_READ_ATTRIBUTES
                     | FILE_ADD_FILE
                     | FILE_ADD_SUBDIRECTORY,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
                 disp,
                 FILE_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT,
             )?;
@@ -1006,6 +1067,684 @@ impl TrustedRoot {
         }
         entries.sort_by(|a, b| a.path.as_str().cmp(b.path.as_str()));
         Ok(entries)
+    }
+
+    /// Bounded handle-relative scan. Results use workspace-relative paths even
+    /// when `directory` selects a subtree. Cancellation is checked between
+    /// directory records, not just between directory opens.
+    pub fn scan(
+        &self,
+        directory: Option<&RelativePath>,
+        max_depth: usize,
+        max_entries: usize,
+        cancelled: &AtomicBool,
+    ) -> Result<Vec<FileEntry>, FsError> {
+        if max_depth == 0 || max_depth > MAX_DIRECTORY_DEPTH {
+            return Err(FsError::TreeTooDeep);
+        }
+        if max_entries == 0 || max_entries > MAX_LIST_ENTRIES {
+            return Err(FsError::TreeTooLarge);
+        }
+        if cancelled.load(Ordering::Acquire) {
+            return Err(FsError::Cancelled);
+        }
+        self.verify_alive()?;
+
+        let (start, prefix) = if let Some(path) = directory {
+            let parent = self.pin_parent(path, false)?;
+            let handle = nt_open_segment(
+                parent.handle.raw(),
+                &parent.leaf_name,
+                FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                FILE_OPEN,
+                FILE_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT,
+            )?;
+            let (identity, attributes, _) = query_handle_meta(handle.raw())?;
+            if (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 {
+                return Err(FsError::NotADirectory);
+            }
+            if identity.volume_serial != self.identity.volume_serial {
+                return Err(FsError::LinkNotAllowed);
+            }
+            (handle, Some(path.clone()))
+        } else {
+            (Self::open_dup_root(self.handle.raw(), self.identity)?, None)
+        };
+
+        let mut stack = vec![(start, prefix, 0usize)];
+        let mut entries = Vec::new();
+        let mut aligned_buf = vec![0u64; DIR_BUFFER_BYTES / 8];
+        while let Some((dir_handle, prefix, depth)) = stack.pop() {
+            let mut first = true;
+            loop {
+                if cancelled.load(Ordering::Acquire) {
+                    return Err(FsError::Cancelled);
+                }
+                let class = if first {
+                    FileIdBothDirectoryRestartInfo
+                } else {
+                    FileIdBothDirectoryInfo
+                };
+                first = false;
+                let ok = unsafe {
+                    GetFileInformationByHandleEx(
+                        dir_handle.raw(),
+                        class,
+                        aligned_buf.as_mut_ptr().cast(),
+                        DIR_BUFFER_BYTES as u32,
+                    )
+                };
+                if ok == 0 {
+                    let error = unsafe { GetLastError() };
+                    if error == ERROR_NO_MORE_FILES {
+                        break;
+                    }
+                    return Err(map_win32_error(error));
+                }
+                let bytes = unsafe {
+                    std::slice::from_raw_parts(aligned_buf.as_ptr().cast::<u8>(), DIR_BUFFER_BYTES)
+                };
+                for record in parse_dir_buffer(bytes)? {
+                    if cancelled.load(Ordering::Acquire) {
+                        return Err(FsError::Cancelled);
+                    }
+                    let child_depth = depth.checked_add(1).ok_or(FsError::TreeTooDeep)?;
+                    if child_depth > max_depth {
+                        return Err(FsError::TreeTooDeep);
+                    }
+                    if entries.len() >= max_entries {
+                        return Err(FsError::TreeTooLarge);
+                    }
+                    let relative = match &prefix {
+                        Some(parent) => format!("{parent}/{}", record.name),
+                        None => record.name.clone(),
+                    };
+                    let path = RelativePath::parse(&relative).map_err(|_| FsError::InvalidPath)?;
+                    if record.is_dir && child_depth < max_depth {
+                        let child = nt_open_segment(
+                            dir_handle.raw(),
+                            &record.name,
+                            FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE,
+                            FILE_OPEN,
+                            FILE_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT,
+                        )?;
+                        let (identity, attributes, _) = query_handle_meta(child.raw())?;
+                        if (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0
+                            || identity.volume_serial != self.identity.volume_serial
+                        {
+                            return Err(FsError::LinkNotAllowed);
+                        }
+                        entries.push(FileEntry {
+                            path: path.clone(),
+                            kind: FileKind::Directory,
+                        });
+                        stack.push((child, Some(path), child_depth));
+                    } else {
+                        entries.push(FileEntry {
+                            path,
+                            kind: if record.is_dir {
+                                FileKind::Directory
+                            } else {
+                                FileKind::File
+                            },
+                        });
+                    }
+                }
+            }
+        }
+        entries.sort_by(|left, right| left.path.as_str().cmp(right.path.as_str()));
+        Ok(entries)
+    }
+
+    pub fn stat(&self, path: &RelativePath) -> Result<StatOutput, FsError> {
+        let parent = self.pin_parent(path, false)?;
+        let handle = nt_open_segment(
+            parent.handle.raw(),
+            &parent.leaf_name,
+            FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            FILE_OPEN,
+            FILE_OPEN_FOR_BACKUP_INTENT,
+        )?;
+        let (identity, attributes, size) = query_handle_meta(handle.raw())?;
+        if identity.volume_serial != self.identity.volume_serial {
+            return Err(FsError::LinkNotAllowed);
+        }
+        Ok(StatOutput {
+            kind: if (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
+                FileKind::Directory
+            } else {
+                FileKind::File
+            },
+            size_bytes: if (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
+                0
+            } else {
+                size
+            },
+        })
+    }
+
+    pub fn create_file(&self, path: &RelativePath, bytes: &[u8]) -> Result<WriteOutput, FsError> {
+        self.create_file_internal(path, bytes, false, None)
+    }
+
+    fn create_file_internal(
+        &self,
+        path: &RelativePath,
+        bytes: &[u8],
+        allow_private: bool,
+        cancelled: Option<&AtomicBool>,
+    ) -> Result<WriteOutput, FsError> {
+        if cancelled.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+            return Err(FsError::Cancelled);
+        }
+        let limit = read_limit(path.as_str()).min(MAX_READ_CAP_BYTES);
+        if bytes.len() > limit {
+            return Err(FsError::FileTooLarge {
+                size: bytes.len() as u64,
+                limit,
+            });
+        }
+        let parent = self.pin_parent_impl(path, false, allow_private)?;
+        let file = nt_open_segment(
+            parent.handle.raw(),
+            &parent.leaf_name,
+            FILE_WRITE_DATA | FILE_WRITE_ATTRIBUTES | FILE_READ_ATTRIBUTES | DELETE,
+            0,
+            FILE_CREATE,
+            FILE_NON_DIRECTORY_FILE,
+        )?;
+        let write_result = if let Some(cancelled) = cancelled {
+            write_and_flush_cancelable(file.raw(), bytes, cancelled)
+        } else {
+            write_and_flush(file.raw(), bytes)
+        };
+        if let Err(error) = write_result {
+            mark_delete_on_close(file.raw()).map_err(|_| FsError::RecoveryRequired)?;
+            return Err(error);
+        }
+        let (identity, attributes, size) = query_handle_meta(file.raw())?;
+        if (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0
+            || identity.volume_serial != self.identity.volume_serial
+            || size != bytes.len() as u64
+        {
+            return Err(FsError::StaleWorkspace);
+        }
+        Ok(WriteOutput {
+            revision: compute_identity_revision(identity, bytes),
+            identity,
+        })
+    }
+
+    pub fn create_directory(&self, path: &RelativePath) -> Result<FileIdentity, FsError> {
+        self.create_directory_internal(path, false)
+    }
+
+    fn create_directory_internal(
+        &self,
+        path: &RelativePath,
+        allow_private: bool,
+    ) -> Result<FileIdentity, FsError> {
+        let parent = self.pin_parent_impl(path, false, allow_private)?;
+        let directory = nt_open_segment(
+            parent.handle.raw(),
+            &parent.leaf_name,
+            FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES | DELETE,
+            0,
+            FILE_CREATE,
+            FILE_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT,
+        )?;
+        let (identity, attributes, _) = query_handle_meta(directory.raw())?;
+        if (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0
+            || identity.volume_serial != self.identity.volume_serial
+        {
+            return Err(FsError::LinkNotAllowed);
+        }
+        Ok(identity)
+    }
+
+    pub fn move_path(
+        &self,
+        source: &RelativePath,
+        destination: &RelativePath,
+    ) -> Result<StatOutput, FsError> {
+        self.move_path_internal(source, destination, false, false)
+    }
+
+    fn move_path_internal(
+        &self,
+        source: &RelativePath,
+        destination: &RelativePath,
+        source_private: bool,
+        destination_private: bool,
+    ) -> Result<StatOutput, FsError> {
+        if source.as_str() == destination.as_str()
+            || source.as_str().to_lowercase() == destination.as_str().to_lowercase()
+        {
+            return self.stat(source);
+        }
+        let source_parent = self.pin_parent_impl(source, false, source_private)?;
+        let destination_parent = self.pin_parent_impl(destination, false, destination_private)?;
+        let source_handle = nt_open_segment(
+            source_parent.handle.raw(),
+            &source_parent.leaf_name,
+            FILE_READ_ATTRIBUTES | DELETE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            FILE_OPEN,
+            FILE_OPEN_FOR_BACKUP_INTENT,
+        )?;
+        let (identity, attributes, size) = query_handle_meta(source_handle.raw())?;
+        if identity.volume_serial != self.identity.volume_serial {
+            return Err(FsError::LinkNotAllowed);
+        }
+        if (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
+            let from = source.as_str().to_lowercase();
+            let to = destination.as_str().to_lowercase();
+            if to.starts_with(&format!("{from}/")) {
+                return Err(FsError::InvalidPath);
+            }
+        }
+        rename_relative(
+            source_handle.raw(),
+            destination_parent.handle.raw(),
+            &destination_parent.leaf_name,
+            false,
+        )?;
+        let moved = nt_open_segment(
+            destination_parent.handle.raw(),
+            &destination_parent.leaf_name,
+            FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            FILE_OPEN,
+            FILE_OPEN_FOR_BACKUP_INTENT,
+        )?;
+        let (moved_identity, moved_attributes, moved_size) = query_handle_meta(moved.raw())?;
+        if moved_identity != identity || moved_attributes != attributes || moved_size != size {
+            return Err(FsError::StaleWorkspace);
+        }
+        Ok(StatOutput {
+            kind: if (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
+                FileKind::Directory
+            } else {
+                FileKind::File
+            },
+            size_bytes: if (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
+                0
+            } else {
+                size
+            },
+        })
+    }
+
+    /// Copy a file or directory tree to a fresh destination. A directory copy
+    /// is assembled under a private same-volume staging directory, revalidated
+    /// against its source snapshot, then published by one no-replace rename.
+    pub fn copy_path(
+        &self,
+        source: &RelativePath,
+        destination: &RelativePath,
+        cancelled: &AtomicBool,
+    ) -> Result<StatOutput, FsError> {
+        if source.as_str() == destination.as_str()
+            || source.as_str().to_lowercase() == destination.as_str().to_lowercase()
+        {
+            return Err(FsError::RevisionConflict {
+                expected: None,
+                actual: None,
+            });
+        }
+        if cancelled.load(Ordering::Acquire) {
+            return Err(FsError::Cancelled);
+        }
+        let source_stat = self.stat(source)?;
+        if source_stat.kind == FileKind::File {
+            let source_read = self.read_file_bounded(source, read_limit(source.as_str()))?;
+            let parent = destination
+                .as_str()
+                .rsplit_once('/')
+                .map_or("", |(parent, _)| parent);
+            let extension = if source.as_str().to_ascii_lowercase().ends_with(".pdf") {
+                "pdf"
+            } else {
+                "tmp"
+            };
+            let stage_leaf = format!("{COPY_STAGE_PREFIX}{}.{}", uuid::Uuid::new_v4(), extension);
+            let stage_text = if parent.is_empty() {
+                stage_leaf
+            } else {
+                format!("{parent}/{stage_leaf}")
+            };
+            let stage = RelativePath::parse(&stage_text).map_err(|_| FsError::InvalidPath)?;
+            let staged =
+                self.create_file_internal(&stage, &source_read.bytes, true, Some(cancelled))?;
+            let outcome = (|| {
+                if cancelled.load(Ordering::Acquire) {
+                    return Err(FsError::Cancelled);
+                }
+                let current = self.read_file_bounded(source, read_limit(source.as_str()))?;
+                if current.revision != source_read.revision {
+                    return Err(FsError::RevisionConflict {
+                        expected: Some(source_read.revision.clone()),
+                        actual: Some(current.revision),
+                    });
+                }
+                // This is the cancellation/commit boundary. Once the
+                // no-replace rename succeeds, the copy is committed.
+                if cancelled.load(Ordering::Acquire) {
+                    return Err(FsError::Cancelled);
+                }
+                self.move_path_internal(&stage, destination, true, false)
+            })();
+            if outcome.is_err()
+                && self
+                    .delete_file_if_revision_internal(&stage, &staged.revision, true)
+                    .is_err()
+            {
+                return Err(FsError::RecoveryRequired);
+            }
+            return outcome;
+        }
+        let source_folded = source.as_str().to_lowercase();
+        let destination_folded = destination.as_str().to_lowercase();
+        if destination_folded.starts_with(&format!("{source_folded}/")) {
+            return Err(FsError::InvalidPath);
+        }
+
+        let snapshot = self.scan(
+            Some(source),
+            MAX_DIRECTORY_DEPTH,
+            MAX_LIST_ENTRIES,
+            cancelled,
+        )?;
+        let stage_name = format!("{COPY_STAGE_PREFIX}{}", uuid::Uuid::new_v4());
+        let stage_root = RelativePath::parse(&stage_name).map_err(|_| FsError::InvalidPath)?;
+        let mut staged_files: Vec<(RelativePath, Revision)> = Vec::new();
+        let mut staged_directories: Vec<(RelativePath, FileIdentity)> = Vec::new();
+
+        let copy_result = (|| {
+            let identity = self.create_directory_internal(&stage_root, true)?;
+            staged_directories.push((stage_root.clone(), identity));
+            let mut source_revisions = Vec::new();
+            let mut total_bytes = 0usize;
+
+            for entry in &snapshot {
+                if cancelled.load(Ordering::Acquire) {
+                    return Err(FsError::Cancelled);
+                }
+                let prefix = format!("{}/", source.as_str());
+                let suffix = entry
+                    .path
+                    .as_str()
+                    .strip_prefix(&prefix)
+                    .ok_or(FsError::InvalidPath)?;
+                let target_text = format!("{stage_name}/{suffix}");
+                let target = RelativePath::parse(&target_text).map_err(|_| FsError::InvalidPath)?;
+                match entry.kind {
+                    FileKind::Directory => {
+                        let identity = self.create_directory_internal(&target, true)?;
+                        staged_directories.push((target, identity));
+                    }
+                    FileKind::File => {
+                        let read =
+                            self.read_file_bounded(&entry.path, read_limit(entry.path.as_str()))?;
+                        total_bytes = total_bytes
+                            .checked_add(read.bytes.len())
+                            .ok_or(FsError::TreeTooLarge)?;
+                        if total_bytes > MAX_COPY_TREE_BYTES {
+                            return Err(FsError::TreeTooLarge);
+                        }
+                        let output =
+                            self.create_file_internal(&target, &read.bytes, true, Some(cancelled))?;
+                        staged_files.push((target, output.revision));
+                        source_revisions.push((entry.path.clone(), read.revision));
+                    }
+                }
+            }
+
+            if self.scan(
+                Some(source),
+                MAX_DIRECTORY_DEPTH,
+                MAX_LIST_ENTRIES,
+                cancelled,
+            )? != snapshot
+            {
+                return Err(FsError::RevisionConflict {
+                    expected: None,
+                    actual: None,
+                });
+            }
+            for (path, expected) in source_revisions {
+                if cancelled.load(Ordering::Acquire) {
+                    return Err(FsError::Cancelled);
+                }
+                let actual = self.read_file_bounded(&path, read_limit(path.as_str()))?;
+                if actual.revision != expected {
+                    return Err(FsError::RevisionConflict {
+                        expected: Some(expected),
+                        actual: Some(actual.revision),
+                    });
+                }
+            }
+            if cancelled.load(Ordering::Acquire) {
+                return Err(FsError::Cancelled);
+            }
+            self.move_path_internal(&stage_root, destination, true, false)
+        })();
+
+        match copy_result {
+            Ok(stat) => Ok(stat),
+            Err(error) => {
+                let cleanup = self.cleanup_copy_stage(&staged_files, &staged_directories);
+                if cleanup.is_err() {
+                    Err(FsError::RecoveryRequired)
+                } else {
+                    Err(error)
+                }
+            }
+        }
+    }
+
+    fn cleanup_copy_stage(
+        &self,
+        files: &[(RelativePath, Revision)],
+        directories: &[(RelativePath, FileIdentity)],
+    ) -> Result<(), FsError> {
+        for (path, revision) in files.iter().rev() {
+            self.delete_file_if_revision_internal(path, revision, true)?;
+        }
+        for (path, identity) in directories.iter().rev() {
+            self.remove_empty_directory_internal(path, *identity, true)?;
+        }
+        Ok(())
+    }
+
+    fn remove_empty_directory_internal(
+        &self,
+        path: &RelativePath,
+        expected_identity: FileIdentity,
+        allow_private: bool,
+    ) -> Result<(), FsError> {
+        let parent = self.pin_parent_impl(path, false, allow_private)?;
+        let directory = nt_open_segment(
+            parent.handle.raw(),
+            &parent.leaf_name,
+            FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | DELETE,
+            0,
+            FILE_OPEN,
+            FILE_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT,
+        )?;
+        let (identity, attributes, _) = query_handle_meta(directory.raw())?;
+        if identity != expected_identity || (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 {
+            return Err(FsError::StaleWorkspace);
+        }
+        mark_delete_on_close(directory.raw())
+    }
+
+    /// Move a file or directory to a host-owned sibling tombstone. Undo uses
+    /// an atomic no-replace rename, so an external destination is never lost.
+    pub fn delete_recoverable(&self, path: &RelativePath, token: &str) -> Result<(), FsError> {
+        if !valid_recovery_token(token) {
+            return Err(FsError::InvalidPath);
+        }
+        let parent = self.pin_parent(path, false)?;
+        let item = nt_open_segment(
+            parent.handle.raw(),
+            &parent.leaf_name,
+            FILE_READ_ATTRIBUTES | DELETE,
+            0,
+            FILE_OPEN,
+            FILE_OPEN_FOR_BACKUP_INTENT,
+        )?;
+        let (identity, _, _) = query_handle_meta(item.raw())?;
+        if identity.volume_serial != self.identity.volume_serial {
+            return Err(FsError::LinkNotAllowed);
+        }
+        let trash_name = format!("{DELETE_TRASH_PREFIX}{token}");
+        rename_relative(item.raw(), parent.handle.raw(), &trash_name, false)
+    }
+
+    pub fn undo_recoverable_delete(&self, path: &RelativePath, token: &str) -> Result<(), FsError> {
+        if !valid_recovery_token(token) {
+            return Err(FsError::InvalidPath);
+        }
+        let parent = self.pin_parent(path, false)?;
+        match nt_open_segment(
+            parent.handle.raw(),
+            &parent.leaf_name,
+            FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            FILE_OPEN,
+            FILE_OPEN_FOR_BACKUP_INTENT,
+        ) {
+            Ok(_) => {
+                return Err(FsError::RevisionConflict {
+                    expected: None,
+                    actual: None,
+                })
+            }
+            Err(FsError::NotFound) => {}
+            Err(error) => return Err(error),
+        }
+        let trash_name = format!("{DELETE_TRASH_PREFIX}{token}");
+        let item = nt_open_segment(
+            parent.handle.raw(),
+            &trash_name,
+            FILE_READ_ATTRIBUTES | DELETE,
+            0,
+            FILE_OPEN,
+            FILE_OPEN_FOR_BACKUP_INTENT,
+        )?;
+        let (identity, _, _) = query_handle_meta(item.raw())?;
+        if identity.volume_serial != self.identity.volume_serial {
+            return Err(FsError::LinkNotAllowed);
+        }
+        // No replacement flag: a concurrent file created at `path` wins.
+        rename_relative(item.raw(), parent.handle.raw(), &parent.leaf_name, false)?;
+        let restored = nt_open_segment(
+            parent.handle.raw(),
+            &parent.leaf_name,
+            FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            FILE_OPEN,
+            FILE_OPEN_FOR_BACKUP_INTENT,
+        )?;
+        if query_handle_meta(restored.raw())?.0 != identity {
+            return Err(FsError::StaleWorkspace);
+        }
+        Ok(())
+    }
+
+    /// Send an item to the Windows Recycle Bin through the native shell API.
+    /// FOF_ALLOWUNDO is mandatory; on shell failure the staged item is restored
+    /// with a no-replace handle rename, or left intact under its private name.
+    pub fn recycle_path(&self, path: &RelativePath) -> Result<(), FsError> {
+        let parent = self.pin_parent(path, false)?;
+        let item = nt_open_segment(
+            parent.handle.raw(),
+            &parent.leaf_name,
+            FILE_READ_ATTRIBUTES | DELETE,
+            0,
+            FILE_OPEN,
+            FILE_OPEN_FOR_BACKUP_INTENT,
+        )?;
+        let (identity, _, _) = query_handle_meta(item.raw())?;
+        if identity.volume_serial != self.identity.volume_serial {
+            return Err(FsError::LinkNotAllowed);
+        }
+        let token = uuid::Uuid::new_v4().simple().to_string();
+        let stage_name = format!("{RECYCLE_STAGE_PREFIX}{token}");
+        rename_relative(item.raw(), parent.handle.raw(), &stage_name, false)?;
+        drop(item);
+
+        let staged_path = final_path_from_handle(parent.handle.raw())?.join(&stage_name);
+        let shell_result = shell_recycle(&staged_path);
+        let staged = nt_open_segment(
+            parent.handle.raw(),
+            &stage_name,
+            FILE_READ_ATTRIBUTES | DELETE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            FILE_OPEN,
+            FILE_OPEN_FOR_BACKUP_INTENT,
+        );
+        match staged {
+            Err(FsError::NotFound) if shell_result.is_ok() => Ok(()),
+            Err(FsError::NotFound) => Err(shell_result.unwrap_err()),
+            Ok(staged_handle) => {
+                let (staged_identity, _, _) = query_handle_meta(staged_handle.raw())?;
+                if staged_identity != identity {
+                    return Err(FsError::RecoveryRequired);
+                }
+                // The exact staged handle is renamed; a replacement at the
+                // private name cannot be moved over the original.
+                rename_relative(
+                    staged_handle.raw(),
+                    parent.handle.raw(),
+                    &parent.leaf_name,
+                    false,
+                )
+                .map_err(|_| FsError::RecoveryRequired)?;
+                match shell_result {
+                    Err(error) => Err(error),
+                    Ok(()) => Err(FsError::RecoveryRequired),
+                }
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Reveal an existing workspace item in Explorer. The renderer supplies
+    /// only a RelativePath; the absolute path comes from the verified root
+    /// handle and the executable/operation are fixed by this host.
+    pub fn reveal_in_explorer(&self, path: &RelativePath) -> Result<(), FsError> {
+        let stat = self.stat(path)?;
+        let mut target = final_path_from_handle(self.handle.raw())?;
+        target.push(path.as_str().replace('/', "\\"));
+        let target = target.to_string_lossy().into_owned();
+        let quoted = quote_windows_argument(&target);
+        let parameters = if stat.kind == FileKind::File {
+            format!("/select,{quoted}")
+        } else {
+            quoted
+        };
+        let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
+        let executable: Vec<u16> = "explorer.exe".encode_utf16().chain(Some(0)).collect();
+        let parameters: Vec<u16> = parameters.encode_utf16().chain(Some(0)).collect();
+        let result = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                operation.as_ptr(),
+                executable.as_ptr(),
+                parameters.as_ptr(),
+                std::ptr::null(),
+                1,
+            )
+        };
+        if result as usize <= 32 {
+            return Err(FsError::Io(result as usize as u32));
+        }
+        Ok(())
     }
 
     pub fn read_file(&self, path: &RelativePath) -> Result<ReadOutput, FsError> {
@@ -1298,8 +2037,17 @@ impl TrustedRoot {
         path: &RelativePath,
         expected_revision: &Revision,
     ) -> Result<(), FsError> {
+        self.delete_file_if_revision_internal(path, expected_revision, false)
+    }
+
+    fn delete_file_if_revision_internal(
+        &self,
+        path: &RelativePath,
+        expected_revision: &Revision,
+        allow_private: bool,
+    ) -> Result<(), FsError> {
         let limit = read_limit(path.as_str()).min(MAX_READ_CAP_BYTES);
-        let parent = self.pin_parent(path, false)?;
+        let parent = self.pin_parent_impl(path, false, allow_private)?;
         if !list_parent_artifacts(parent.handle.raw(), &parent.leaf_name)?.is_empty() {
             return Err(FsError::RecoveryRequired);
         }
@@ -1658,8 +2406,27 @@ fn read_pdf_from_handle(
     })
 }
 
-fn write_and_flush(handle: HANDLE, mut bytes: &[u8]) -> Result<(), FsError> {
+fn write_and_flush(handle: HANDLE, bytes: &[u8]) -> Result<(), FsError> {
+    write_and_flush_with_cancel(handle, bytes, None)
+}
+
+fn write_and_flush_cancelable(
+    handle: HANDLE,
+    bytes: &[u8],
+    cancelled: &AtomicBool,
+) -> Result<(), FsError> {
+    write_and_flush_with_cancel(handle, bytes, Some(cancelled))
+}
+
+fn write_and_flush_with_cancel(
+    handle: HANDLE,
+    mut bytes: &[u8],
+    cancelled: Option<&AtomicBool>,
+) -> Result<(), FsError> {
     while !bytes.is_empty() {
+        if cancelled.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+            return Err(FsError::Cancelled);
+        }
         let to_write = bytes.len().min(1024 * 1024) as u32;
         let mut written = 0u32;
         if unsafe { WriteFile(handle, bytes.as_ptr(), to_write, &mut written, null_mut()) } == 0 {
@@ -1670,10 +2437,213 @@ fn write_and_flush(handle: HANDLE, mut bytes: &[u8]) -> Result<(), FsError> {
         }
         bytes = &bytes[written as usize..];
     }
+    if cancelled.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+        return Err(FsError::Cancelled);
+    }
     if unsafe { FlushFileBuffers(handle) } == 0 {
         return Err(map_win32_error(unsafe { GetLastError() }));
     }
     Ok(())
+}
+
+impl TrustedRoot {
+    /// Bounded compile-tree listing through the trusted root handle. Generated
+    /// trees are pruned before descent; links/reparse points remain fail-closed.
+    pub fn list_compile_entries(
+        &self,
+        max_depth: usize,
+        max_entries: usize,
+    ) -> Result<Vec<FileEntry>, FsError> {
+        self.verify_alive()?;
+        let depth_limit = max_depth.min(MAX_DIRECTORY_DEPTH);
+        let entry_limit = max_entries.min(MAX_LIST_ENTRIES);
+        let root_dup = Self::open_dup_root(self.handle.raw(), self.identity)?;
+        let mut stack = vec![(root_dup, None::<RelativePath>, 0usize)];
+        let mut entries = Vec::new();
+        let mut aligned_buf = vec![0u64; DIR_BUFFER_BYTES / 8];
+
+        while let Some((dir_handle, prefix, depth)) = stack.pop() {
+            let mut first = true;
+            loop {
+                let class = if first {
+                    FileIdBothDirectoryRestartInfo
+                } else {
+                    FileIdBothDirectoryInfo
+                };
+                first = false;
+                let ok = unsafe {
+                    GetFileInformationByHandleEx(
+                        dir_handle.raw(),
+                        class,
+                        aligned_buf.as_mut_ptr().cast(),
+                        DIR_BUFFER_BYTES as u32,
+                    )
+                };
+                if ok == 0 {
+                    let error = unsafe { GetLastError() };
+                    if error == ERROR_NO_MORE_FILES {
+                        break;
+                    }
+                    return Err(map_win32_error(error));
+                }
+                let bytes = unsafe {
+                    std::slice::from_raw_parts(aligned_buf.as_ptr().cast::<u8>(), DIR_BUFFER_BYTES)
+                };
+                for record in parse_dir_buffer_raw(bytes, true)? {
+                    if is_any_recovery_artifact(&record.name)
+                        || record.name.eq_ignore_ascii_case(".git")
+                        || record.name.eq_ignore_ascii_case("node_modules")
+                        || (prefix.is_none() && record.name.eq_ignore_ascii_case("output"))
+                    {
+                        continue;
+                    }
+                    let relative = match &prefix {
+                        Some(parent) => format!("{parent}/{}", record.name),
+                        None => record.name.clone(),
+                    };
+                    let path = RelativePath::parse(&relative).map_err(|_| FsError::InvalidPath)?;
+                    if entries.len() >= entry_limit {
+                        return Err(FsError::TreeTooLarge);
+                    }
+
+                    if record.is_dir {
+                        let child_depth = depth.checked_add(1).ok_or(FsError::TreeTooDeep)?;
+                        if child_depth > depth_limit {
+                            return Err(FsError::TreeTooDeep);
+                        }
+                        let child = nt_open_segment(
+                            dir_handle.raw(),
+                            &record.name,
+                            FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            FILE_OPEN,
+                            FILE_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT,
+                        )?;
+                        let (identity, attributes, _) = query_handle_meta(child.raw())?;
+                        if (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0
+                            || identity.volume_serial != self.identity.volume_serial
+                        {
+                            return Err(FsError::LinkNotAllowed);
+                        }
+                        entries.push(FileEntry {
+                            path: path.clone(),
+                            kind: FileKind::Directory,
+                        });
+                        stack.push((child, Some(path), child_depth));
+                    } else {
+                        entries.push(FileEntry {
+                            path,
+                            kind: FileKind::File,
+                        });
+                    }
+                }
+            }
+        }
+        entries.sort_by(|left, right| left.path.as_str().cmp(right.path.as_str()));
+        Ok(entries)
+    }
+
+    /// Reads one workspace-relative file through pinned parent and leaf handles.
+    /// `read_from_handle` checks size before allocation and caps subsequent growth.
+    pub fn read_file_bounded(
+        &self,
+        path: &RelativePath,
+        maximum: usize,
+    ) -> Result<ReadOutput, FsError> {
+        let parent = self.pin_parent(path, false)?;
+        if !list_parent_artifacts(parent.handle.raw(), &parent.leaf_name)?.is_empty() {
+            return Err(FsError::RecoveryRequired);
+        }
+        let file = nt_open_segment(
+            parent.handle.raw(),
+            &parent.leaf_name,
+            FILE_READ_DATA | FILE_READ_ATTRIBUTES,
+            FILE_SHARE_READ,
+            FILE_OPEN,
+            FILE_NON_DIRECTORY_FILE,
+        )?;
+        read_from_handle(file.raw(), self.identity.volume_serial, maximum)
+    }
+}
+
+fn valid_recovery_token(token: &str) -> bool {
+    token.len() == 36
+        && token.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'),
+        })
+}
+
+fn final_path_from_handle(handle: HANDLE) -> Result<std::path::PathBuf, FsError> {
+    let required = unsafe { GetFinalPathNameByHandleW(handle, null_mut(), 0, 0) };
+    if required == 0 {
+        return Err(map_win32_error(unsafe { GetLastError() }));
+    }
+    let mut buffer = vec![0u16; required as usize + 1];
+    let length =
+        unsafe { GetFinalPathNameByHandleW(handle, buffer.as_mut_ptr(), buffer.len() as u32, 0) };
+    if length == 0 || length as usize >= buffer.len() {
+        return Err(map_win32_error(unsafe { GetLastError() }));
+    }
+    let raw = String::from_utf16(&buffer[..length as usize]).map_err(|_| FsError::InvalidPath)?;
+    let normalized = if let Some(unc) = raw.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else {
+        raw
+    };
+    Ok(std::path::PathBuf::from(normalized))
+}
+
+fn shell_recycle(path: &Path) -> Result<(), FsError> {
+    const FO_DELETE: u32 = 3;
+    const FOF_SILENT: u16 = 0x0004;
+    const FOF_NOCONFIRMATION: u16 = 0x0010;
+    const FOF_ALLOWUNDO: u16 = 0x0040;
+    const FOF_NOERRORUI: u16 = 0x0400;
+
+    let mut source: Vec<u16> = path.as_os_str().encode_wide().collect();
+    source.push(0);
+    source.push(0);
+    let mut operation = ShFileOpStructW {
+        hwnd: null_mut(),
+        w_func: FO_DELETE,
+        p_from: source.as_ptr(),
+        p_to: null(),
+        flags: FOF_SILENT | FOF_NOCONFIRMATION | FOF_ALLOWUNDO | FOF_NOERRORUI,
+        any_operations_aborted: 0,
+        name_mappings: null_mut(),
+        progress_title: null(),
+    };
+    let result = unsafe { SHFileOperationW(&mut operation) };
+    if result != 0 {
+        return Err(FsError::Io(result as u32));
+    }
+    if operation.any_operations_aborted != 0 {
+        return Err(FsError::RecoveryRequired);
+    }
+    Ok(())
+}
+
+fn quote_windows_argument(value: &str) -> String {
+    let mut output = String::from("\"");
+    let mut backslashes = 0usize;
+    for character in value.chars() {
+        if character == '\\' {
+            backslashes += 1;
+            continue;
+        }
+        if character == '"' {
+            output.push_str(&"\\".repeat(backslashes * 2 + 1));
+            output.push('"');
+        } else {
+            output.push_str(&"\\".repeat(backslashes));
+            output.push(character);
+        }
+        backslashes = 0;
+    }
+    output.push_str(&"\\".repeat(backslashes * 2));
+    output.push('"');
+    output
 }
 
 #[cfg(test)]

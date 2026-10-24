@@ -7,10 +7,21 @@ use std::{
     path::Path,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct FileIdentity {
-    volume: u64,
-    index: u64,
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct FileIdentity {
+    pub volume_serial: u64,
+    pub file_id: u128,
+}
+
+#[cfg(windows)]
+pub(crate) const FILE_ID_INFO_CLASS: i32 = 18;
+
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Win32FileIdInfo {
+    pub(crate) volume_serial_number: u64,
+    pub(crate) file_id: [u8; 16],
 }
 
 #[cfg(windows)]
@@ -46,25 +57,68 @@ extern "system" {
         file: *mut std::ffi::c_void,
         information: *mut ByHandleFileInformation,
     ) -> i32;
+    pub(crate) fn GetFileInformationByHandleEx(
+        file: *mut std::ffi::c_void,
+        info_class: i32,
+        information: *mut std::ffi::c_void,
+        buffer_size: u32,
+    ) -> i32;
+}
+
+#[cfg(windows)]
+pub(crate) fn query_raw_handle_metadata(
+    raw: *mut std::ffi::c_void,
+) -> io::Result<(FileIdentity, u32, u64)> {
+    use std::mem::zeroed;
+
+    let mut information: ByHandleFileInformation = unsafe { zeroed() };
+    if unsafe { GetFileInformationByHandle(raw, &mut information) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+
+    let mut id_information: Win32FileIdInfo = unsafe { zeroed() };
+    if unsafe {
+        GetFileInformationByHandleEx(
+            raw,
+            FILE_ID_INFO_CLASS,
+            (&mut id_information as *mut Win32FileIdInfo).cast(),
+            std::mem::size_of::<Win32FileIdInfo>() as u32,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+
+    let identity = FileIdentity {
+        volume_serial: id_information.volume_serial_number,
+        file_id: u128::from_le_bytes(id_information.file_id),
+    };
+    let size =
+        (u64::from(information._file_size_high) << 32) | u64::from(information._file_size_low);
+    Ok((identity, information.file_attributes, size))
+}
+
+#[cfg(windows)]
+pub(crate) fn query_raw_handle_identity(
+    raw: *mut std::ffi::c_void,
+) -> io::Result<(FileIdentity, u32)> {
+    let (identity, attributes, _) = query_raw_handle_metadata(raw)?;
+    Ok((identity, attributes))
 }
 
 #[cfg(windows)]
 pub(crate) fn file_identity(file: &File) -> io::Result<FileIdentity> {
-    use std::{mem::MaybeUninit, os::windows::io::AsRawHandle};
+    use std::os::windows::io::AsRawHandle;
 
-    let mut information = MaybeUninit::<ByHandleFileInformation>::uninit();
-    // The handle is an owned File opened by this module with no-follow flags.
-    let succeeded =
-        unsafe { GetFileInformationByHandle(file.as_raw_handle(), information.as_mut_ptr()) };
-    if succeeded == 0 {
-        return Err(io::Error::last_os_error());
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+    let (identity, attributes, _) = query_raw_handle_metadata(file.as_raw_handle())?;
+    if attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "reparse-point identity is not accepted",
+        ));
     }
-    let information = unsafe { information.assume_init() };
-    Ok(FileIdentity {
-        volume: u64::from(information.volume_serial_number),
-        index: (u64::from(information.file_index_high) << 32)
-            | u64::from(information.file_index_low),
-    })
+    Ok(identity)
 }
 
 #[cfg(unix)]
@@ -72,8 +126,8 @@ pub(crate) fn file_identity(file: &File) -> io::Result<FileIdentity> {
     use std::os::unix::fs::MetadataExt;
     let meta = file.metadata()?;
     Ok(FileIdentity {
-        volume: meta.dev(),
-        index: meta.ino(),
+        volume_serial: meta.dev(),
+        file_id: meta.ino() as u128,
     })
 }
 

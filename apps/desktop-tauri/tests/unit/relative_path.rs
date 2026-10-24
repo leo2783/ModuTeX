@@ -247,7 +247,7 @@ fn test_unicode_and_emoji_length_boundaries() {
     assert!(RelativePath::parse("文件/測試.tex").is_ok());
     assert!(RelativePath::parse("日本語/ノート.txt").is_ok());
     assert!(RelativePath::parse("café/résumé.pdf").is_ok());
-    assert!(RelativePath::parse("🎉/🦀.tex").is_ok());
+    assert!(RelativePath::parse("\u{20000}/\u{20000}.tex").is_ok());
 
     // Exactly 32767 UTF-16 code units (ASCII)
     let exact_limit = "a".repeat(32767);
@@ -261,12 +261,12 @@ fn test_unicode_and_emoji_length_boundaries() {
     );
 
     // Emoji accounting: 16383 emojis (32766 code units) + 1 ASCII 'a' = 32767 code units
-    let emoji_exact = "🦀".repeat(16383) + "a";
+    let emoji_exact = "\u{20000}".repeat(16383) + "a";
     assert_eq!(emoji_exact.encode_utf16().count(), 32767);
     assert!(RelativePath::parse(&emoji_exact).is_ok());
 
     // 16384 emojis = 32768 UTF-16 code units
-    let emoji_too_long = "🦀".repeat(16384);
+    let emoji_too_long = "\u{20000}".repeat(16384);
     assert_eq!(emoji_too_long.encode_utf16().count(), 32768);
     assert_eq!(
         RelativePath::parse(&emoji_too_long),

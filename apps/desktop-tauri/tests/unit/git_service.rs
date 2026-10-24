@@ -30,6 +30,14 @@ impl GitRunner for ScriptedRunner {
             .pop_front()
             .ok_or(GitRunnerError::ProcessTreeFailed)
     }
+
+    fn path_argument_budget(
+        &self,
+        _workspace: &dyn GitWorkspaceCapability,
+        _base_words: &[&str],
+    ) -> Result<usize, GitRunnerError> {
+        Ok(usize::MAX)
+    }
 }
 
 struct TestWorkspace {
@@ -37,6 +45,7 @@ struct TestWorkspace {
     workspace_id: WorkspaceId,
     generation: u64,
     active: bool,
+    path_kind: GitPathKind,
 }
 
 impl TestWorkspace {
@@ -46,6 +55,7 @@ impl TestWorkspace {
             workspace_id: WorkspaceId::parse("ws-1").unwrap(),
             generation: 7,
             active: true,
+            path_kind: GitPathKind::File,
         }
     }
 }
@@ -71,6 +81,10 @@ impl GitWorkspaceCapability for TestWorkspace {
         }
     }
 
+    fn release_path_pins(&self) -> Result<(), GitPathFailure> {
+        Ok(())
+    }
+
     fn validate_path(
         &self,
         _path: &RelativePath,
@@ -81,6 +95,10 @@ impl GitWorkspaceCapability for TestWorkspace {
 
     fn validate_all(&self, _intent: GitPathIntent) -> Result<(), GitPathFailure> {
         Ok(())
+    }
+
+    fn path_kind(&self, _path: &RelativePath) -> Result<GitPathKind, GitPathFailure> {
+        Ok(self.path_kind)
     }
 }
 
@@ -235,6 +253,35 @@ fn copy_records_select_only_the_destination() {
             "--force",
             "--",
             "copied.tex"
+        ]
+    );
+}
+
+#[test]
+fn stage_directory_expands_to_only_validated_changed_files() {
+    let runner = ScriptedRunner::new([
+        output(0, b"true\n"),
+        output(0, b" M dir/a.tex\0?? dir/new.tex\0"),
+        output(0, b""),
+    ]);
+    let workspace = TestWorkspace {
+        path_kind: GitPathKind::Directory,
+        ..TestWorkspace::new()
+    };
+    GitService::new(&runner)
+        .stage(&workspace, &[path("dir")])
+        .unwrap();
+    let calls = runner.calls.lock().unwrap();
+    assert_eq!(
+        argv(&calls[2]),
+        vec![
+            "--no-pager",
+            "--literal-pathspecs",
+            "add",
+            "--all",
+            "--",
+            "dir/a.tex",
+            "dir/new.tex"
         ]
     );
 }

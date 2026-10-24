@@ -15,19 +15,26 @@ use tauri::{ipc::Response as IpcResponse, Emitter, State, WebviewWindow};
 
 use crate::{
     schemas::protocol::{
-        validate_pdf, FileEntry, FileEvent, FileRef, FileWatchFailure,
+        validate_pdf, FileEntry, FileEvent, FileRef, FileWatchFailure, FileWatchResyncReason,
         OwnerId, ReadReceipt, RecentDocument, RecentId, Revision, SaveAsReceipt, SaveAsRequest,
-        Timestamp, WorkspaceId, WorkspaceInfo, WorkspaceKind, WriteReceipt, WriteRequest,
-        MAX_PDF_BYTES, MAX_READ_BYTES,
+        Timestamp, WorkspaceFileCopyRequest, WorkspaceFileCreateRequest, WorkspaceFileMoveRequest,
+        WorkspaceFilePathRequest, WorkspaceFileSearchResult, WorkspaceFileStat,
+        WorkspaceFilesCancelRequest, WorkspaceFilesScanRequest, WorkspaceFilesSearchRequest,
+        WorkspaceFilesTreeRequest, WorkspaceId, WorkspaceInfo, WorkspaceKind,
+        WorkspaceRecoverableDeleteReceipt, WriteReceipt, WriteRequest, MAX_PDF_BYTES,
+        MAX_READ_BYTES,
     },
     services::{
         file_watch::{
-            spawn_watch_bridge, valid_watch_identity, WatchCleanupPermit, WatchDeliveryGate,
+            spawn_watch_bridge, valid_watch_identity, WatchBridgeIdentity, WatchCleanupPermit,
+            WatchDeliveryGate,
         },
         filesystem::WatchNotification,
     },
     shared::relative_path::RelativePath,
-    state::desktop::FrontendFilesState,
+    state::{
+        compile::FrontendCompileState, desktop::FrontendFilesState, terminal::FrontendTerminalState,
+    },
 };
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +42,345 @@ pub struct WatchEventMessage {
     pub subscription_id: String,
     pub generation: u64,
     pub event: FileEvent,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchResyncMessage {
+    pub subscription_id: String,
+    pub generation: u64,
+    pub reason: FileWatchResyncReason,
+}
+
+#[tauri::command]
+pub async fn frontend_workspace_files_tree(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFilesTreeRequest,
+) -> Result<Vec<FileEntry>, String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let operation = state
+        .workspace_files
+        .register_operation(
+            owner.clone(),
+            request.workspace_id.clone(),
+            request.operation_id,
+        )
+        .map_err(|error| error.to_string())?;
+    let cancelled = operation.cancellation();
+    let service = state.shared_service();
+    let workspace_id = request.workspace_id;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _operation = operation;
+        service
+            .workspace_files_tree(&owner, &workspace_id, &cancelled)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn frontend_workspace_files_scan(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFilesScanRequest,
+) -> Result<Vec<FileEntry>, String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let operation = state
+        .workspace_files
+        .register_operation(
+            owner.clone(),
+            request.workspace_id.clone(),
+            request.operation_id,
+        )
+        .map_err(|error| error.to_string())?;
+    let cancelled = operation.cancellation();
+    let service = state.shared_service();
+    let workspace_id = request.workspace_id;
+    let directory = request.directory;
+    let max_depth = request.max_depth as usize;
+    let max_entries = request.max_entries as usize;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _operation = operation;
+        service
+            .workspace_files_scan(
+                &owner,
+                &workspace_id,
+                &directory,
+                max_depth,
+                max_entries,
+                &cancelled,
+            )
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn frontend_workspace_files_search(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFilesSearchRequest,
+) -> Result<WorkspaceFileSearchResult, String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let operation = state
+        .workspace_files
+        .register_operation(
+            owner.clone(),
+            request.workspace_id.clone(),
+            request.operation_id,
+        )
+        .map_err(|error| error.to_string())?;
+    let cancelled = operation.cancellation();
+    let service = state.shared_service();
+    let workspace_id = request.workspace_id;
+    let directory = request.directory;
+    let query = request.query;
+    let max_results = request.max_results as usize;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _operation = operation;
+        service
+            .workspace_files_search(
+                &owner,
+                &workspace_id,
+                directory.as_ref(),
+                &query,
+                max_results,
+                &cancelled,
+            )
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub fn frontend_workspace_files_cancel(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFilesCancelRequest,
+) -> Result<(), String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    state
+        .workspace_files
+        .cancel_operation(&owner, &request.workspace_id, &request.operation_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn frontend_workspace_files_stat(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFilePathRequest,
+) -> Result<WorkspaceFileStat, String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let _operation = state
+        .workspace_files
+        .admit_operation(owner.clone(), request.workspace_id.clone())
+        .map_err(|error| error.to_string())?;
+    state
+        .service
+        .workspace_file_stat(&owner, &request.workspace_id, &request.path)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn frontend_workspace_files_create_file(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFileCreateRequest,
+) -> Result<WorkspaceFileStat, String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let _operation = state
+        .workspace_files
+        .admit_operation(owner.clone(), request.workspace_id.clone())
+        .map_err(|error| error.to_string())?;
+    state
+        .service
+        .workspace_file_create(&owner, &request.workspace_id, &request.path, &request.bytes)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn frontend_workspace_files_create_directory(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFilePathRequest,
+) -> Result<WorkspaceFileStat, String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let _operation = state
+        .workspace_files
+        .admit_operation(owner.clone(), request.workspace_id.clone())
+        .map_err(|error| error.to_string())?;
+    state
+        .service
+        .workspace_directory_create(&owner, &request.workspace_id, &request.path)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn frontend_workspace_files_move(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFileMoveRequest,
+) -> Result<WorkspaceFileStat, String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let _operation = state
+        .workspace_files
+        .admit_operation(owner.clone(), request.workspace_id.clone())
+        .map_err(|error| error.to_string())?;
+    state
+        .service
+        .workspace_file_move(
+            &owner,
+            &request.workspace_id,
+            &request.source,
+            &request.destination,
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn frontend_workspace_files_rename(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFileMoveRequest,
+) -> Result<WorkspaceFileStat, String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let _operation = state
+        .workspace_files
+        .admit_operation(owner.clone(), request.workspace_id.clone())
+        .map_err(|error| error.to_string())?;
+    state
+        .service
+        .workspace_file_move(
+            &owner,
+            &request.workspace_id,
+            &request.source,
+            &request.destination,
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn frontend_workspace_files_copy(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFileCopyRequest,
+) -> Result<WorkspaceFileStat, String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let operation = state
+        .workspace_files
+        .register_operation(
+            owner.clone(),
+            request.workspace_id.clone(),
+            request.operation_id,
+        )
+        .map_err(|error| error.to_string())?;
+    let cancelled = operation.cancellation();
+    let service = state.shared_service();
+    let workspace_id = request.workspace_id;
+    let source = request.source;
+    let destination = request.destination;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _operation = operation;
+        service
+            .workspace_file_copy(&owner, &workspace_id, &source, &destination, &cancelled)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub fn frontend_workspace_files_recycle(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFilePathRequest,
+) -> Result<(), String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let _operation = state
+        .workspace_files
+        .admit_operation(owner.clone(), request.workspace_id.clone())
+        .map_err(|error| error.to_string())?;
+    state
+        .service
+        .workspace_file_recycle(&owner, &request.workspace_id, &request.path)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn frontend_workspace_files_delete(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFilePathRequest,
+) -> Result<WorkspaceRecoverableDeleteReceipt, String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let _operation = state
+        .workspace_files
+        .admit_operation(owner.clone(), request.workspace_id.clone())
+        .map_err(|error| error.to_string())?;
+    let access = state
+        .service
+        .workspace_file_write_access(&owner, &request.workspace_id)
+        .map_err(|error| error.to_string())?;
+    state
+        .workspace_files
+        .delete_recoverable(
+            &owner,
+            &request.workspace_id,
+            access.generation,
+            &request.path,
+            &access.root,
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn frontend_workspace_files_undo_delete(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    workspace_id: WorkspaceId,
+    token: String,
+) -> Result<(), String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let _operation = state
+        .workspace_files
+        .admit_operation(owner.clone(), workspace_id.clone())
+        .map_err(|error| error.to_string())?;
+    let access = state
+        .service
+        .workspace_file_write_access(&owner, &workspace_id)
+        .map_err(|error| error.to_string())?;
+    state
+        .workspace_files
+        .undo_recoverable(
+            &owner,
+            &workspace_id,
+            access.generation,
+            &token,
+            &access.root,
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn frontend_workspace_files_reveal(
+    window: WebviewWindow,
+    state: State<'_, FrontendFilesState>,
+    request: WorkspaceFilePathRequest,
+) -> Result<(), String> {
+    let owner = verify_trusted_window(&window, &state)?;
+    let _operation = state
+        .workspace_files
+        .admit_operation(owner.clone(), request.workspace_id.clone())
+        .map_err(|error| error.to_string())?;
+    state
+        .service
+        .workspace_file_reveal(&owner, &request.workspace_id, &request.path)
+        .map_err(|error| error.to_string())
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -65,9 +411,8 @@ pub fn verify_trusted_window(
     window: &WebviewWindow,
     state: &FrontendFilesState,
 ) -> Result<OwnerId, String> {
-    let owner = OwnerId::from_label(window.label()).map_err(|_| {
-        "access denied: untrusted window".to_owned()
-    })?;
+    let owner = OwnerId::from_label(window.label())
+        .map_err(|_| "access denied: untrusted window".to_owned())?;
     state.require_document_owner(&owner)?;
     Ok(owner)
 }
@@ -104,16 +449,16 @@ pub async fn frontend_open_workspace(
     let opened_at = Timestamp::new(now_ms).map_err(|e| e.to_string())?;
 
     let outcome = match kind {
-        WorkspaceKind::Folder => state.service.open_workspace_folder(&owner, &path, None, opened_at),
+        WorkspaceKind::Folder => state
+            .service
+            .open_workspace_folder(&owner, &path, None, opened_at),
         WorkspaceKind::File => state.service.open_workspace_file(&owner, &path, opened_at),
     }
     .map_err(|e| e.to_string())?;
     if let Err(error) =
         state.admit_workspace_locked(&mut lifecycle, &owner, outcome.opened.id.clone())
     {
-        let _ = state
-            .service
-            .close_workspace(&owner, &outcome.opened.id);
+        let _ = state.service.close_workspace(&owner, &outcome.opened.id);
         return Err(error);
     }
     Ok(Some(outcome.opened))
@@ -154,9 +499,7 @@ pub fn frontend_open_recent(
     if let Err(error) =
         state.admit_workspace_locked(&mut lifecycle, &owner, outcome.opened.id.clone())
     {
-        let _ = state
-            .service
-            .close_workspace(&owner, &outcome.opened.id);
+        let _ = state.service.close_workspace(&owner, &outcome.opened.id);
         return Err(error);
     }
     Ok(outcome.opened)
@@ -171,7 +514,10 @@ pub fn frontend_remove_recent(
     let owner = verify_trusted_window(&window, &state)?;
     let _lifecycle = state.lock_lifecycle();
     state.require_owner_live_locked(&_lifecycle, &owner)?;
-    state.service.remove_recent(id.as_str()).map_err(|e| e.to_string())?;
+    state
+        .service
+        .remove_recent(id.as_str())
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -183,7 +529,10 @@ pub fn frontend_list_files(
 ) -> Result<Vec<FileEntry>, String> {
     let owner = verify_trusted_window(&window, &state)?;
     state.require_document_owner(&owner)?;
-    state.service.list_files(&owner, &workspace_id).map_err(|e| e.to_string())
+    state
+        .service
+        .list_files(&owner, &workspace_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -196,7 +545,10 @@ pub fn frontend_read_file(
     let is_pdf = file.path.as_str().to_ascii_lowercase().ends_with(".pdf");
 
     if !is_pdf {
-        let receipt = state.service.read_file(&owner, &file).map_err(|e| e.to_string())?;
+        let receipt = state
+            .service
+            .read_file(&owner, &file)
+            .map_err(|e| e.to_string())?;
         if receipt.bytes.len() > MAX_READ_BYTES {
             return Err("byte limit exceeded".to_string());
         }
@@ -205,7 +557,10 @@ pub fn frontend_read_file(
 
     // Capture the exact capability and filesystem generation before I/O.
     let grant = state.workspace_grant(&owner, &file.workspace_id)?;
-    let receipt = state.service.read_file_pdf(&owner, &file).map_err(|e| e.to_string())?;
+    let receipt = state
+        .service
+        .read_file_pdf(&owner, &file)
+        .map_err(|e| e.to_string())?;
 
     if receipt.bytes.len() > MAX_PDF_BYTES {
         return Err("PDF byte limit exceeded".to_string());
@@ -253,7 +608,10 @@ pub fn frontend_write_file(
     request: WriteRequest,
 ) -> Result<WriteReceipt, String> {
     let owner = verify_trusted_window(&window, &state)?;
-    state.service.write_file(&owner, &request).map_err(|e| e.to_string())
+    state
+        .service
+        .write_file(&owner, &request)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -266,11 +624,9 @@ pub async fn frontend_save_as(
     let dialog = Arc::clone(state.dialog());
     let win = window.clone();
 
-    let chosen_path = tauri::async_runtime::spawn_blocking(move || {
-        dialog.save_file(&win)
-    })
-    .await
-    .map_err(|e| e.to_string())?;
+    let chosen_path = tauri::async_runtime::spawn_blocking(move || dialog.save_file(&win))
+        .await
+        .map_err(|e| e.to_string())?;
 
     let owner = verify_trusted_window(&window, &state)?;
     let _transition = state.lock_watch_transition();
@@ -348,6 +704,7 @@ pub fn frontend_watch_start(
     let window_clone = window.clone();
     let sub_id = subscription_id.clone();
     let gen = generation;
+    let expected_watch_workspace = workspace_id.clone();
     let stopped_for_sink = Arc::clone(&stopped);
     let failure_for_sink = Arc::clone(&failure_latched);
     let gate_for_sink = Arc::clone(&delivery_gate);
@@ -376,6 +733,24 @@ pub fn frontend_watch_start(
                     },
                 );
             }
+            WatchNotification::ResyncRequired {
+                workspace_id: event_workspace_id,
+                reason,
+            } => {
+                if failure_for_sink.load(Ordering::Acquire)
+                    || event_workspace_id != expected_watch_workspace
+                {
+                    return;
+                }
+                let _ = window_clone.emit(
+                    "frontend://files/resync",
+                    &WatchResyncMessage {
+                        subscription_id: sub_id.clone(),
+                        generation: gen,
+                        reason,
+                    },
+                );
+            }
             WatchNotification::Failure { failure, .. } => {
                 if failure_for_sink.swap(true, Ordering::AcqRel) {
                     return;
@@ -394,10 +769,12 @@ pub fn frontend_watch_start(
     });
 
     let active = spawn_watch_bridge(
-        owner.clone(),
-        workspace_id.clone(),
-        subscription_id,
-        generation,
+        WatchBridgeIdentity {
+            owner: owner.clone(),
+            workspace_id: workspace_id.clone(),
+            subscription_id,
+            renderer_generation: generation,
+        },
         &state.service,
         &state.native_watch,
         sink,
@@ -409,9 +786,7 @@ pub fn frontend_watch_start(
     let installed = {
         let mut lifecycle = state.lock_lifecycle();
         let current_grant = state.workspace_grant_locked(&lifecycle, &owner, &workspace_id);
-        let still_current = state
-            .require_owner_live_locked(&lifecycle, &owner)
-            .is_ok()
+        let still_current = state.require_owner_live_locked(&lifecycle, &owner).is_ok()
             && current_grant.is_ok()
             && !lifecycle
                 .closing_workspaces
@@ -446,23 +821,77 @@ pub fn frontend_watch_stop(
 }
 
 #[tauri::command]
-pub fn frontend_close_workspace(
+pub async fn frontend_close_workspace(
     window: WebviewWindow,
     state: State<'_, FrontendFilesState>,
+    compile: State<'_, FrontendCompileState>,
+    terminal_state: State<'_, FrontendTerminalState>,
     workspace_id: WorkspaceId,
 ) -> Result<(), String> {
     let owner = verify_trusted_window(&window, &state)?;
+
+    if let Ok(generation) = state.service.workspace_generation(&owner, &workspace_id) {
+        state
+            .workspace_files
+            .quiesce_workspace(&owner, &workspace_id)
+            .map_err(|error| error.to_string())?;
+        if state.workspace_files.has_recoveries(&owner, &workspace_id) {
+            let access = match state
+                .service
+                .workspace_file_write_access(&owner, &workspace_id)
+            {
+                Ok(access) => access,
+                Err(error) => {
+                    state
+                        .workspace_files
+                        .abort_workspace_close(&owner, &workspace_id);
+                    return Err(error.to_string());
+                }
+            };
+            if let Err(error) = state.workspace_files.restore_workspace_recoveries(
+                &owner,
+                &workspace_id,
+                generation,
+                &access.root,
+            ) {
+                state
+                    .workspace_files
+                    .abort_workspace_close(&owner, &workspace_id);
+                return Err(error.to_string());
+            }
+        }
+        state
+            .workspace_files
+            .finish_workspace_close(&owner, &workspace_id);
+    }
+
     let (watch, first_close) = state.begin_workspace_close(&owner, &workspace_id);
     if let Some(watch) = watch {
         state.stop_active_watch_instance(&watch);
     }
-    if first_close {
-        state.service.close_workspace(&owner, &workspace_id).map_err(|e| e.to_string())
+    compile.close_workspace(&owner, &workspace_id);
+    let terminal_result = terminal_state.close_workspace(&owner, &workspace_id).await;
+    let fs_result = if first_close {
+        state
+            .service
+            .close_workspace(&owner, &workspace_id)
+            .map_err(|e| e.to_string())
     } else {
-        state.service.process_pending_cleanup(&owner, &workspace_id).map_err(|e| e.to_string())
+        state
+            .service
+            .process_pending_cleanup(&owner, &workspace_id)
+            .map_err(|e| e.to_string())
+    };
+
+    match (terminal_result, fs_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(terminal_error), Ok(())) => Err(terminal_error.to_string()),
+        (Ok(()), Err(filesystem_error)) => Err(filesystem_error),
+        (Err(terminal_error), Err(filesystem_error)) => Err(format!(
+            "terminal cleanup failed: {terminal_error}; filesystem cleanup failed: {filesystem_error}"
+        )),
     }
 }
-
 #[cfg(test)]
 #[path = "../../tests/unit/frontend_files.rs"]
 mod tests;

@@ -446,6 +446,109 @@ pub struct FileEntry {
     pub kind: FileKind,
 }
 
+// ---- Native WorkspaceFiles commands ------------------------------------
+
+/// Long-running tree operations are owner- and workspace-scoped. The
+/// operation ID is only a cancellation handle; it grants no file capability.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceFilesTreeRequest {
+    pub workspace_id: WorkspaceId,
+    pub operation_id: RunId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceFilesScanRequest {
+    pub workspace_id: WorkspaceId,
+    pub directory: RelativePath,
+    pub max_depth: u32,
+    pub max_entries: u32,
+    pub operation_id: RunId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceFilesSearchRequest {
+    pub workspace_id: WorkspaceId,
+    #[serde(deserialize_with = "nullable")]
+    pub directory: Option<RelativePath>,
+    pub query: String,
+    pub max_results: u32,
+    pub operation_id: RunId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceFilePathRequest {
+    pub workspace_id: WorkspaceId,
+    pub path: RelativePath,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceFileCreateRequest {
+    pub workspace_id: WorkspaceId,
+    pub path: RelativePath,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceFileMoveRequest {
+    pub workspace_id: WorkspaceId,
+    pub source: RelativePath,
+    pub destination: RelativePath,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceFileCopyRequest {
+    pub workspace_id: WorkspaceId,
+    pub source: RelativePath,
+    pub destination: RelativePath,
+    pub operation_id: RunId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceFilesCancelRequest {
+    pub workspace_id: WorkspaceId,
+    pub operation_id: RunId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceFileStat {
+    pub path: RelativePath,
+    pub kind: FileKind,
+    /// Always a JavaScript-safe integer; directories report zero.
+    pub size_bytes: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceFileSearchHit {
+    pub path: RelativePath,
+    pub line: Position,
+    pub preview: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceFileSearchResult {
+    pub hits: Vec<WorkspaceFileSearchHit>,
+    /// True when the result limit or a bounded input limit stopped the search.
+    pub truncated: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceRecoverableDeleteReceipt {
+    pub token: String,
+    pub expires_in_ms: u64,
+}
+
 /// Read receipt; `bytes` is bounded by [`read_limit`] for the receipt path.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", try_from = "ReadReceiptWire")]
@@ -612,6 +715,12 @@ pub enum FileWatchFailure {
     StaleWorkspace,
     LinkNotAllowed,
     FileOperationFailed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum FileWatchResyncReason {
+    PeriodicReconcileDue,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]

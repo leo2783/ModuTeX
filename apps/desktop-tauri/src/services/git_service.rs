@@ -14,8 +14,12 @@ use std::{
     error::Error,
     ffi::OsString,
     fmt,
+    path::Path,
     sync::atomic::{AtomicBool, Ordering},
+    sync::Arc,
 };
+
+use serde::Serialize;
 
 use crate::{
     schemas::protocol::{OwnerId, WorkspaceId},
@@ -31,6 +35,23 @@ const MAX_USER_NAME_BYTES: usize = 4096;
 const MAX_STDERR_BYTES: usize = 16 * 1024;
 const MAX_ERROR_DETAIL_BYTES: usize = 512;
 const MAX_COMMIT_MESSAGE_UTF16: usize = 32_767;
+const MAX_LOG_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum GitUnavailableReason {
+    NotInstalled,
+    UnsupportedPlatform,
+    UnsafeExecutable,
+    UnsafeEnvironment,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum GitAvailability {
+    Available,
+    Unavailable { reason: GitUnavailableReason },
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GitWorkspaceFailure {
@@ -55,6 +76,13 @@ pub enum GitPathIntent {
     Discard,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GitPathKind {
+    File,
+    Directory,
+    Absent,
+}
+
 /// Host-only workspace capability. The coordinator must bind it to a trusted
 /// workspace root, owner, and generation. Path validation must reject links or
 /// reparse points on every component; discard validation must reject directories.
@@ -64,7 +92,17 @@ pub trait GitWorkspaceCapability: Send + Sync {
     fn workspace_id(&self) -> &WorkspaceId;
     fn owner(&self) -> &OwnerId;
     fn generation(&self) -> u64;
+    /// Absolute root supplied only by the host workspace capability.
+    fn root_path(&self) -> Result<&Path, GitPathFailure> {
+        Err(GitPathFailure::Unavailable)
+    }
+    /// Monotonic host cancellation signal. Renderer data cannot reset it.
+    fn cancellation_signal(&self) -> Option<Arc<AtomicBool>> {
+        None
+    }
     fn check_current(&self) -> Result<(), GitWorkspaceFailure>;
+    /// Releases path handles retained by a completed filesystem operation.
+    fn release_path_pins(&self) -> Result<(), GitPathFailure>;
     fn validate_path(
         &self,
         path: &RelativePath,
@@ -72,9 +110,18 @@ pub trait GitWorkspaceCapability: Send + Sync {
     ) -> Result<(), GitPathFailure>;
     /// Used for empty-path stage/unstage (all); validate the full applicable tree.
     fn validate_all(&self, intent: GitPathIntent) -> Result<(), GitPathFailure>;
+    /// Host-resolved kind, used to expand directory selections into exact
+    /// changed leaves instead of letting Git recurse into new descendants.
+    fn path_kind(&self, path: &RelativePath) -> Result<GitPathKind, GitPathFailure>;
+    /// Completes the registered workspace task after deferred process cleanup
+    /// has been proven drained.
+    fn deferred_cleanup_callback(&self) -> Box<dyn FnOnce() + Send + 'static> {
+        Box::new(|| {})
+    }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum GitRunnerError {
     Cancelled,
     Closed,
@@ -83,15 +130,25 @@ pub enum GitRunnerError {
     LaunchFailed,
     ProcessTreeFailed,
     OutputLimitExceeded,
+    CommandLineTooLong,
+    Unavailable,
+    UnsupportedPlatform,
+    UnsafeExecutable,
+    UnsafeEnvironment,
+    UnsafeWorkspace,
+    CleanupUnproven,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum GitOperation {
     ProbeRepository,
     ProbeHead,
     Status,
     Init,
     ShowHead,
+    Diff,
+    Log,
     Stage,
     Unstage,
     Discard,
@@ -100,7 +157,8 @@ pub enum GitOperation {
     UserName,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum GitError {
     WorkspaceClosed,
     WorkspaceCancelled,
@@ -157,6 +215,59 @@ impl fmt::Display for GitError {
 
 impl Error for GitError {}
 
+impl GitError {
+    /// Stable command error identifier, independent of the human-readable detail.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::WorkspaceClosed => "WORKSPACE_CLOSED",
+            Self::WorkspaceCancelled => "CANCELLED",
+            Self::StaleWorkspace => "STALE_WORKSPACE",
+            Self::OwnerRevoked => "OWNER_REVOKED",
+            Self::PathOutsideWorkspace => "PATH_OUTSIDE_WORKSPACE",
+            Self::LinkNotAllowed => "LINK_NOT_ALLOWED",
+            Self::PathIsDirectory => "PATH_IS_DIRECTORY",
+            Self::PathUnavailable => "PATH_UNAVAILABLE",
+            Self::InvalidPath => "INVALID_PATH",
+            Self::InvalidPathEncoding => "INVALID_PATH_ENCODING",
+            Self::MalformedStatus => "MALFORMED_STATUS",
+            Self::TooManyStatusEntries => "TOO_MANY_STATUS_ENTRIES",
+            Self::TooManyPaths => "TOO_MANY_PATHS",
+            Self::PathArgumentLimitExceeded => "PATH_ARGUMENT_LIMIT_EXCEEDED",
+            Self::DuplicatePath => "DUPLICATE_PATH",
+            Self::PathsRequired => "PATHS_REQUIRED",
+            Self::NotRepository => "NOT_REPOSITORY",
+            Self::AlreadyRepository => "ALREADY_REPOSITORY",
+            Self::NoHead => "NO_HEAD",
+            Self::UnresolvedConflicts { .. } => "UNRESOLVED_CONFLICTS",
+            Self::NothingToCommit => "NOTHING_TO_COMMIT",
+            Self::PathNotChanged => "PATH_NOT_CHANGED",
+            Self::RenameRequiresBothPaths => "RENAME_REQUIRES_BOTH_PATHS",
+            Self::ConfirmationMismatch => "CONFIRMATION_MISMATCH",
+            Self::ConfirmationAlreadyUsed => "CONFIRMATION_ALREADY_USED",
+            Self::InvalidCommitMessage => "INVALID_COMMIT_MESSAGE",
+            Self::InvalidUserName => "INVALID_USER_NAME",
+            Self::InvalidGitOutput => "INVALID_GIT_OUTPUT",
+            Self::OutputLimitExceeded => "OUTPUT_LIMIT_EXCEEDED",
+            Self::ProcessExitUnavailable => "PROCESS_EXIT_UNAVAILABLE",
+            Self::CommandFailed { .. } => "COMMAND_FAILED",
+            Self::Runner(GitRunnerError::Cancelled) => "CANCELLED",
+            Self::Runner(GitRunnerError::Closed) => "WORKSPACE_CLOSED",
+            Self::Runner(GitRunnerError::StaleWorkspace) => "STALE_WORKSPACE",
+            Self::Runner(GitRunnerError::TimedOut) => "GIT_TIMED_OUT",
+            Self::Runner(GitRunnerError::LaunchFailed) => "GIT_LAUNCH_FAILED",
+            Self::Runner(GitRunnerError::ProcessTreeFailed) => "GIT_PROCESS_FAILED",
+            Self::Runner(GitRunnerError::OutputLimitExceeded) => "OUTPUT_LIMIT_EXCEEDED",
+            Self::Runner(GitRunnerError::CommandLineTooLong) => "COMMAND_LINE_TOO_LONG",
+            Self::Runner(GitRunnerError::Unavailable) => "GIT_UNAVAILABLE",
+            Self::Runner(GitRunnerError::UnsupportedPlatform) => "UNSUPPORTED_PLATFORM",
+            Self::Runner(GitRunnerError::UnsafeExecutable) => "UNSAFE_EXECUTABLE",
+            Self::Runner(GitRunnerError::UnsafeEnvironment) => "UNSAFE_ENVIRONMENT",
+            Self::Runner(GitRunnerError::UnsafeWorkspace) => "UNSAFE_WORKSPACE",
+            Self::Runner(GitRunnerError::CleanupUnproven) => "CLEANUP_UNPROVEN",
+        }
+    }
+}
+
 impl From<GitWorkspaceFailure> for GitError {
     fn from(value: GitWorkspaceFailure) -> Self {
         match value {
@@ -191,7 +302,7 @@ pub struct GitInvocation {
 }
 
 impl GitInvocation {
-    fn new(arguments: Vec<OsString>, stdout_limit_bytes: usize) -> Self {
+    pub(crate) fn new(arguments: Vec<OsString>, stdout_limit_bytes: usize) -> Self {
         let mut argv = Vec::with_capacity(arguments.len() + 2);
         argv.push(OsString::from("--no-pager"));
         argv.push(OsString::from("--literal-pathspecs"));
@@ -230,6 +341,13 @@ pub trait GitRunner: Send + Sync {
         workspace: &dyn GitWorkspaceCapability,
         invocation: &GitInvocation,
     ) -> Result<GitProcessOutput, GitRunnerError>;
+    /// UTF-16 budget available to pathspecs after the exact executable, Git
+    /// global options, base command and the `--` separator are counted.
+    fn path_argument_budget(
+        &self,
+        workspace: &dyn GitWorkspaceCapability,
+        base_words: &[&str],
+    ) -> Result<usize, GitRunnerError>;
 }
 
 /// One-use host token issued only after the host confirmation flow. It is bound
@@ -278,7 +396,8 @@ impl GitDiscardConfirmation {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum GitStatusCode {
     Unchanged,
     Modified,
@@ -312,7 +431,8 @@ impl GitStatusCode {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GitStatusEntry {
     pub index: GitStatusCode,
     pub worktree: GitStatusCode,
@@ -349,7 +469,7 @@ impl GitStatusEntry {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct GitStatus {
     pub entries: Vec<GitStatusEntry>,
 }
@@ -455,6 +575,53 @@ impl<'a> GitService<'a> {
         Ok(output.stdout)
     }
 
+    /// Returns a bounded, binary-safe Git diff. Empty `paths` means the complete
+    /// worktree or index, depending on `staged`.
+    pub fn diff(
+        &self,
+        workspace: &dyn GitWorkspaceCapability,
+        staged: bool,
+        paths: &[RelativePath],
+    ) -> Result<Vec<u8>, GitError> {
+        self.validate_paths(workspace, paths, true, GitPathIntent::Stage)?;
+        self.ensure_repository(workspace)?;
+        let mut words = vec![
+            "diff",
+            "--no-ext-diff",
+            "--no-color",
+            "--no-textconv",
+            "--binary",
+        ];
+        if staged {
+            words.insert(1, "--cached");
+        }
+        let output = self.run_success(
+            workspace,
+            args_with_paths(&words, paths),
+            MAX_SHOW_HEAD_BYTES,
+            GitOperation::Diff,
+        )?;
+        Ok(output.stdout)
+    }
+
+    /// Returns at most 200 recent commits as Git's bounded raw output.
+    pub fn log(&self, workspace: &dyn GitWorkspaceCapability) -> Result<Vec<u8>, GitError> {
+        self.ensure_repository(workspace)?;
+        let output = self.run_success(
+            workspace,
+            plain_args(&[
+                "log",
+                "--no-color",
+                "--no-decorate",
+                "--format=fuller",
+                "--max-count=200",
+            ]),
+            MAX_LOG_OUTPUT_BYTES,
+            GitOperation::Log,
+        )?;
+        Ok(output.stdout)
+    }
+
     pub fn init(&self, workspace: &dyn GitWorkspaceCapability) -> Result<(), GitError> {
         if self.repository_state(workspace)? {
             return Err(GitError::AlreadyRepository);
@@ -477,20 +644,69 @@ impl<'a> GitService<'a> {
         workspace: &dyn GitWorkspaceCapability,
         paths: &[RelativePath],
     ) -> Result<(), GitError> {
-        self.validate_paths(workspace, paths, true, GitPathIntent::Stage)?;
-        self.ensure_repository(workspace)?;
-        let args = if paths.is_empty() {
-            plain_args(&["add", "--all"])
+        validate_selection(paths, true)?;
+        workspace.check_current()?;
+        let mut present = Vec::new();
+        let mut absent = Vec::new();
+        let mut directories = Vec::new();
+        let mut present_bytes = 0usize;
+        let mut absent_bytes = 0usize;
+        if paths.is_empty() {
+            workspace.validate_all(GitPathIntent::Stage)?;
         } else {
-            args_with_paths(&["add", "--all"], paths)
-        };
-        self.run_success(
-            workspace,
-            args,
-            MAX_COMMAND_OUTPUT_BYTES,
-            GitOperation::Stage,
-        )?;
-        Ok(())
+            for path in paths {
+                match workspace.path_kind(path)? {
+                    GitPathKind::File => {
+                        push_unique_path(&mut present, path, &mut present_bytes)?;
+                    }
+                    GitPathKind::Absent => {
+                        push_unique_path(&mut absent, path, &mut absent_bytes)?;
+                    }
+                    GitPathKind::Directory => {
+                        push_unique_path(&mut directories, path, &mut present_bytes)?;
+                    }
+                }
+            }
+        }
+
+        let needs_status = paths.is_empty() || !directories.is_empty();
+        self.ensure_repository(workspace)?;
+        if needs_status {
+            let entries = self.read_status(workspace)?;
+            for entry in &entries {
+                let new_selected = paths.is_empty()
+                    || directories
+                        .iter()
+                        .any(|directory| path_is_within(&entry.path, directory));
+                let old_selected = entry.original_path.as_ref().is_some_and(|old| {
+                    paths.is_empty()
+                        || directories
+                            .iter()
+                            .any(|directory| path_is_within(old, directory))
+                });
+                if new_selected {
+                    if entry.worktree == GitStatusCode::Deleted {
+                        push_expanded_path(&mut absent, &entry.path, &mut absent_bytes)?;
+                    } else {
+                        push_expanded_path(&mut present, &entry.path, &mut present_bytes)?;
+                    }
+                }
+                if let Some(old) = &entry.original_path {
+                    if old_selected {
+                        if entry.is_renamed() {
+                            push_expanded_path(&mut absent, old, &mut absent_bytes)?;
+                        } else if entry.is_copied() {
+                            push_expanded_path(&mut present, old, &mut present_bytes)?;
+                        }
+                    }
+                }
+            }
+        }
+
+        self.validate_workspace_paths(workspace, &present, GitPathIntent::Stage)?;
+        self.validate_workspace_paths(workspace, &absent, GitPathIntent::Stage)?;
+        self.run_paths(workspace, &["add", "--all"], &present, GitOperation::Stage)?;
+        self.run_absent_paths(workspace, &absent)
     }
 
     /// Empty `paths` unstages everything without changing the working tree.
@@ -527,7 +743,17 @@ impl<'a> GitService<'a> {
         let mut staged = Vec::new();
         let mut total_bytes = 0;
         for entry in &entries {
-            if entry.is_staged() && entry_matches(entry, paths) {
+            if !entry.is_staged() {
+                continue;
+            }
+            let new_selected = paths
+                .iter()
+                .any(|selection| path_is_within(&entry.path, selection));
+            let old_selected = entry.is_renamed()
+                && entry.original_path.as_ref().is_some_and(|old| {
+                    paths.iter().any(|selection| path_is_within(old, selection))
+                });
+            if new_selected || old_selected {
                 push_unique_path(&mut staged, &entry.path, &mut total_bytes)?;
                 if entry.is_renamed() {
                     if let Some(old) = &entry.original_path {
@@ -540,10 +766,16 @@ impl<'a> GitService<'a> {
             return Ok(());
         }
         self.validate_paths(workspace, &staged, false, GitPathIntent::Unstage)?;
-        let args = if has_head {
-            args_with_paths(&["reset", "--quiet", "HEAD"], &staged)
+        if has_head {
+            self.run_paths(
+                workspace,
+                &["reset", "--quiet", "HEAD"],
+                &staged,
+                GitOperation::Unstage,
+            )?;
         } else {
-            args_with_paths(
+            self.run_paths(
+                workspace,
                 &[
                     "rm",
                     "--quiet",
@@ -553,14 +785,9 @@ impl<'a> GitService<'a> {
                     "--ignore-unmatch",
                 ],
                 &staged,
-            )
-        };
-        self.run_success(
-            workspace,
-            args,
-            MAX_COMMAND_OUTPUT_BYTES,
-            GitOperation::Unstage,
-        )?;
+                GitOperation::Unstage,
+            )?;
+        }
         Ok(())
     }
 
@@ -572,6 +799,7 @@ impl<'a> GitService<'a> {
         paths: &[RelativePath],
         confirmation: &GitDiscardConfirmation,
     ) -> Result<(), GitError> {
+        workspace.release_path_pins()?;
         self.validate_paths(workspace, paths, false, GitPathIntent::Discard)?;
         self.ensure_repository(workspace)?;
         let entries = self.read_status(workspace)?;
@@ -812,6 +1040,19 @@ impl<'a> GitService<'a> {
         Ok(())
     }
 
+    fn validate_workspace_paths(
+        &self,
+        workspace: &dyn GitWorkspaceCapability,
+        paths: &[RelativePath],
+        intent: GitPathIntent,
+    ) -> Result<(), GitError> {
+        workspace.check_current()?;
+        for path in paths {
+            workspace.validate_path(path, intent)?;
+        }
+        Ok(())
+    }
+
     fn ensure_repository(&self, workspace: &dyn GitWorkspaceCapability) -> Result<(), GitError> {
         if self.repository_state(workspace)? {
             Ok(())
@@ -880,13 +1121,63 @@ impl<'a> GitService<'a> {
         if paths.is_empty() {
             return Ok(());
         }
-        self.run_success(
-            workspace,
-            args_with_paths(words, paths),
-            MAX_COMMAND_OUTPUT_BYTES,
-            operation,
-        )?;
+        let budget = self
+            .runner
+            .path_argument_budget(workspace, words)
+            .map_err(|error| {
+                if error == GitRunnerError::CommandLineTooLong {
+                    GitError::PathArgumentLimitExceeded
+                } else {
+                    GitError::Runner(error)
+                }
+            })?;
+        let mut start = 0usize;
+        while start < paths.len() {
+            let mut end = start;
+            let mut cost = 0usize;
+            while end < paths.len() {
+                let path_cost = path_argument_cost(&paths[end])?;
+                let next = cost
+                    .checked_add(path_cost)
+                    .ok_or(GitError::PathArgumentLimitExceeded)?;
+                if next > budget {
+                    break;
+                }
+                cost = next;
+                end += 1;
+            }
+            if end == start {
+                return Err(GitError::PathArgumentLimitExceeded);
+            }
+            self.run_success(
+                workspace,
+                args_with_paths(words, &paths[start..end]),
+                MAX_COMMAND_OUTPUT_BYTES,
+                operation,
+            )?;
+            start = end;
+        }
         Ok(())
+    }
+
+    fn run_absent_paths(
+        &self,
+        workspace: &dyn GitWorkspaceCapability,
+        paths: &[RelativePath],
+    ) -> Result<(), GitError> {
+        self.run_paths(
+            workspace,
+            &[
+                "rm",
+                "--cached",
+                "--force",
+                "-r",
+                "--ignore-unmatch",
+                "--quiet",
+            ],
+            paths,
+            GitOperation::Stage,
+        )
     }
 
     fn run_success(
@@ -956,6 +1247,12 @@ fn validate_selection(paths: &[RelativePath], allow_empty: bool) -> Result<(), G
     Ok(())
 }
 
+/// Performs the renderer-independent selection checks before the host shows a
+/// discard confirmation dialog.
+pub fn validate_discard_paths(paths: &[RelativePath]) -> Result<(), GitError> {
+    validate_selection(paths, false)
+}
+
 fn push_unique_path(
     paths: &mut Vec<RelativePath>,
     path: &RelativePath,
@@ -975,6 +1272,55 @@ fn push_unique_path(
     }
     paths.push(path.clone());
     Ok(())
+}
+
+fn push_expanded_path(
+    paths: &mut Vec<RelativePath>,
+    path: &RelativePath,
+    total_bytes: &mut usize,
+) -> Result<(), GitError> {
+    if paths.iter().any(|existing| existing == path) {
+        return Ok(());
+    }
+    if paths.len() >= MAX_GIT_PATHS {
+        return Err(GitError::TooManyPaths);
+    }
+    *total_bytes = total_bytes
+        .checked_add(path.as_str().len())
+        .ok_or(GitError::PathArgumentLimitExceeded)?;
+    if *total_bytes > MAX_STATUS_OUTPUT_BYTES {
+        return Err(GitError::PathArgumentLimitExceeded);
+    }
+    paths.push(path.clone());
+    Ok(())
+}
+
+fn path_argument_cost(path: &RelativePath) -> Result<usize, GitError> {
+    let mut units = 0usize;
+    let mut needs_quotes = false;
+    for unit in path.as_str().encode_utf16() {
+        units = units
+            .checked_add(1)
+            .ok_or(GitError::PathArgumentLimitExceeded)?;
+        if matches!(unit, 0x20 | 0x09 | 0x0a | 0x0d | 0x0b | 0x22) {
+            needs_quotes = true;
+        }
+    }
+    let cost = if needs_quotes {
+        units.checked_mul(2).and_then(|value| value.checked_add(4))
+    } else {
+        units.checked_add(1)
+    };
+    cost.ok_or(GitError::PathArgumentLimitExceeded)
+}
+
+fn path_is_within(candidate: &RelativePath, directory: &RelativePath) -> bool {
+    let candidate = candidate.as_str();
+    let directory = directory.as_str();
+    candidate == directory
+        || candidate
+            .strip_prefix(directory)
+            .is_some_and(|rest| rest.starts_with('/'))
 }
 
 fn entry_matches(entry: &GitStatusEntry, paths: &[RelativePath]) -> bool {

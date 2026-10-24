@@ -447,15 +447,15 @@ fn registry_admission_and_close_or_revoke_are_serialized_without_zombie_sessions
 #[test]
 fn unicode_and_emoji_root_paths_normalize_and_reject_invalid_without_panic() {
     let cn_root = CanonicalRootPath::parse(r"C:\中文").unwrap();
-    let cn_child = CanonicalRootPath::parse(r"\\?\c:/中文/論文章節/🦀").unwrap();
+    let cn_child = CanonicalRootPath::parse("\\\\?\\c:/中文/論文章節/\u{20000}").unwrap();
     let cn_chapters = CanonicalRootPath::parse(r"C:\論文章節").unwrap();
-    let emoji_boundary = CanonicalRootPath::parse(r"C:\a\🦀\b").unwrap();
+    let emoji_boundary = CanonicalRootPath::parse("C:\\a\\\u{20000}\\b").unwrap();
     assert!(cn_root.overlaps(&cn_child));
     assert!(!cn_root.overlaps(&cn_chapters));
     assert!(!cn_root.overlaps(&emoji_boundary));
 
     let unc_a = CanonicalRootPath::parse(r"\\?\unc\伺服器\共用\論文").unwrap();
-    let unc_b = CanonicalRootPath::parse(r"\\伺服器\共用\論文\🦀").unwrap();
+    let unc_b = CanonicalRootPath::parse("\\\\伺服器\\共用\\論文\\\u{20000}").unwrap();
     let unc_c = CanonicalRootPath::parse(r"\\?\UNC\srv\share\中文").unwrap();
     assert!(unc_a.overlaps(&unc_b));
     assert!(!unc_a.overlaps(&unc_c));
@@ -467,7 +467,7 @@ fn unicode_and_emoji_root_paths_normalize_and_reject_invalid_without_panic() {
         .admit_trusted(&oa, &wa, root(7, 80, r"C:\論文章節"))
         .unwrap();
     coord
-        .admit_trusted(&ob, &wb, root(7, 81, r"\\?\c:/論文章節/🦀"))
+        .admit_trusted(&ob, &wb, root(7, 81, "\\\\?\\c:/論文章節/\u{20000}"))
         .unwrap();
     let _held = coord
         .try_acquire(&oa, &wa, None, LeaseKind::Save, None)
@@ -484,7 +484,7 @@ fn unicode_and_emoji_root_paths_normalize_and_reject_invalid_without_panic() {
         r"\\?\中文\論文章節",
         r"\\?\UNC\中文",
         r"C:\中文\..\論文章節",
-        r"C:\a\🦀\bad:seg",
+        "C:\\a\\\u{20000}\\bad:seg",
     ] {
         assert_eq!(
             CanonicalRootPath::parse(invalid),

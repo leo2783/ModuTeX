@@ -1,0 +1,10 @@
+[[permission]]
+identifier = "allow-frontend-compile"
+description = "Allows the registered main document window to use the host compile coordinator and its one-shot binary artifacts."
+commands.allow = [
+  "frontend_start_compile",
+  "frontend_compile_result",
+  "frontend_cancel_compile",
+  "frontend_take_compile_pdf",
+  "frontend_take_compile_synctex"
+]

@@ -7,17 +7,12 @@
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::{
-        atomic::Ordering,
-        Arc, Mutex, MutexGuard, PoisonError,
-    },
+    sync::{atomic::Ordering, Arc, Mutex, MutexGuard, PoisonError},
 };
 
 use crate::{
     platform::dialogs::{DialogSeam, NativeDialogSeam},
-    schemas::protocol::{
-        OwnerId, Revision, WorkspaceId,
-    },
+    schemas::protocol::{CompileIdentity, OwnerId, Revision, WorkspaceId},
     services::{
         file_watch::ActiveWatch,
         filesystem::{FilesystemError, FilesystemService},
@@ -25,10 +20,13 @@ use crate::{
     },
     shared::relative_path::RelativePath,
     state::{
-        binary_tokens::{BinaryTokenStore, OwnerAdmission, TokenLimits, WorkspaceAdmission},
+        binary_tokens::{
+            BinaryTokenStore, CompileRunAdmission, OwnerAdmission, TokenLimits, WorkspaceAdmission,
+        },
         recent::RecentStore,
         sessions::SessionRegistry,
         settings::SettingsStore,
+        workspace_files::WorkspaceFilesState,
         workspace_leases::{SessionGeneration, WorkspaceLeaseCoordinator},
     },
 };
@@ -37,6 +35,25 @@ pub(crate) struct WorkspaceGrant {
     pub(crate) admission: WorkspaceAdmission,
     pub(crate) filesystem_generation: SessionGeneration,
     pub(crate) epoch: u64,
+}
+
+pub(crate) fn publish_compile_pdf_ticket(
+    token_store: &BinaryTokenStore,
+    workspace: &WorkspaceAdmission,
+    identity: &CompileIdentity,
+    bytes: Vec<u8>,
+) -> Result<(String, CompileRunAdmission), String> {
+    let run = token_store
+        .admit_compile_run(workspace, identity.clone())
+        .map_err(|error| error.to_string())?;
+    let token = match token_store.issue_compile_pdf(&run, bytes) {
+        Ok(token) => token,
+        Err(error) => {
+            token_store.revoke_compile_run(&run);
+            return Err(error.to_string());
+        }
+    };
+    Ok((token.to_wire(), run))
 }
 
 #[derive(Default)]
@@ -73,6 +90,7 @@ pub struct FrontendFilesState {
     pub(crate) native_watch: Arc<NativeWatchRegistry>,
     pub(crate) dialog: Arc<dyn DialogSeam>,
     pub(crate) lifecycle: Mutex<FrontendLifecycle>,
+    pub(crate) workspace_files: WorkspaceFilesState,
     // Serializes start/replacement/stop/close transitions.  No native worker
     // join is performed while this lock is held.
     pub(crate) watch_transition: Mutex<()>,
@@ -91,6 +109,7 @@ impl FrontendFilesState {
             native_watch,
             dialog,
             lifecycle: Mutex::new(FrontendLifecycle::default()),
+            workspace_files: WorkspaceFilesState::default(),
             watch_transition: Mutex::new(()),
         }
     }
@@ -104,9 +123,10 @@ impl FrontendFilesState {
             recent_store,
             settings_store,
         );
-        let tokens = Arc::new(BinaryTokenStore::new(TokenLimits::default()).map_err(|_| {
-            FilesystemError::InvalidPath("invalid token limits".to_owned())
-        })?);
+        let tokens = Arc::new(
+            BinaryTokenStore::new(TokenLimits::default())
+                .map_err(|_| FilesystemError::InvalidPath("invalid token limits".to_owned()))?,
+        );
         let native_watch = Arc::new(NativeWatchRegistry::new());
         Ok(Self::new(
             service,
@@ -124,10 +144,6 @@ impl FrontendFilesState {
     /// service rather than constructing a second registry or data store.
     pub fn shared_service(&self) -> Arc<FilesystemService> {
         Arc::clone(&self.service)
-    }
-
-    pub(crate) fn tokens(&self) -> &Arc<BinaryTokenStore> {
-        &self.tokens
     }
 
     pub fn dialog(&self) -> &Arc<dyn DialogSeam> {
@@ -148,17 +164,16 @@ impl FrontendFilesState {
 
     /// Host-only registration.  Call only for a document window created by
     /// the trusted host; preview and external webviews are never registered.
-    pub fn register_document_window_label(
-        &self,
-        label: &str,
-    ) -> Result<OwnerId, String> {
+    pub fn register_document_window_label(&self, label: &str) -> Result<OwnerId, String> {
         let _transition = self.lock_watch_transition();
         let owner = OwnerId::from_label(label).map_err(|error| error.to_string())?;
         let mut lifecycle = self.lock_lifecycle();
         if lifecycle.revoked_owners.contains(&owner) {
             return Err("access denied: owner revoked".to_owned());
         }
-        lifecycle.document_owners.insert(owner.clone());
+        if !lifecycle.document_owners.insert(owner.clone()) {
+            return Err("access denied: owner already registered".to_owned());
+        }
         Ok(owner)
     }
 
@@ -266,16 +281,6 @@ impl FrontendFilesState {
         Ok(admission)
     }
 
-    pub(crate) fn admit_workspace(
-        &self,
-        owner: &OwnerId,
-        workspace_id: WorkspaceId,
-    ) -> Result<WorkspaceAdmission, String> {
-        let _transition = self.lock_watch_transition();
-        let mut lifecycle = self.lock_lifecycle();
-        self.admit_workspace_locked(&mut lifecycle, owner, workspace_id)
-    }
-
     pub(crate) fn workspace_grant_locked(
         &self,
         lifecycle: &FrontendLifecycle,
@@ -339,14 +344,28 @@ impl FrontendFilesState {
             .map_err(|error| error.to_string())
     }
 
-    pub(crate) fn get_workspace_admission(
+    /// Publish compiler output against the complete host-owned compile
+    /// identity. Its source entry may be TeX, not a PDF file path.
+    pub(crate) fn publish_compile_pdf(
         &self,
         owner: &OwnerId,
         workspace_id: &WorkspaceId,
-    ) -> Result<WorkspaceAdmission, String> {
-        Ok(self
-            .workspace_grant(owner, workspace_id)?
-            .admission)
+        captured: &WorkspaceGrant,
+        identity: &CompileIdentity,
+        bytes: Vec<u8>,
+    ) -> Result<(String, CompileRunAdmission), String> {
+        if &identity.workspace_id != workspace_id {
+            return Err("compile identity belongs to another workspace".to_owned());
+        }
+        let lifecycle = self.lock_lifecycle();
+        let current = self.workspace_grant_locked(&lifecycle, owner, workspace_id)?;
+        if current.epoch != captured.epoch
+            || current.filesystem_generation != captured.filesystem_generation
+        {
+            return Err("STALE_WORKSPACE".to_owned());
+        }
+
+        publish_compile_pdf_ticket(&self.tokens, &captured.admission, identity, bytes)
     }
 
     pub fn revoke_workspace(&self, owner: &OwnerId, workspace_id: &WorkspaceId) {
@@ -357,8 +376,7 @@ impl FrontendFilesState {
             .get_mut(owner)
             .and_then(|entry| entry.workspaces.remove(workspace_id))
         {
-            self.tokens
-                .revoke_workspace_generation(&grant.admission);
+            self.tokens.revoke_workspace_generation(&grant.admission);
         }
     }
 
@@ -398,13 +416,30 @@ impl FrontendFilesState {
                 .collect::<Vec<_>>();
             if let Some(admissions) = lifecycle.admissions.remove(owner) {
                 if let Some(owner_admission) = admissions.owner {
-                    self.tokens
-                        .revoke_owner_generation(&owner_admission);
+                    self.tokens.revoke_owner_generation(&owner_admission);
                 }
             }
             watches
         };
         drop(transition);
+        self.workspace_files.close_owner_gate(owner);
+        for (workspace_id, generation) in self.workspace_files.recovery_workspaces(owner) {
+            if let Ok(access) = self
+                .service
+                .workspace_file_write_access(owner, &workspace_id)
+            {
+                if access.generation == generation {
+                    // Failure is fail-safe: the tombstone remains in the
+                    // workspace and is never discarded during owner cleanup.
+                    let _ = self.workspace_files.restore_workspace_recoveries(
+                        owner,
+                        &workspace_id,
+                        generation,
+                        &access.root,
+                    );
+                }
+            }
+        }
         for watch in watches_to_stop {
             self.stop_active_watch_instance(&watch);
         }
@@ -428,7 +463,9 @@ impl FrontendFilesState {
             let mut lifecycle = self.lock_lifecycle();
             let key = (owner.clone(), workspace_id.clone());
             if let Some(watch) = lifecycle.active_watches.get(&key) {
-                if watch.subscription_id == subscription_id && watch.renderer_generation == generation {
+                if watch.subscription_id == subscription_id
+                    && watch.renderer_generation == generation
+                {
                     if let Some(watch) = lifecycle.active_watches.remove(&key) {
                         watch.delivery_gate.deactivate();
                         watch.stopped.store(true, Ordering::Release);
@@ -489,8 +526,7 @@ impl FrontendFilesState {
                 .get_mut(owner)
                 .and_then(|entry| entry.workspaces.remove(workspace_id))
             {
-                self.tokens
-                    .revoke_workspace_generation(&grant.admission);
+                self.tokens.revoke_workspace_generation(&grant.admission);
             }
         }
         if let Some(watch) = lifecycle.active_watches.remove(&key) {

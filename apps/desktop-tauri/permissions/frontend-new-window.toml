@@ -1,0 +1,6 @@
+[[permission]]
+identifier = "allow-frontend-new-window"
+description = "Allows a trusted document window to request a host-created document window."
+commands.allow = [
+    "frontend_new_window",
+]

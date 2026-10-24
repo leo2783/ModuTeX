@@ -42,7 +42,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 #[cfg(windows)]
-use crate::platform::file_identity::{ByHandleFileInformation, GetFileInformationByHandle};
+use crate::platform::file_identity::query_raw_handle_identity;
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, BorrowedHandle, FromRawHandle, OwnedHandle, RawHandle};
 
@@ -124,8 +124,8 @@ pub struct WatchSubscriptionKey {
 /// Pinned volume + file-ID identity of a verified Windows directory handle.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct DirectoryIdentity {
-    pub volume_serial_number: u32,
-    pub file_index: u64,
+    pub volume_serial_number: u64,
+    pub file_index: u128,
 }
 
 /// Validated Windows `FILE_ACTION_*` discriminant.
@@ -1009,29 +1009,22 @@ pub fn query_verified_directory_identity(
         return Err(WatchNativeError::NotADiskHandle(file_type));
     }
 
-    let mut info = ByHandleFileInformation::default();
-    // SAFETY: `info` is valid writable stack storage for `BY_HANDLE_FILE_INFORMATION`.
-    let ok = unsafe { GetFileInformationByHandle(raw, &mut info) };
-    if ok == 0 {
-        // SAFETY: Reads thread-local Win32 error code immediately after failure.
-        let code = unsafe { win32::GetLastError() };
-        return Err(WatchNativeError::Win32Error {
+    let (identity, file_attributes) =
+        query_raw_handle_identity(raw).map_err(|err| WatchNativeError::Win32Error {
             operation: "GetFileInformationByHandle",
-            code,
-        });
-    }
+            code: err.raw_os_error().unwrap_or(0) as u32,
+        })?;
 
-    if (info.file_attributes & win32::FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
+    if (file_attributes & win32::FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
         return Err(WatchNativeError::ReparsePointNotAllowed);
     }
-    if (info.file_attributes & win32::FILE_ATTRIBUTE_DIRECTORY) == 0 {
+    if (file_attributes & win32::FILE_ATTRIBUTE_DIRECTORY) == 0 {
         return Err(WatchNativeError::NotADirectory);
     }
 
-    let file_index = ((info.file_index_high as u64) << 32) | (info.file_index_low as u64);
     Ok(DirectoryIdentity {
-        volume_serial_number: info.volume_serial_number,
-        file_index,
+        volume_serial_number: identity.volume_serial,
+        file_index: identity.file_id,
     })
 }
 
@@ -2583,16 +2576,13 @@ impl NativeWatchRegistry {
                     WatchNativeError::OwnerRevoked,
                 ));
             }
-            let raw_generation = state
-                .next_generation
-                .ok_or_else(|| {
-                    WatchStartError::without_cleanup(WatchNativeError::GenerationExhausted)
-                })?;
+            let raw_generation = state.next_generation.ok_or_else(|| {
+                WatchStartError::without_cleanup(WatchNativeError::GenerationExhausted)
+            })?;
             state.next_generation = raw_generation.checked_add(1);
-            let generation = WatchGeneration::new(raw_generation)
-                .ok_or_else(|| {
-                    WatchStartError::without_cleanup(WatchNativeError::GenerationExhausted)
-                })?;
+            let generation = WatchGeneration::new(raw_generation).ok_or_else(|| {
+                WatchStartError::without_cleanup(WatchNativeError::GenerationExhausted)
+            })?;
             let reservation = Arc::new(StartReservation::new(generation));
             let completion = ReservationCompletion::new(Arc::clone(&reservation));
             let previous = state.entries.insert(
@@ -2617,20 +2607,19 @@ impl NativeWatchRegistry {
             workspace_id: workspace_id.clone(),
             generation,
         };
-        let subscription =
-            match NativeWatchSubscription::start_reserved(
-                key,
-                verified_dir,
-                validator,
-                config,
-                reaper_permit,
-            ) {
-                Ok(subscription) => Arc::new(subscription),
-                Err(error) => {
-                    self.remove_starting_if_current(&registry_key, &reservation);
-                    return Err(WatchStartError::without_cleanup(error));
-                }
-            };
+        let subscription = match NativeWatchSubscription::start_reserved(
+            key,
+            verified_dir,
+            validator,
+            config,
+            reaper_permit,
+        ) {
+            Ok(subscription) => Arc::new(subscription),
+            Err(error) => {
+                self.remove_starting_if_current(&registry_key, &reservation);
+                return Err(WatchStartError::without_cleanup(error));
+            }
+        };
 
         if !reservation.attach(Arc::clone(&subscription)) {
             subscription.request_stop();

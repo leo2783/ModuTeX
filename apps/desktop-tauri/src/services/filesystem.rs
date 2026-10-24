@@ -11,9 +11,8 @@ use std::{
     error::Error,
     ffi::c_void,
     fmt,
-    fs::{File, OpenOptions},
+    fs::{self, File, OpenOptions},
     io,
-    mem::{size_of, zeroed},
     panic::{catch_unwind, AssertUnwindSafe},
     path::{Component, Path, PathBuf},
     sync::{
@@ -27,25 +26,32 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::{
+    platform::file_identity::{
+        file_identity as native_file_identity, is_symlink_or_reparse, open_directory_no_follow,
+        open_file_no_follow,
+    },
+    platform::windows_files::{FileIdentity, FsError, RecoveryOutcome, TrustedRoot},
     schemas::protocol::{
         read_limit, validate_pdf, CompileIdentity, CompileRequest, CompileResult, DocumentId,
-        DocumentVersion, FileEntry, FileEvent, FileEventKind, FileRef, FileWatchFailure,
+        DocumentVersion, FileEntry, FileEvent, FileEventKind, FileKind, FileRef, FileWatchFailure,
         HostHealth, OwnerId, ProtocolError, ReadReceipt, RecentDocument, Revision, RunId,
         SaveAsReceipt, SaveAsRequest, Timestamp, WorkspaceId, WorkspaceInfo, WorkspaceKind,
-        WriteReceipt, WriteRequest,
+        WriteReceipt, WriteRequest, MAX_PDF_BYTES,
     },
+    services::git_service::{
+        GitPathFailure, GitPathIntent, GitPathKind, GitWorkspaceCapability, GitWorkspaceFailure,
+    },
+    shared::relative_path::{PathError, RelativePath},
     state::recent::{
         validate_recent_entry_path, RecentErrorCode, RecentStore, RecentStoreError,
         ResolvedRecentTarget, TrustedRecentTarget, TrustedWorkspaceCapability,
         TrustedWorkspaceSelection, WorkspaceOpenOutcome,
     },
-    shared::relative_path::{PathError, RelativePath},
     state::sessions::{SessionError, SessionRegistry},
     state::settings::{
         ImportPreferencesResult, PreferenceValue, Preferences, ReadPreferencesResult,
         SettingsErrorCode, SettingsStore, SettingsStoreError,
     },
-    platform::windows_files::{FileIdentity, FsError, RecoveryOutcome, TrustedRoot},
     state::workspace_leases::{
         CanonicalRootPath, LeaseError, LeaseGuard, LeaseKind, RootIdentity, SessionGeneration,
         TrustedWorkspaceRoot, WorkspaceLeaseCoordinator,
@@ -198,6 +204,7 @@ impl From<FsError> for FilesystemError {
             FsError::TreeTooLarge => Self::TreeTooLarge,
             FsError::TreeTooDeep => Self::TreeTooDeep,
             FsError::FileTooLarge { size, limit } => Self::FileTooLarge { size, limit },
+            FsError::Cancelled => Self::Cancelled,
             FsError::RevisionConflict { expected, actual } => {
                 Self::RevisionConflict { expected, actual }
             }
@@ -322,24 +329,11 @@ pub fn map_fs_error_to_watch_failure(err: &FsError) -> FileWatchFailure {
 }
 
 #[cfg(windows)]
-use crate::platform::file_identity::{ByHandleFileInformation, GetFileInformationByHandle};
-
-#[cfg(windows)]
-#[repr(C)]
-struct Win32FileIdInfo {
-    volume_serial_number: u64,
-    file_id: [u8; 16],
-}
+use crate::platform::file_identity::query_raw_handle_metadata;
 
 #[cfg(windows)]
 #[link(name = "kernel32")]
 extern "system" {
-    fn GetFileInformationByHandleEx(
-        file: *mut c_void,
-        info_class: i32,
-        information: *mut c_void,
-        buffer_size: u32,
-    ) -> i32;
     fn GetFinalPathNameByHandleW(
         file: *mut c_void,
         file_path: *mut u16,
@@ -355,53 +349,26 @@ fn query_std_file_identity(
     expect_dir: bool,
 ) -> Result<(FileIdentity, u64), FilesystemError> {
     use std::os::windows::io::AsRawHandle;
+
     const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x0010;
     const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
-    const FILE_ID_INFO_CLASS: i32 = 18;
 
-    let raw = file.as_raw_handle();
-    let mut info: ByHandleFileInformation = unsafe { zeroed() };
-    if unsafe { GetFileInformationByHandle(raw, &mut info) } == 0 {
-        return Err(FilesystemError::Io(unsafe { GetLastError() }));
-    }
-    if (info.file_attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
+    let (identity, attributes, size) =
+        query_raw_handle_metadata(file.as_raw_handle()).map_err(|error| match error.kind() {
+            io::ErrorKind::NotFound => FilesystemError::NotFound,
+            io::ErrorKind::PermissionDenied => FilesystemError::AccessDenied,
+            _ => FilesystemError::Io(error.raw_os_error().map_or(0, |code| code as u32)),
+        })?;
+    if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
         return Err(FilesystemError::LinkNotAllowed);
     }
-    let is_dir = (info.file_attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    let is_dir = (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
     if expect_dir && !is_dir {
         return Err(FilesystemError::NotADirectory);
     }
     if !expect_dir && is_dir {
         return Err(FilesystemError::IsADirectory);
     }
-    let size = file
-        .metadata()
-        .map_err(|err| match err.kind() {
-            io::ErrorKind::NotFound => FilesystemError::NotFound,
-            io::ErrorKind::PermissionDenied => FilesystemError::AccessDenied,
-            _ => FilesystemError::Io(err.raw_os_error().map_or(0, |code| code as u32)),
-        })?
-        .len();
-    let mut id_info: Win32FileIdInfo = unsafe { zeroed() };
-    let identity = if unsafe {
-        GetFileInformationByHandleEx(
-            raw,
-            FILE_ID_INFO_CLASS,
-            (&mut id_info as *mut Win32FileIdInfo).cast(),
-            size_of::<Win32FileIdInfo>() as u32,
-        )
-    } != 0
-    {
-        FileIdentity {
-            volume_serial: id_info.volume_serial_number,
-            file_id: u128::from_le_bytes(id_info.file_id),
-        }
-    } else {
-        FileIdentity {
-            volume_serial: info.volume_serial_number as u64,
-            file_id: (((info.file_index_high as u64) << 32) | (info.file_index_low as u64)) as u128,
-        }
-    };
     Ok((identity, size))
 }
 
@@ -551,6 +518,9 @@ fn is_internal_recovery_name(path: &RelativePath) -> bool {
         seg.starts_with(".modutex-stage-")
             || seg.starts_with(".modutex-bak-")
             || seg.starts_with(".modutex-txn-")
+            || seg.starts_with(".modutex-trash-")
+            || seg.starts_with(".modutex-copy-")
+            || seg.starts_with(".modutex-recycle-")
     })
 }
 
@@ -564,6 +534,28 @@ struct TrackedDocument {
 
 pub type SubSystemCanceller = Box<dyn FnOnce() -> Result<(), String> + Send + 'static>;
 
+const MAX_GIT_PIN_HANDLES: usize = 131_072;
+
+#[derive(Default)]
+struct GitPathPins {
+    _handles: Vec<File>,
+    identities: HashSet<FileIdentity>,
+}
+
+impl GitPathPins {
+    fn retain(&mut self, file: File, identity: FileIdentity) -> Result<(), GitPathFailure> {
+        if self.identities.contains(&identity) {
+            return Ok(());
+        }
+        if self._handles.len() >= MAX_GIT_PIN_HANDLES {
+            return Err(GitPathFailure::Unavailable);
+        }
+        self.identities.insert(identity);
+        self._handles.push(file);
+        Ok(())
+    }
+}
+
 struct RegisteredTask {
     canceller: Option<SubSystemCanceller>,
     drained: Arc<AtomicBool>,
@@ -571,6 +563,7 @@ struct RegisteredTask {
     drain_handles: usize,
     cancel_failed: Option<String>,
     lease: Option<LeaseGuard>,
+    pins: GitPathPins,
 }
 
 struct SlotState {
@@ -641,12 +634,42 @@ impl Drop for ActiveOpGuard {
     }
 }
 
+pub struct TerminalWorkspace {
+    _op: ActiveOpGuard,
+    generation: SessionGeneration,
+    root: PathBuf,
+}
+
+impl TerminalWorkspace {
+    pub fn generation(&self) -> SessionGeneration {
+        self.generation
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+}
+
+/// A narrowly scoped G2 file-operation admission. It keeps the existing
+/// workspace slot, owner, generation and coordinator lease alive while native
+/// TrustedRoot primitives run; callers cannot provide or replace the
+/// generation.
+pub(crate) struct WorkspaceFileAccess {
+    pub(crate) root: Arc<TrustedRoot>,
+    pub(crate) generation: SessionGeneration,
+    _active: ActiveOpGuard,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WatchNotification {
     Event(FileEvent),
     Failure {
         workspace_id: WorkspaceId,
         failure: FileWatchFailure,
+    },
+    ResyncRequired {
+        workspace_id: WorkspaceId,
+        reason: crate::schemas::protocol::FileWatchResyncReason,
     },
 }
 
@@ -724,6 +747,17 @@ impl TaskDrainHandle {
         self.dispatch_if_current(WatchNotification::Failure {
             workspace_id: self.inner.workspace_id.clone(),
             failure,
+        })
+        .map(|_| ())
+    }
+
+    pub(crate) fn emit_resync(
+        &self,
+        reason: crate::schemas::protocol::FileWatchResyncReason,
+    ) -> Result<(), FilesystemError> {
+        self.dispatch_if_current(WatchNotification::ResyncRequired {
+            workspace_id: self.inner.workspace_id.clone(),
+            reason,
         })
         .map(|_| ())
     }
@@ -833,15 +867,8 @@ impl WatchSubscription {
         let Some(slot) = self.slot.upgrade() else {
             return Err(FilesystemError::SessionClosed);
         };
-        self.service.create_task_drain_handle(
-            &slot,
-            Arc::clone(&self.sink),
-            &self.owner,
-            &self.workspace_id,
-            self.generation,
-            self.task_id,
-            Arc::clone(&self.drained),
-        )
+        self.service
+            .create_task_drain_handle(&slot, Arc::clone(&self.sink), self.task_id)
     }
 
     pub fn emit_file_event(
@@ -951,6 +978,455 @@ impl Drop for WatchSubscription {
     }
 }
 
+/// Host-only, owner- and generation-bound Git capability. Its registered
+/// workspace task holds the existing root-exclusive filesystem lease until
+/// the native runner has proved that its process tree and readers are drained.
+pub struct GitWorkspaceLease {
+    service: FilesystemService,
+    slot: Arc<WorkspaceSlot>,
+    task_id: u64,
+    cancellation: Arc<AtomicBool>,
+    drain: TaskDrainHandle,
+}
+
+impl GitWorkspaceLease {
+    fn with_task_pins<T>(
+        &self,
+        action: impl FnOnce(&mut GitPathPins) -> Result<T, GitPathFailure>,
+    ) -> Result<T, GitPathFailure> {
+        self.check_current().map_err(map_git_path_failure)?;
+        let mut slot_state = self.slot.lock();
+        if slot_state.revoked {
+            return Err(GitPathFailure::Unavailable);
+        }
+        let Some(task) = slot_state.tasks.get_mut(&self.task_id) else {
+            return Err(GitPathFailure::Unavailable);
+        };
+        if task.drained.load(Ordering::Acquire)
+            || task.lease.is_none()
+            || task.cancel_failed.is_some()
+        {
+            return Err(GitPathFailure::Unavailable);
+        }
+        action(&mut task.pins)
+    }
+
+    /// Complete the registered task only after the caller's native process
+    /// runner has returned with a verified cleanup proof.
+    pub fn finish(&self) -> Result<(), FilesystemError> {
+        self.drain.finish_drain_with(|| Ok(()))
+    }
+
+    fn deferred_task_completion(&self) -> Box<dyn FnOnce() + Send + 'static> {
+        let service = self.service.clone();
+        let owner = self.slot.owner.clone();
+        let workspace_id = self.slot.workspace_id.clone();
+        let generation = self.slot.generation;
+        let task_id = self.task_id;
+        Box::new(move || {
+            let _ = service.complete_task_drain_internal(
+                &owner,
+                &workspace_id,
+                Some(generation),
+                task_id,
+                false,
+                true,
+            );
+        })
+    }
+}
+
+fn map_git_workspace_failure(error: &FilesystemError) -> GitWorkspaceFailure {
+    match error {
+        FilesystemError::StaleGeneration | FilesystemError::StaleWorkspace => {
+            GitWorkspaceFailure::StaleGeneration
+        }
+        FilesystemError::Cancelled => GitWorkspaceFailure::Cancelled,
+        FilesystemError::SessionClosed | FilesystemError::UnknownWorkspace => {
+            GitWorkspaceFailure::Closed
+        }
+        _ => GitWorkspaceFailure::Closed,
+    }
+}
+
+fn map_git_path_failure(error: GitWorkspaceFailure) -> GitPathFailure {
+    match error {
+        GitWorkspaceFailure::StaleGeneration => GitPathFailure::OutsideWorkspace,
+        GitWorkspaceFailure::Cancelled
+        | GitWorkspaceFailure::Closed
+        | GitWorkspaceFailure::OwnerRevoked => GitPathFailure::Unavailable,
+    }
+}
+
+impl GitWorkspaceCapability for GitWorkspaceLease {
+    fn workspace_id(&self) -> &WorkspaceId {
+        &self.slot.workspace_id
+    }
+
+    fn owner(&self) -> &OwnerId {
+        &self.slot.owner
+    }
+
+    fn generation(&self) -> u64 {
+        self.slot.generation.get()
+    }
+
+    fn root_path(&self) -> Result<&Path, GitPathFailure> {
+        Ok(&self.slot.canonical_root)
+    }
+
+    fn cancellation_signal(&self) -> Option<Arc<AtomicBool>> {
+        Some(Arc::clone(&self.cancellation))
+    }
+
+    fn check_current(&self) -> Result<(), GitWorkspaceFailure> {
+        if self.cancellation.load(Ordering::Acquire) {
+            return Err(GitWorkspaceFailure::Cancelled);
+        }
+        {
+            let state = self.service.lock_state();
+            let current = self
+                .service
+                .lookup_active_slot_locked(
+                    &state,
+                    &self.slot.owner,
+                    &self.slot.workspace_id,
+                    Some(self.slot.generation),
+                )
+                .map_err(|error| map_git_workspace_failure(&error))?;
+            if !Arc::ptr_eq(&current, &self.slot) {
+                return Err(GitWorkspaceFailure::StaleGeneration);
+            }
+            let slot_state = self.slot.lock();
+            if slot_state.revoked {
+                return Err(GitWorkspaceFailure::Closed);
+            }
+            let Some(task) = slot_state.tasks.get(&self.task_id) else {
+                return Err(GitWorkspaceFailure::Closed);
+            };
+            if task.drained.load(Ordering::Acquire) || task.lease.is_none() {
+                return Err(GitWorkspaceFailure::Closed);
+            }
+            if task.cancel_failed.is_some() {
+                return Err(GitWorkspaceFailure::Closed);
+            }
+        }
+        self.slot
+            .trusted_root
+            .verify_alive()
+            .map_err(|_| GitWorkspaceFailure::StaleGeneration)?;
+        Ok(())
+    }
+
+    fn validate_path(
+        &self,
+        path: &RelativePath,
+        intent: GitPathIntent,
+    ) -> Result<(), GitPathFailure> {
+        let root = self.slot.canonical_root.as_path();
+        self.with_task_pins(|pins| validate_git_relative_path(root, path, intent, pins))
+    }
+
+    fn validate_all(&self, intent: GitPathIntent) -> Result<(), GitPathFailure> {
+        let root = self.slot.canonical_root.as_path();
+        self.with_task_pins(|pins| validate_git_tree(root, intent, pins))
+    }
+
+    fn release_path_pins(&self) -> Result<(), GitPathFailure> {
+        self.check_current().map_err(map_git_path_failure)?;
+        let mut slot_state = self.slot.lock();
+        if slot_state.revoked {
+            return Err(GitPathFailure::Unavailable);
+        }
+        let Some(task) = slot_state.tasks.get_mut(&self.task_id) else {
+            return Err(GitPathFailure::Unavailable);
+        };
+        task.pins = GitPathPins::default();
+        Ok(())
+    }
+
+    fn path_kind(&self, path: &RelativePath) -> Result<GitPathKind, GitPathFailure> {
+        let root = self.slot.canonical_root.as_path();
+        self.with_task_pins(|pins| {
+            validate_git_relative_path(root, path, GitPathIntent::Stage, pins)?;
+            match fs::symlink_metadata(root.join(path.as_str())) {
+                Ok(metadata) if metadata.is_file() => Ok(GitPathKind::File),
+                Ok(metadata) if metadata.is_dir() => Ok(GitPathKind::Directory),
+                Ok(_) => Err(GitPathFailure::Unavailable),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(GitPathKind::Absent),
+                Err(_) => Err(GitPathFailure::Unavailable),
+            }
+        })
+    }
+
+    fn deferred_cleanup_callback(&self) -> Box<dyn FnOnce() + Send + 'static> {
+        self.deferred_task_completion()
+    }
+}
+
+const MAX_GIT_TREE_ENTRIES: usize = 100_000;
+const MAX_GIT_TREE_DEPTH: usize = 64;
+
+fn open_git_component(
+    path: &Path,
+    expect_directory: bool,
+) -> Result<(File, FileIdentity), GitPathFailure> {
+    let metadata = fs::symlink_metadata(path).map_err(|_| GitPathFailure::Unavailable)?;
+    if is_symlink_or_reparse(&metadata) {
+        return Err(GitPathFailure::LinkOrReparsePoint);
+    }
+    if (expect_directory && !metadata.is_dir()) || (!expect_directory && !metadata.is_file()) {
+        return Err(GitPathFailure::Unavailable);
+    }
+    let file = if expect_directory {
+        open_directory_no_follow(path)
+    } else {
+        open_file_no_follow(path)
+    }
+    .map_err(|_| GitPathFailure::Unavailable)?;
+    let opened = file.metadata().map_err(|_| GitPathFailure::Unavailable)?;
+    if is_symlink_or_reparse(&opened) {
+        return Err(GitPathFailure::LinkOrReparsePoint);
+    }
+    if (expect_directory && !opened.is_dir()) || (!expect_directory && !opened.is_file()) {
+        return Err(GitPathFailure::Unavailable);
+    }
+    let identity = native_file_identity(&file).map_err(|_| GitPathFailure::Unavailable)?;
+    Ok((file, identity))
+}
+
+fn validate_git_relative_path(
+    root: &Path,
+    path: &RelativePath,
+    intent: GitPathIntent,
+    pins: &mut GitPathPins,
+) -> Result<(), GitPathFailure> {
+    let parts: Vec<&str> = path.as_str().split('/').collect();
+    if parts
+        .first()
+        .is_some_and(|part| part.eq_ignore_ascii_case(".git"))
+    {
+        return Err(GitPathFailure::OutsideWorkspace);
+    }
+
+    // Keep every walked handle in the registered task until the child and its
+    // readers are drained, including CleanupUnproven.
+    let (root_handle, root_identity) = open_git_component(root, true)?;
+    pins.retain(root_handle, root_identity)?;
+    let mut current = root.to_path_buf();
+    for (index, part) in parts.iter().enumerate() {
+        current.push(part);
+        let metadata = match fs::symlink_metadata(&current) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => return Err(GitPathFailure::Unavailable),
+        };
+        if is_symlink_or_reparse(&metadata) {
+            return Err(GitPathFailure::LinkOrReparsePoint);
+        }
+        if index + 1 < parts.len() && !metadata.is_dir() {
+            return Err(GitPathFailure::Unavailable);
+        }
+        if index + 1 == parts.len() && intent == GitPathIntent::Discard && metadata.is_dir() {
+            return Err(GitPathFailure::Directory);
+        }
+        if !metadata.is_dir() && !metadata.is_file() {
+            return Err(GitPathFailure::Unavailable);
+        }
+        let (component, identity) = open_git_component(&current, metadata.is_dir())?;
+        if intent == GitPathIntent::Discard && index + 1 == parts.len() {
+            drop(component);
+        } else {
+            pins.retain(component, identity)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_git_tree(
+    root: &Path,
+    intent: GitPathIntent,
+    pins: &mut GitPathPins,
+) -> Result<(), GitPathFailure> {
+    let (root_handle, root_identity) = open_git_component(root, true)?;
+    pins.retain(root_handle, root_identity)?;
+    let mut pending = vec![(root.to_path_buf(), String::new(), 0usize)];
+    let mut visited = 0usize;
+    while let Some((directory, prefix, depth)) = pending.pop() {
+        if depth > MAX_GIT_TREE_DEPTH {
+            return Err(GitPathFailure::Unavailable);
+        }
+        for entry in fs::read_dir(&directory).map_err(|_| GitPathFailure::Unavailable)? {
+            let entry = entry.map_err(|_| GitPathFailure::Unavailable)?;
+            visited = visited.checked_add(1).ok_or(GitPathFailure::Unavailable)?;
+            if visited > MAX_GIT_TREE_ENTRIES {
+                return Err(GitPathFailure::Unavailable);
+            }
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| GitPathFailure::Unavailable)?;
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(&path).map_err(|_| GitPathFailure::Unavailable)?;
+            if is_symlink_or_reparse(&metadata) {
+                return Err(GitPathFailure::LinkOrReparsePoint);
+            }
+            if name.eq_ignore_ascii_case(".git") {
+                if !metadata.is_dir() && !metadata.is_file() {
+                    return Err(GitPathFailure::Unavailable);
+                }
+                if metadata.is_dir() {
+                    let (git_handle, git_identity) = open_git_component(&path, true)?;
+                    pins.retain(git_handle, git_identity)?;
+                }
+                continue;
+            }
+
+            let relative = if prefix.is_empty() {
+                name
+            } else {
+                format!("{prefix}/{name}")
+            };
+            let relative_path =
+                RelativePath::parse(&relative).map_err(|_| GitPathFailure::OutsideWorkspace)?;
+            validate_git_relative_path(root, &relative_path, intent, pins)?;
+            if metadata.is_dir() {
+                pending.push((path, relative, depth + 1));
+            }
+        }
+    }
+    Ok(())
+}
+
+const MAX_COMPILE_SNAPSHOT_DEPTH: usize = 16;
+const MAX_COMPILE_SNAPSHOT_ENTRIES: usize = 4096;
+const MAX_COMPILE_SNAPSHOT_FILE_BYTES: usize = 32 * 1024 * 1024;
+const MAX_COMPILE_SNAPSHOT_TOTAL_BYTES: usize = 64 * 1024 * 1024;
+const MAX_COMPILE_ENTRY_OVERLAY_BYTES: usize = 32 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CompileInputLimits {
+    pub(crate) max_depth: usize,
+    pub(crate) max_entries: usize,
+    pub(crate) max_file_bytes: usize,
+    pub(crate) max_total_bytes: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CompileInputFile {
+    pub(crate) path: RelativePath,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) revision: Revision,
+}
+
+fn filter_compile_entries(entries: Vec<FileEntry>, excluded: &[RelativePath]) -> Vec<FileEntry> {
+    let excluded = excluded
+        .iter()
+        .map(|path| path.as_str().to_lowercase())
+        .collect::<Vec<_>>();
+    entries
+        .into_iter()
+        .filter(|entry| {
+            let path = entry.path.as_str().to_lowercase();
+            !excluded
+                .iter()
+                .any(|blocked| path == *blocked || path.starts_with(&(blocked.clone() + "/")))
+        })
+        .collect()
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CompileOutputKind {
+    Pdf,
+    Log,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CompileOutputFile {
+    pub(crate) path: RelativePath,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) kind: CompileOutputKind,
+}
+
+#[derive(Clone)]
+struct CompileOutputPrior {
+    path: RelativePath,
+    previous: Option<Vec<u8>>,
+    written_revision: Revision,
+}
+
+const MAX_COMPILE_OUTPUT_LOG_BYTES: usize = 1024 * 1024;
+const MAX_COMPILE_OUTPUT_BACKUP_BYTES: usize = 32 * 1024 * 1024;
+
+fn compile_output_limit(kind: CompileOutputKind) -> usize {
+    match kind {
+        CompileOutputKind::Pdf => MAX_PDF_BYTES,
+        CompileOutputKind::Log => MAX_COMPILE_OUTPUT_LOG_BYTES,
+    }
+}
+
+fn rollback_compile_output_bounded(
+    root: &TrustedRoot,
+    prior: &CompileOutputPrior,
+) -> Result<(), FilesystemError> {
+    const MAX_ROLLBACK_ATTEMPTS: usize = 10;
+    for attempt in 0..MAX_ROLLBACK_ATTEMPTS {
+        let state = root.read_file_bounded(&prior.path, MAX_COMPILE_OUTPUT_BACKUP_BYTES);
+        match (&prior.previous, state) {
+            (Some(previous), Ok(current)) if current.bytes == *previous => return Ok(()),
+            (None, Err(FsError::NotFound)) => return Ok(()),
+            (Some(previous), Ok(current)) if current.revision == prior.written_revision => {
+                match root.write_file(&prior.path, previous, Some(&prior.written_revision)) {
+                    Ok(written) => {
+                        if let Ok(verified) =
+                            root.read_file_bounded(&prior.path, MAX_COMPILE_OUTPUT_BACKUP_BYTES)
+                        {
+                            if verified.revision == written.revision && verified.bytes == *previous
+                            {
+                                return Ok(());
+                            }
+                        }
+                    }
+                    Err(_) => return Err(FilesystemError::StaleWorkspace),
+                }
+            }
+            (None, Ok(current)) if current.revision == prior.written_revision => {
+                match root.delete_file_if_revision(&prior.path, &prior.written_revision) {
+                    Ok(_) => {
+                        if matches!(
+                            root.read_file_bounded(&prior.path, MAX_COMPILE_OUTPUT_BACKUP_BYTES),
+                            Err(FsError::NotFound)
+                        ) {
+                            return Ok(());
+                        }
+                    }
+                    Err(_) => return Err(FilesystemError::StaleWorkspace),
+                }
+            }
+            _ => return Err(FilesystemError::StaleWorkspace),
+        }
+        if attempt + 1 < MAX_ROLLBACK_ATTEMPTS {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+    }
+    Err(FilesystemError::StaleWorkspace)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CompileInputSnapshot {
+    pub(crate) entries: Vec<FileEntry>,
+    pub(crate) files: Vec<CompileInputFile>,
+    limits: CompileInputLimits,
+}
+
+/// Host-owned unsaved entry data. This is deliberately not a wire DTO.
+pub(crate) struct CompileSourceOverlay<'a> {
+    pub(crate) path: &'a RelativePath,
+    pub(crate) document_id: &'a DocumentId,
+    pub(crate) document_version: DocumentVersion,
+    pub(crate) bytes: &'a [u8],
+}
+
 pub struct CompileLeaseTicket {
     service: FilesystemService,
     slot: Weak<WorkspaceSlot>,
@@ -993,15 +1469,66 @@ impl CompileLeaseTicket {
         let Some(slot) = self.slot.upgrade() else {
             return Err(FilesystemError::SessionClosed);
         };
-        self.service.create_task_drain_handle(
-            &slot,
-            Arc::new(|_| ()),
+        self.service
+            .create_task_drain_handle(&slot, Arc::new(|_| ()), self.task_id)
+    }
+
+    /// Releases a Draft compile task only after its complete captured input
+    /// snapshot and the returned compile identity have been revalidated.
+    pub(crate) fn settle_with_snapshot(
+        mut self,
+        result: CompileResult,
+        snapshot: &CompileInputSnapshot,
+    ) -> Result<CompileResult, FilesystemError> {
+        let validation = match self.service.validate_compile_snapshot(&self, snapshot) {
+            Ok(()) => self.service.verify_compile_result(
+                &self.owner,
+                &self.identity,
+                self.generation,
+                &self.slot,
+                self.task_id,
+                result,
+            ),
+            Err(error) => Err(error),
+        };
+        let cleanup = self.release_after_native_settlement();
+        match (validation, cleanup) {
+            (Err(error), _) => Err(error),
+            (Ok(_), Err(error)) => Err(error),
+            (Ok(result), Ok(())) => Ok(result),
+        }
+    }
+
+    /// Releases a completed metadata-only Draft frame after the saved input
+    /// snapshot has been revalidated. The persistent warm child is not part of
+    /// the per-frame compile lease.
+    pub(crate) fn settle_metadata_with_snapshot(
+        mut self,
+        snapshot: &CompileInputSnapshot,
+    ) -> Result<(), FilesystemError> {
+        let validation = self.service.validate_compile_snapshot(&self, snapshot);
+        let cleanup = self.release_after_native_settlement();
+        match (validation, cleanup) {
+            (Err(error), _) => Err(error),
+            (Ok(()), Err(error)) => Err(error),
+            (Ok(()), Ok(())) => Ok(()),
+        }
+    }
+
+    fn release_after_native_settlement(&mut self) -> Result<(), FilesystemError> {
+        let release_handle = !self.handle_released;
+        let result = self.service.complete_task_drain_internal(
             &self.owner,
             &self.identity.workspace_id,
-            self.generation,
+            Some(self.generation),
             self.task_id,
-            Arc::clone(&self.drained),
-        )
+            release_handle,
+            true,
+        );
+        if result.is_ok() {
+            self.handle_released = true;
+        }
+        result.map(|_| ())
     }
 
     pub fn settle(mut self, result: CompileResult) -> Result<CompileResult, FilesystemError> {
@@ -1511,6 +2038,45 @@ impl FilesystemService {
         Ok((slot.kind, slot.info.clone()))
     }
 
+    pub fn workspace_root_path(
+        &self,
+        owner: &OwnerId,
+        workspace_id: &WorkspaceId,
+    ) -> Result<PathBuf, FilesystemError> {
+        let state = self.lock_state();
+        let slot = self.lookup_active_slot_locked(&state, owner, workspace_id, None)?;
+        let slot_guard = slot.lock();
+        if slot_guard.revoked {
+            return Err(FilesystemError::SessionClosed);
+        }
+        Ok(slot.canonical_root.clone())
+    }
+
+    /// Run a workspace configuration transaction under the same save lease used
+    /// by filesystem mutations. The root and listing are obtained from the pinned
+    /// workspace capability, not from renderer-provided absolute paths.
+    pub(crate) fn with_workspace_config_write<T>(
+        &self,
+        owner: &OwnerId,
+        workspace_id: &WorkspaceId,
+        operation: impl FnOnce(&Path, &WorkspaceInfo, u64, &TrustedRoot) -> Result<T, FilesystemError>,
+    ) -> Result<T, FilesystemError> {
+        let op = self.begin_op(owner, workspace_id, None, LeaseKind::Save)?;
+        op.slot.trusted_root.verify_alive()?;
+        {
+            let guard = op.slot.lock();
+            if guard.revoked {
+                return Err(FilesystemError::SessionClosed);
+            }
+        }
+        operation(
+            &op.slot.canonical_root,
+            &op.slot.info,
+            op.slot.generation.get(),
+            &op.slot.trusted_root,
+        )
+    }
+
     fn lookup_active_slot_locked(
         &self,
         state: &ServiceState,
@@ -1586,6 +2152,49 @@ impl FilesystemService {
         })
     }
 
+    pub fn acquire_terminal_workspace(
+        &self,
+        owner: &OwnerId,
+        workspace_id: &WorkspaceId,
+    ) -> Result<TerminalWorkspace, FilesystemError> {
+        let op = self.begin_op(owner, workspace_id, None, LeaseKind::Read)?;
+        let generation = op.slot.generation;
+        let root = op.slot.canonical_root.clone();
+        Ok(TerminalWorkspace {
+            _op: op,
+            generation,
+            root,
+        })
+    }
+
+    pub(crate) fn workspace_file_read_access(
+        &self,
+        owner: &OwnerId,
+        workspace_id: &WorkspaceId,
+    ) -> Result<WorkspaceFileAccess, FilesystemError> {
+        let active = self.begin_op(owner, workspace_id, None, LeaseKind::Read)?;
+        Ok(WorkspaceFileAccess {
+            root: Arc::clone(&active.slot.trusted_root),
+            generation: active.slot.generation,
+            _active: active,
+        })
+    }
+
+    pub(crate) fn workspace_file_write_access(
+        &self,
+        owner: &OwnerId,
+        workspace_id: &WorkspaceId,
+    ) -> Result<WorkspaceFileAccess, FilesystemError> {
+        // Save is root-exclusive in WorkspaceLeaseCoordinator, so nested and
+        // parent/child workspace roots conflict with reads that mutate either.
+        let active = self.begin_op(owner, workspace_id, None, LeaseKind::Save)?;
+        Ok(WorkspaceFileAccess {
+            root: Arc::clone(&active.slot.trusted_root),
+            generation: active.slot.generation,
+            _active: active,
+        })
+    }
+
     pub fn list_files(
         &self,
         owner: &OwnerId,
@@ -1635,7 +2244,9 @@ impl FilesystemService {
         file: &FileRef,
     ) -> Result<ReadReceipt, FilesystemError> {
         if !file.path.as_str().to_ascii_lowercase().ends_with(".pdf") {
-            return Err(FilesystemError::InvalidPath("expected a PDF path".to_owned()));
+            return Err(FilesystemError::InvalidPath(
+                "expected a PDF path".to_owned(),
+            ));
         }
         let op = self.begin_op(owner, &file.workspace_id, None, LeaseKind::Read)?;
         let out = op.slot.trusted_root.read_file_pdf(&file.path)?;
@@ -1871,9 +2482,7 @@ impl FilesystemService {
         let mut write_failure: Option<FilesystemError> = None;
         let mut final_entry_out = None;
 
-        for (idx, ((rel, bytes), prior)) in
-            planned_writes.iter().zip(priors).enumerate()
-        {
+        for (idx, ((rel, bytes), prior)) in planned_writes.iter().zip(priors).enumerate() {
             if let Err(hook_err) = before_write(idx, rel, &pinned.trusted_root) {
                 write_failure = Some(FilesystemError::from(hook_err));
                 break;
@@ -2075,6 +2684,91 @@ impl FilesystemService {
         }))
     }
 
+    pub fn start_git_task(
+        &self,
+        owner: &OwnerId,
+        workspace_id: &WorkspaceId,
+    ) -> Result<GitWorkspaceLease, FilesystemError> {
+        let (slot, task_id) = {
+            let mut state = self.lock_state();
+            let slot = self.lookup_active_slot_locked(&state, owner, workspace_id, None)?;
+            let task_id = state.next_task_id;
+            state.next_task_id = task_id
+                .checked_add(1)
+                .ok_or(FilesystemError::ResourceExhausted)?;
+            (slot, task_id)
+        };
+
+        slot.trusted_root.verify_alive()?;
+        let mut slot_state = slot.lock();
+        if slot_state.revoked {
+            return Err(FilesystemError::SessionClosed);
+        }
+        if slot_state.tasks.len() >= MAX_TASKS_PER_WORKSPACE {
+            if let Some((&drained_id, _)) = slot_state.tasks.iter().find(|(_, task)| {
+                task.drained.load(Ordering::Acquire)
+                    && task.lease.is_none()
+                    && task.cancel_failed.is_none()
+            }) {
+                slot_state.tasks.remove(&drained_id);
+            }
+        }
+        if slot_state.tasks.len() >= MAX_TASKS_PER_WORKSPACE {
+            return Err(FilesystemError::ResourceExhausted);
+        }
+        let _ = self.shared.registry.get(owner, workspace_id)?;
+        let lease = self.shared.coordinator.try_acquire(
+            owner,
+            workspace_id,
+            Some(slot.generation),
+            LeaseKind::Save,
+            None,
+        )?;
+
+        let cancellation = Arc::new(AtomicBool::new(false));
+        let cancellation_for_close = Arc::clone(&cancellation);
+        let canceller: SubSystemCanceller = Box::new(move || {
+            cancellation_for_close.store(true, Ordering::Release);
+            Ok(())
+        });
+        let drained = Arc::new(AtomicBool::new(false));
+        let drain = TaskDrainHandle {
+            inner: Arc::new(TaskDrainHandleInner {
+                service: self.clone(),
+                slot: Arc::downgrade(&slot),
+                sink: Arc::new(|_: WatchNotification| {}),
+                owner: owner.clone(),
+                workspace_id: workspace_id.clone(),
+                generation: slot.generation,
+                task_id,
+                drained: Arc::clone(&drained),
+                released: AtomicBool::new(false),
+            }),
+        };
+
+        slot_state.tasks.insert(
+            task_id,
+            RegisteredTask {
+                canceller: Some(canceller),
+                drained,
+                abandoned: false,
+                drain_handles: 1,
+                cancel_failed: None,
+                lease: Some(lease),
+                pins: GitPathPins::default(),
+            },
+        );
+        drop(slot_state);
+
+        Ok(GitWorkspaceLease {
+            service: self.clone(),
+            slot,
+            task_id,
+            cancellation,
+            drain,
+        })
+    }
+
     pub fn start_watch(
         &self,
         owner: &OwnerId,
@@ -2125,6 +2819,7 @@ impl FilesystemService {
                 drain_handles: 1,
                 cancel_failed: None,
                 lease: Some(lease),
+                pins: GitPathPins::default(),
             },
         );
         drop(slot_guard);
@@ -2168,7 +2863,9 @@ impl FilesystemService {
         let file = OpenOptions::new()
             .read(true)
             .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
-            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED | FILE_FLAG_OPEN_REPARSE_POINT)
+            .custom_flags(
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED | FILE_FLAG_OPEN_REPARSE_POINT,
+            )
             .open(&slot.canonical_root)
             .map_err(|err| match err.kind() {
                 io::ErrorKind::NotFound => FilesystemError::NotFound,
@@ -2182,11 +2879,12 @@ impl FilesystemService {
             crate::services::watch_native::TrustedDirectoryRoot::from_coordinator_open(owned)
                 .map_err(|_| FilesystemError::LinkNotAllowed)?
         };
-        let verified = crate::services::watch_native::VerifiedDirectoryHandle::from_trusted_root(trusted_root)
-            .map_err(|_| FilesystemError::LinkNotAllowed)?;
+        let verified =
+            crate::services::watch_native::VerifiedDirectoryHandle::from_trusted_root(trusted_root)
+                .map_err(|_| FilesystemError::LinkNotAllowed)?;
 
-        if verified.identity().volume_serial_number as u64 != slot.trusted_root.identity().volume_serial
-            || verified.identity().file_index as u128 != slot.trusted_root.identity().file_id
+        if verified.identity().volume_serial_number != slot.trusted_root.identity().volume_serial
+            || verified.identity().file_index != slot.trusted_root.identity().file_id
         {
             return Err(FilesystemError::StaleWorkspace);
         }
@@ -2220,6 +2918,37 @@ impl FilesystemService {
         owner: &OwnerId,
         run_id: RunId,
         request: &CompileRequest,
+        on_cancel: SubSystemCanceller,
+    ) -> Result<CompileLeaseTicket, FilesystemError> {
+        self.prepare_compile_internal(owner, run_id, request, None, on_cancel)
+    }
+
+    pub(crate) fn prepare_compile_with_overlay(
+        &self,
+        owner: &OwnerId,
+        run_id: RunId,
+        request: &CompileRequest,
+        overlay: &CompileSourceOverlay<'_>,
+        on_cancel: SubSystemCanceller,
+    ) -> Result<CompileLeaseTicket, FilesystemError> {
+        if overlay.path != &request.entry_path
+            || overlay.document_id != &request.document_id
+            || overlay.document_version != request.document_version
+            || overlay.bytes.len() > MAX_COMPILE_ENTRY_OVERLAY_BYTES
+        {
+            return Err(FilesystemError::CompileIdentityMismatch(
+                "compile source overlay does not match request",
+            ));
+        }
+        self.prepare_compile_internal(owner, run_id, request, Some(overlay), on_cancel)
+    }
+
+    fn prepare_compile_internal(
+        &self,
+        owner: &OwnerId,
+        run_id: RunId,
+        request: &CompileRequest,
+        overlay: Option<&CompileSourceOverlay<'_>>,
         on_cancel: SubSystemCanceller,
     ) -> Result<CompileLeaseTicket, FilesystemError> {
         let (slot, task_id) = {
@@ -2272,26 +3001,19 @@ impl FilesystemService {
                 }
             }
             if let Some(doc_ver) = tracked.document_version {
-                if doc_ver != request.document_version {
+                if overlay.is_some() && request.document_version.get() < doc_ver.get() {
+                    return Err(FilesystemError::StaleDocumentVersion {
+                        expected_min: doc_ver,
+                        actual: request.document_version,
+                    });
+                }
+                if overlay.is_none() && doc_ver != request.document_version {
                     return Err(FilesystemError::CompileIdentityMismatch(
                         "compile documentVersion does not match saved document version",
                     ));
                 }
             }
         }
-        let drained = Arc::new(AtomicBool::new(false));
-        slot_guard.tasks.insert(
-            task_id,
-            RegisteredTask {
-                canceller: Some(on_cancel),
-                drained: Arc::clone(&drained),
-                abandoned: false,
-                drain_handles: 1,
-                cancel_failed: None,
-                lease: Some(lease),
-            },
-        );
-        drop(slot_guard);
         let identity = CompileIdentity {
             run_id,
             workspace_id: request.workspace_id.clone(),
@@ -2300,7 +3022,11 @@ impl FilesystemService {
             document_version: request.document_version,
             saved_revision: request.saved_revision.clone(),
         };
-        Ok(CompileLeaseTicket {
+        let drained = Arc::new(AtomicBool::new(false));
+        // Finish every fallible ticket construction step before registering the
+        // task. If preparation unwinds, the lease remains local and is dropped;
+        // there is no registered task that the caller cannot identify or drain.
+        let mut ticket = CompileLeaseTicket {
             service: self.clone(),
             slot: Arc::downgrade(&slot),
             owner: owner.clone(),
@@ -2309,9 +3035,426 @@ impl FilesystemService {
             canonical_root: slot.canonical_root.clone(),
             entry_snapshot: read_out.bytes,
             task_id,
-            drained,
-            handle_released: false,
+            drained: Arc::clone(&drained),
+            handle_released: true,
+        };
+        slot_guard.tasks.insert(
+            task_id,
+            RegisteredTask {
+                canceller: Some(on_cancel),
+                drained,
+                abandoned: false,
+                drain_handles: 1,
+                cancel_failed: None,
+                lease: Some(lease),
+                pins: GitPathPins::default(),
+            },
+        );
+        ticket.handle_released = false;
+        drop(slot_guard);
+        Ok(ticket)
+    }
+
+    fn validate_compile_input_limits(limits: CompileInputLimits) -> Result<(), FilesystemError> {
+        if limits.max_depth == 0 || limits.max_depth > MAX_COMPILE_SNAPSHOT_DEPTH {
+            return Err(FilesystemError::TreeTooDeep);
+        }
+        if limits.max_entries == 0 || limits.max_entries > MAX_COMPILE_SNAPSHOT_ENTRIES {
+            return Err(FilesystemError::TreeTooLarge);
+        }
+        if limits.max_file_bytes == 0 || limits.max_file_bytes > MAX_COMPILE_SNAPSHOT_FILE_BYTES {
+            return Err(FilesystemError::ResourceExhausted);
+        }
+        if limits.max_total_bytes == 0 || limits.max_total_bytes > MAX_COMPILE_SNAPSHOT_TOTAL_BYTES
+        {
+            return Err(FilesystemError::TreeTooLarge);
+        }
+        Ok(())
+    }
+
+    fn compile_ticket_slot(
+        &self,
+        ticket: &CompileLeaseTicket,
+    ) -> Result<Arc<WorkspaceSlot>, FilesystemError> {
+        if !Arc::ptr_eq(&self.shared, &ticket.service.shared) {
+            return Err(FilesystemError::UnknownWorkspace);
+        }
+        self.verify_event_gate(
+            &ticket.owner,
+            &ticket.identity.workspace_id,
+            ticket.generation,
+            &ticket.slot,
+        )?;
+        let Some(slot) = ticket.slot.upgrade() else {
+            return Err(FilesystemError::SessionClosed);
+        };
+        {
+            let guard = slot.lock();
+            if guard.revoked {
+                return Err(FilesystemError::SessionClosed);
+            }
+            let Some(task) = guard.tasks.get(&ticket.task_id) else {
+                return Err(FilesystemError::SessionClosed);
+            };
+            if let Some(reason) = &task.cancel_failed {
+                return Err(FilesystemError::CleanupUnproven {
+                    workspace_id: Some(ticket.identity.workspace_id.clone()),
+                    reason: reason.clone(),
+                });
+            }
+            if task.drained.load(Ordering::Acquire) || task.lease.is_none() {
+                return Err(FilesystemError::SessionClosed);
+            }
+        }
+        slot.trusted_root.verify_alive()?;
+        Ok(slot)
+    }
+
+    pub(crate) fn capture_compile_snapshot(
+        &self,
+        ticket: &CompileLeaseTicket,
+        limits: CompileInputLimits,
+    ) -> Result<CompileInputSnapshot, FilesystemError> {
+        self.capture_compile_snapshot_excluding(ticket, limits, &[])
+    }
+
+    pub(crate) fn capture_compile_snapshot_excluding(
+        &self,
+        ticket: &CompileLeaseTicket,
+        limits: CompileInputLimits,
+        excluded_paths: &[RelativePath],
+    ) -> Result<CompileInputSnapshot, FilesystemError> {
+        Self::validate_compile_input_limits(limits)?;
+        let slot = self.compile_ticket_slot(ticket)?;
+        let entries = filter_compile_entries(
+            slot.trusted_root
+                .list_compile_entries(limits.max_depth, limits.max_entries)?,
+            excluded_paths,
+        );
+        let mut files = Vec::new();
+        let mut total_bytes = 0usize;
+        for entry in entries.iter().filter(|entry| entry.kind == FileKind::File) {
+            let remaining = limits.max_total_bytes - total_bytes;
+            let file_limit = limits.max_file_bytes.min(remaining);
+            let read = match slot.trusted_root.read_file_bounded(&entry.path, file_limit) {
+                Ok(read) => read,
+                Err(FsError::FileTooLarge { .. }) if file_limit < limits.max_file_bytes => {
+                    return Err(FilesystemError::TreeTooLarge);
+                }
+                Err(error) => return Err(FilesystemError::from(error)),
+            };
+            total_bytes = total_bytes
+                .checked_add(read.bytes.len())
+                .ok_or(FilesystemError::TreeTooLarge)?;
+            if total_bytes > limits.max_total_bytes {
+                return Err(FilesystemError::TreeTooLarge);
+            }
+            files.push(CompileInputFile {
+                path: entry.path.clone(),
+                bytes: read.bytes,
+                revision: read.revision,
+            });
+        }
+
+        let entry_file = files
+            .iter()
+            .find(|file| file.path == ticket.identity.entry_path)
+            .ok_or(FilesystemError::NotFound)?;
+        if entry_file.revision != ticket.identity.saved_revision
+            || entry_file.bytes.as_slice() != ticket.entry_snapshot()
+        {
+            return Err(FilesystemError::RevisionConflict {
+                expected: Some(ticket.identity.saved_revision.clone()),
+                actual: Some(entry_file.revision.clone()),
+            });
+        }
+        self.compile_ticket_slot(ticket)?;
+        Ok(CompileInputSnapshot {
+            entries,
+            files,
+            limits,
         })
+    }
+
+    pub(crate) fn validate_compile_snapshot(
+        &self,
+        ticket: &CompileLeaseTicket,
+        snapshot: &CompileInputSnapshot,
+    ) -> Result<(), FilesystemError> {
+        self.validate_compile_snapshot_excluding(ticket, snapshot, &[])
+    }
+
+    pub(crate) fn validate_compile_snapshot_excluding(
+        &self,
+        ticket: &CompileLeaseTicket,
+        snapshot: &CompileInputSnapshot,
+        excluded_paths: &[RelativePath],
+    ) -> Result<(), FilesystemError> {
+        let slot = self.compile_ticket_slot(ticket)?;
+        let limits = snapshot.limits;
+        Self::validate_compile_input_limits(limits)?;
+        let entries = filter_compile_entries(
+            slot.trusted_root
+                .list_compile_entries(limits.max_depth, limits.max_entries)?,
+            excluded_paths,
+        );
+        if entries != snapshot.entries {
+            return Err(FilesystemError::RevisionConflict {
+                expected: None,
+                actual: None,
+            });
+        }
+        let file_count = entries
+            .iter()
+            .filter(|entry| entry.kind == FileKind::File)
+            .count();
+        if file_count != snapshot.files.len() {
+            return Err(FilesystemError::RevisionConflict {
+                expected: None,
+                actual: None,
+            });
+        }
+
+        let mut total_bytes = 0usize;
+        for entry in entries.iter().filter(|entry| entry.kind == FileKind::File) {
+            let expected = snapshot
+                .files
+                .iter()
+                .find(|file| file.path == entry.path)
+                .ok_or(FilesystemError::RevisionConflict {
+                    expected: None,
+                    actual: None,
+                })?;
+            let remaining = limits.max_total_bytes - total_bytes;
+            let file_limit = limits.max_file_bytes.min(remaining);
+            let read = match slot.trusted_root.read_file_bounded(&entry.path, file_limit) {
+                Ok(read) => read,
+                Err(FsError::FileTooLarge { .. }) if file_limit < limits.max_file_bytes => {
+                    return Err(FilesystemError::TreeTooLarge);
+                }
+                Err(error) => return Err(FilesystemError::from(error)),
+            };
+            total_bytes = total_bytes
+                .checked_add(read.bytes.len())
+                .ok_or(FilesystemError::TreeTooLarge)?;
+            if total_bytes > limits.max_total_bytes {
+                return Err(FilesystemError::TreeTooLarge);
+            }
+            if read.revision != expected.revision || read.bytes != expected.bytes {
+                return Err(FilesystemError::RevisionConflict {
+                    expected: Some(expected.revision.clone()),
+                    actual: Some(read.revision),
+                });
+            }
+        }
+        self.compile_ticket_slot(ticket)?;
+        Ok(())
+    }
+
+    pub(crate) fn commit_compile_outputs<F>(
+        &self,
+        ticket: &CompileLeaseTicket,
+        outputs: &[CompileOutputFile],
+        is_cancelled: F,
+    ) -> Result<(), FilesystemError>
+    where
+        F: Fn() -> bool,
+    {
+        self.commit_compile_outputs_inner(ticket, outputs, is_cancelled, |_, _| Ok(()))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn commit_compile_outputs_with_hook<F, H>(
+        &self,
+        ticket: &CompileLeaseTicket,
+        outputs: &[CompileOutputFile],
+        is_cancelled: F,
+        before_write: H,
+    ) -> Result<(), FilesystemError>
+    where
+        F: Fn() -> bool,
+        H: FnMut(usize, &RelativePath) -> Result<(), FilesystemError>,
+    {
+        self.commit_compile_outputs_inner(ticket, outputs, is_cancelled, before_write)
+    }
+
+    fn commit_compile_outputs_inner<F, H>(
+        &self,
+        ticket: &CompileLeaseTicket,
+        outputs: &[CompileOutputFile],
+        is_cancelled: F,
+        mut before_write: H,
+    ) -> Result<(), FilesystemError>
+    where
+        F: Fn() -> bool,
+        H: FnMut(usize, &RelativePath) -> Result<(), FilesystemError>,
+    {
+        if outputs.is_empty() {
+            return Ok(());
+        }
+        if outputs.len() > 2 {
+            return Err(FilesystemError::ResourceExhausted);
+        }
+        let slot = self.compile_ticket_slot(ticket)?;
+        let entries = slot.trusted_root.list_files()?;
+        let mut names = HashSet::new();
+        let mut total = 0usize;
+        for output in outputs {
+            let path = output.path.as_str();
+            let folded = path.to_lowercase();
+            if !names.insert(folded)
+                || output.path == ticket.identity.entry_path
+                || is_internal_recovery_name(&output.path)
+            {
+                return Err(FilesystemError::InvalidPath(
+                    "invalid compile output path".to_owned(),
+                ));
+            }
+            let limit = compile_output_limit(output.kind);
+            if output.bytes.len() > limit {
+                return Err(FilesystemError::FileTooLarge {
+                    size: output.bytes.len() as u64,
+                    limit,
+                });
+            }
+            match output.kind {
+                CompileOutputKind::Pdf => {
+                    if !path.to_ascii_lowercase().ends_with(".pdf") {
+                        return Err(FilesystemError::InvalidPath(
+                            "PDF output must use a .pdf path".to_owned(),
+                        ));
+                    }
+                    validate_pdf(&output.bytes)?;
+                }
+                CompileOutputKind::Log => {
+                    if !path.to_ascii_lowercase().ends_with(".log") {
+                        return Err(FilesystemError::InvalidPath(
+                            "log output must use a .log path".to_owned(),
+                        ));
+                    }
+                }
+            }
+            total = total
+                .checked_add(output.bytes.len())
+                .ok_or(FilesystemError::ResourceExhausted)?;
+            if total > MAX_PDF_BYTES + MAX_COMPILE_OUTPUT_LOG_BYTES {
+                return Err(FilesystemError::ResourceExhausted);
+            }
+            if let Some((parent, _)) = path.rsplit_once('/') {
+                let directory = entries.iter().any(|entry| {
+                    entry.path.as_str().eq_ignore_ascii_case(parent)
+                        && entry.kind == FileKind::Directory
+                });
+                if !directory {
+                    return Err(FilesystemError::NotFound);
+                }
+            }
+            if entries.iter().any(|entry| {
+                entry.path.as_str().eq_ignore_ascii_case(path) && entry.kind == FileKind::Directory
+            }) {
+                return Err(FilesystemError::IsADirectory);
+            }
+        }
+
+        let mut priors = Vec::with_capacity(outputs.len());
+        let mut backup_total = 0usize;
+        for output in outputs {
+            let maximum = compile_output_limit(output.kind);
+            match slot.trusted_root.read_file_bounded(&output.path, maximum) {
+                Ok(previous) => {
+                    backup_total = backup_total
+                        .checked_add(previous.bytes.len())
+                        .ok_or(FilesystemError::ResourceExhausted)?;
+                    if backup_total > MAX_COMPILE_OUTPUT_BACKUP_BYTES {
+                        return Err(FilesystemError::ResourceExhausted);
+                    }
+                    priors.push(Some(previous));
+                }
+                Err(FsError::NotFound) => priors.push(None),
+                Err(error) => return Err(FilesystemError::from(error)),
+            }
+        }
+
+        let mut committed = Vec::with_capacity(outputs.len());
+        let mut failure = None;
+        for (index, (output, prior)) in outputs.iter().zip(priors).enumerate() {
+            if is_cancelled() {
+                failure = Some(FilesystemError::Cancelled);
+                break;
+            }
+            if let Err(error) = self.compile_ticket_slot(ticket) {
+                failure = Some(error);
+                break;
+            }
+            let hook = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                before_write(index, &output.path)
+            }));
+            match hook {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    failure = Some(error);
+                    break;
+                }
+                Err(_) => {
+                    failure = Some(FilesystemError::Io(1));
+                    break;
+                }
+            }
+            let expected = prior.as_ref().map(|item| &item.revision);
+            match slot
+                .trusted_root
+                .write_file(&output.path, &output.bytes, expected)
+            {
+                Ok(written) => {
+                    committed.push(CompileOutputPrior {
+                        path: output.path.clone(),
+                        previous: prior.map(|item| item.bytes),
+                        written_revision: written.revision.clone(),
+                    });
+                    match slot
+                        .trusted_root
+                        .read_file_bounded(&output.path, compile_output_limit(output.kind))
+                    {
+                        Ok(current)
+                            if current.revision == written.revision
+                                && current.bytes == output.bytes => {}
+                        Ok(_) => {
+                            failure = Some(FilesystemError::StaleWorkspace);
+                            break;
+                        }
+                        Err(error) => {
+                            failure = Some(FilesystemError::from(error));
+                            break;
+                        }
+                    }
+                }
+                Err(error) => {
+                    failure = Some(FilesystemError::from(error));
+                    break;
+                }
+            }
+        }
+
+        if failure.is_none() && is_cancelled() {
+            failure = Some(FilesystemError::Cancelled);
+        }
+        if failure.is_none() {
+            if let Err(error) = self.compile_ticket_slot(ticket) {
+                failure = Some(error);
+            }
+        }
+        if let Some(error) = failure {
+            let mut cleanup_error = None;
+            for prior in committed.iter().rev() {
+                if let Err(cleanup) = rollback_compile_output_bounded(&slot.trusted_root, prior) {
+                    if cleanup_error.is_none() {
+                        cleanup_error = Some(cleanup);
+                    }
+                }
+            }
+            return Err(cleanup_error.unwrap_or(error));
+        }
+        Ok(())
     }
 
     fn verify_compile_result(
@@ -2410,12 +3553,11 @@ impl FilesystemService {
         &self,
         slot: &Arc<WorkspaceSlot>,
         sink: WatchSink,
-        owner: &OwnerId,
-        workspace_id: &WorkspaceId,
-        generation: SessionGeneration,
         task_id: u64,
-        drained: Arc<AtomicBool>,
     ) -> Result<TaskDrainHandle, FilesystemError> {
+        let owner = slot.owner.clone();
+        let workspace_id = slot.workspace_id.clone();
+        let generation = slot.generation;
         let mut guard = slot.lock();
         let task = guard
             .tasks
@@ -2425,14 +3567,15 @@ impl FilesystemService {
             .drain_handles
             .checked_add(1)
             .ok_or(FilesystemError::ResourceExhausted)?;
+        let drained = Arc::clone(&task.drained);
         drop(guard);
         Ok(TaskDrainHandle {
             inner: Arc::new(TaskDrainHandleInner {
                 service: self.clone(),
                 slot: Arc::downgrade(slot),
                 sink,
-                owner: owner.clone(),
-                workspace_id: workspace_id.clone(),
+                owner,
+                workspace_id,
                 generation,
                 task_id,
                 drained,

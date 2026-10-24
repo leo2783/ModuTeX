@@ -1,11 +1,15 @@
 [package]
 name = "modutex-desktop-tauri"
-version = "0.2.1"
+version = "0.3.0"
 description = "ModuTeX Tauri desktop host"
 default-run = "modutex-desktop-tauri"
 license = "Apache-2.0"
 edition = "2021"
 publish = false
+
+[[bin]]
+name = "modutex-desktop-tauri"
+path = "src/main.rs"
 
 [lib]
 name = "modutex_desktop_tauri_lib"
@@ -13,11 +17,8 @@ name = "modutex_desktop_tauri_lib"
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-g1-prototypes = ["dep:portable-pty"]
-
-[[bin]]
-name = "modutex-desktop-tauri"
-path = "src/main.rs"
+g1-prototypes = []
+mcp = ["dep:rmcp", "dep:hyper", "dep:hyper-util"]
 
 [[bin]]
 name = "tectonic_smoke"
@@ -33,18 +34,62 @@ required-features = ["g1-prototypes"]
 test = false
 bench = false
 
+[[bin]]
+name = "modutex-mcp-stdio"
+path = "src/bin/modutex-mcp-stdio.rs"
+required-features = ["mcp"]
+
+[[test]]
+name = "workspace_files"
+path = "tests/integration/workspace_files.rs"
+
+[[test]]
+name = "mcp_stdio"
+path = "tests/mcp_stdio.rs"
+required-features = ["mcp"]
+
+[[test]]
+name = "updater_verification"
+path = "tests/integration/updater.rs"
+
 [build-dependencies]
-tauri-build = "=2.7.3"
+tauri-build = { version = "=2.7.3", features = [] }
 
 [dependencies]
-tauri = "=2.12.4"
+tauri = { version = "=2.12.4", features = [] }
 tauri-plugin-dialog = "=2.8.3"
+tauri-plugin-updater = "=2.14.0"
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.145"
 uuid = { version = "=1.18.1", features = ["v4", "serde"] }
-portable-pty = { version = "=0.9.0", optional = true }
+anyhow = "=1.0.104"
+portable-pty = "=0.9.0"
+rmcp = { version = "=3.5.1", default-features = false, optional = true, features = [
+    "server",
+    "client",
+    "macros",
+    "transport-io",
+    "transport-child-process",
+    "transport-streamable-http-server",
+    "transport-streamable-http-server-session",
+    "transport-streamable-http-client-reqwest",
+] }
+hyper = { version = "=1.12.0", default-features = false, optional = true, features = ["http1", "server"] }
+hyper-util = { version = "=0.1.21", default-features = false, optional = true, features = ["service", "tokio"] }
+tokio = { version = "=1.53.3", features = [
+    "io-std",
+    "io-util",
+    "macros",
+    "net",
+    "process",
+    "rt-multi-thread",
+    "sync",
+    "time",
+] }
+tokio-util = { version = "=0.7.20", features = ["rt"] }
 
 [target.'cfg(windows)'.dependencies]
+flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 sha2 = "=0.10.9"
 windows-sys = { version = "=0.61.2", features = [
     "Wdk_Foundation",
@@ -56,4 +101,9 @@ windows-sys = { version = "=0.61.2", features = [
     "Win32_System_Threading",
     "Win32_System_JobObjects",
     "Win32_System_Pipes",
+    "Win32_System_Diagnostics_ToolHelp",
 ] }
+
+[dev-dependencies]
+tauri = { version = "=2.12.4", features = ["test"] }
+modutex-document-core = { path = "../../crates/document-core" }

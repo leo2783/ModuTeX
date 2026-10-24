@@ -1,14 +1,31 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Local main window: host health, G2 file commands and watch-event listening only. No shell or filesystem plugin grants.",
+  "description": "Local main and host-created document windows: host health, G2 files, G3 compile configuration, G4 terminal, G5 Draft, WorkspaceFiles and Git. No shell or filesystem plugin grants.",
   "local": true,
-  "windows": ["main"],
+  "windows": [
+    "main",
+    "document-*"
+  ],
   "permissions": [
     "allow-host-health",
+    "allow-frontend-new-window",
     "allow-frontend-files",
+    "allow-frontend-compile",
+    "allow-frontend-compile-config",
+    "allow-frontend-settings",
+    "allow-frontend-terminal",
+    "allow-frontend-workspace-files",
+    "allow-frontend-git",
+    "allow-frontend-draft",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
-    "dialog:allow-message"
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:resources:allow-close",
+    "dialog:allow-message",
+    "updater:allow-check",
+    "updater:allow-download",
+    "updater:allow-install"
   ]
 }

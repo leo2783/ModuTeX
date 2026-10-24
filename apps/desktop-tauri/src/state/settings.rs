@@ -641,6 +641,105 @@ impl SettingsStore {
     }
 }
 
+const MCP_PERMISSION_STORE_FILENAME: &str = "frontend-mcp-permission-v1.json";
+const MAX_MCP_PERMISSION_STORE_BYTES: u64 = 4096;
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct McpCompilePermissionWire {
+    version: u32,
+    allow_mcp_compile_command: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpCompilePermissionWrite {
+    version: u32,
+    allow_mcp_compile_command: bool,
+}
+
+impl SettingsStore {
+    fn read_mcp_compile_command_allowed_locked(&self) -> Result<bool, SettingsStoreError> {
+        let path = self.data_dir.join(MCP_PERMISSION_STORE_FILENAME);
+        let Some(bytes) =
+            bounded_read_store_bytes(&path, &self.data_dir, MAX_MCP_PERMISSION_STORE_BYTES)?
+        else {
+            return Ok(false);
+        };
+        let value: McpCompilePermissionWire = serde_json::from_slice(&bytes).map_err(|error| {
+            SettingsStoreError::new(
+                SettingsErrorCode::MalformedSchema,
+                format!("invalid MCP permission store: {error}"),
+            )
+        })?;
+        if value.version != 1 {
+            return Err(SettingsStoreError::new(
+                SettingsErrorCode::MalformedSchema,
+                "unsupported MCP permission store version",
+            ));
+        }
+        Ok(value.allow_mcp_compile_command)
+    }
+
+    /// Serializes a native MCP decision with permission changes. The callback
+    /// runs while the same per-store lock used by the setter is held.
+    pub(crate) fn with_mcp_compile_command_permission<T>(
+        &self,
+        operation: impl FnOnce(bool) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let path = self.data_dir.join(MCP_PERMISSION_STORE_FILENAME);
+        let lock = acquire_settings_lock(&path);
+        let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let allowed = self
+            .read_mcp_compile_command_allowed_locked()
+            .map_err(|error| error.to_string())?;
+        operation(allowed)
+    }
+
+    /// Default-deny permission used only for trusted custom compile-profile
+    /// changes. It is stored atomically using the same host-owned settings
+    /// directory and path checks as the other SettingsStore files.
+    pub fn mcp_compile_command_allowed(&self) -> Result<bool, SettingsStoreError> {
+        let path = self.data_dir.join(MCP_PERMISSION_STORE_FILENAME);
+        let lock = acquire_settings_lock(&path);
+        let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        self.read_mcp_compile_command_allowed_locked()
+    }
+
+    pub fn set_mcp_compile_command_allowed(
+        &self,
+        allowed: bool,
+    ) -> Result<bool, SettingsStoreError> {
+        let path = self.data_dir.join(MCP_PERMISSION_STORE_FILENAME);
+        let lock = acquire_settings_lock(&path);
+        let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let payload = McpCompilePermissionWrite {
+            version: 1,
+            allow_mcp_compile_command: allowed,
+        };
+        let mut bytes = serde_json::to_vec_pretty(&payload).map_err(|error| {
+            SettingsStoreError::new(
+                SettingsErrorCode::PersistenceFailed,
+                format!("failed to serialize MCP permission: {error}"),
+            )
+        })?;
+        bytes.push(b'\n');
+        if bytes.len() as u64 > MAX_MCP_PERMISSION_STORE_BYTES {
+            return Err(SettingsStoreError::new(
+                SettingsErrorCode::OversizeStore,
+                "MCP permission store exceeds its byte limit",
+            ));
+        }
+        atomic_write_store_bytes(
+            &self.data_dir,
+            MCP_PERMISSION_STORE_FILENAME,
+            &bytes,
+            |from, to| fs::rename(from, to),
+        )?;
+        Ok(allowed)
+    }
+}
+
 #[cfg(test)]
 #[path = "../../tests/unit/settings.rs"]
 mod tests;

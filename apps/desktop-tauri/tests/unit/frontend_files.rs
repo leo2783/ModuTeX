@@ -8,16 +8,16 @@ use std::{
 };
 
 use crate::{
-    state::binary_tokens::{BinaryTokenStore, TokenDenied, TokenLimits},
-    services::filesystem::{FilesystemError, FilesystemService},
     platform::dialogs::DialogSeam,
-    state::desktop::FrontendFilesState,
     schemas::protocol::{
-        DocumentId, DocumentVersion, FileRef, OwnerId, Revision, SaveAsRequest,
-        Timestamp, WriteRequest, MAX_PDF_BYTES, MAX_READ_BYTES,
+        DocumentId, DocumentVersion, FileRef, OwnerId, Revision, SaveAsRequest, Timestamp,
+        WriteRequest, MAX_PDF_BYTES, MAX_READ_BYTES,
     },
-    shared::relative_path::RelativePath,
+    services::filesystem::{FilesystemError, FilesystemService},
     services::watch_native::NativeWatchRegistry,
+    shared::relative_path::RelativePath,
+    state::binary_tokens::{BinaryTokenStore, TokenDenied, TokenLimits},
+    state::desktop::FrontendFilesState,
 };
 
 struct MockDialog {
@@ -59,15 +59,29 @@ fn create_test_state(mock_dialog: Arc<MockDialog>) -> (FrontendFilesState, PathB
     (state, tmp)
 }
 
+fn admit_workspace(
+    state: &FrontendFilesState,
+    owner: &OwnerId,
+    workspace_id: crate::schemas::protocol::WorkspaceId,
+) -> Result<crate::state::binary_tokens::WorkspaceAdmission, String> {
+    let _transition = state.lock_watch_transition();
+    let mut lifecycle = state.lock_lifecycle();
+    state.admit_workspace_locked(&mut lifecycle, owner, workspace_id)
+}
+
 #[test]
 fn unregistered_window_is_denied_and_revoked_window_cannot_register_again() {
     let (state, tmp) = create_test_state(Arc::new(MockDialog::new(None, None)));
     let unknown = OwnerId::from_label("unregistered").unwrap();
     assert!(state.ensure_owner_admission(&unknown).is_err());
-    state.register_document_window_label("unregistered").unwrap();
+    state
+        .register_document_window_label("unregistered")
+        .unwrap();
     assert!(state.ensure_owner_admission(&unknown).is_ok());
     state.revoke_owner(&unknown);
-    assert!(state.register_document_window_label("unregistered").is_err());
+    assert!(state
+        .register_document_window_label("unregistered")
+        .is_err());
     assert!(state.ensure_owner_admission(&unknown).is_err());
     let _ = fs::remove_dir_all(tmp);
 }
@@ -89,7 +103,10 @@ fn native_picker_cancellation_returns_null_without_modifications() {
         document_id: DocumentId::parse("doc-1").unwrap(),
         document_version: DocumentVersion::new(1).unwrap(),
     };
-    let res = state.service.save_as(&owner, &req, None, opened_at).unwrap();
+    let res = state
+        .service
+        .save_as(&owner, &req, None, opened_at)
+        .unwrap();
     assert!(res.is_none());
 
     let _ = fs::remove_dir_all(&tmp);
@@ -122,7 +139,10 @@ fn file_size_limits_5mib_source_blocked_and_pdf_32mib_accepted() {
         document_version: DocumentVersion::new(1).unwrap(),
     };
     let write_res = state.service.write_file(&owner, &write_req);
-    assert!(matches!(write_res, Err(FilesystemError::FileTooLarge { .. })));
+    assert!(matches!(
+        write_res,
+        Err(FilesystemError::FileTooLarge { .. })
+    ));
 
     // 2. PDF write of 5 MiB + 1 is accepted (up to 32 MiB)
     let mut big_pdf = vec![0u8; MAX_READ_BYTES + 1024];
@@ -150,7 +170,10 @@ fn file_size_limits_5mib_source_blocked_and_pdf_32mib_accepted() {
         document_version: DocumentVersion::new(1).unwrap(),
     };
     let huge_res = state.service.write_file(&owner, &huge_pdf_req);
-    assert!(matches!(huge_res, Err(FilesystemError::FileTooLarge { .. })));
+    assert!(matches!(
+        huge_res,
+        Err(FilesystemError::FileTooLarge { .. })
+    ));
 
     let _ = fs::remove_dir_all(&tmp);
 }
@@ -176,9 +199,9 @@ fn raw_pdf_token_one_shot_and_cross_owner_denial() {
     let ws_id = outcome.opened.id;
 
     // Match the real successful-open path: explicitly admit before reading tokens.
-    let ws_adm = state.admit_workspace(&owner_a, ws_id.clone()).unwrap();
+    let ws_adm = admit_workspace(&state, &owner_a, ws_id.clone()).unwrap();
     let token = state
-        .tokens()
+        .tokens
         .issue_file_read_pdf(
             &ws_adm,
             RelativePath::parse("doc.pdf").unwrap(),
@@ -191,18 +214,18 @@ fn raw_pdf_token_one_shot_and_cross_owner_denial() {
     // Cross-owner take is denied
     let owner_b_adm = state.ensure_owner_admission(&owner_b).unwrap();
     assert_eq!(
-        state.tokens().take_file_pdf(&owner_b_adm, &wire),
+        state.tokens.take_file_pdf(&owner_b_adm, &wire),
         Err(TokenDenied)
     );
 
     // Legitimate owner takes token once
     let owner_a_adm = state.ensure_owner_admission(&owner_a).unwrap();
-    let taken = state.tokens().take_file_pdf(&owner_a_adm, &wire).unwrap();
+    let taken = state.tokens.take_file_pdf(&owner_a_adm, &wire).unwrap();
     assert_eq!(taken, pdf_content);
 
     // Second take fails (one-shot)
     assert_eq!(
-        state.tokens().take_file_pdf(&owner_a_adm, &wire),
+        state.tokens.take_file_pdf(&owner_a_adm, &wire),
         Err(TokenDenied)
     );
 
@@ -232,7 +255,7 @@ fn large_pdf_read_service_path_and_header_validation() {
         .open_workspace_file(&owner, &root_file, opened_at)
         .unwrap();
     let ws_id = outcome.opened.id;
-    let _ = state.admit_workspace(&owner, ws_id.clone()).unwrap();
+    let _ = admit_workspace(&state, &owner, ws_id.clone()).unwrap();
 
     // 1. Valid 6 MiB PDF file write (> 5 MiB source limit)
     let mut big_pdf = vec![0u8; MAX_READ_BYTES + 1024 * 1024];
@@ -255,7 +278,10 @@ fn large_pdf_read_service_path_and_header_validation() {
 
     // 2. Normal read_file caps at 5 MiB and rejects the 6 MiB file
     let normal_res = state.service.read_file(&owner, &file_ref);
-    assert!(matches!(normal_res, Err(FilesystemError::FileTooLarge { .. })));
+    assert!(matches!(
+        normal_res,
+        Err(FilesystemError::FileTooLarge { .. })
+    ));
 
     // 3. Explicit read_file_pdf accepts the 6 MiB PDF
     let pdf_receipt = state.service.read_file_pdf(&owner, &file_ref).unwrap();
@@ -300,7 +326,7 @@ fn window_revocation_durable_fence_prevents_readmission() {
         .open_workspace_file(&owner, &root_file, opened_at)
         .unwrap();
     let ws_id = outcome.opened.id;
-    let _ = state.admit_workspace(&owner, ws_id.clone()).unwrap();
+    let _ = admit_workspace(&state, &owner, ws_id.clone()).unwrap();
 
     // Durable owner revocation
     state.revoke_owner(&owner);
@@ -308,8 +334,8 @@ fn window_revocation_durable_fence_prevents_readmission() {
 
     // Subsequent attempts to ensure owner or admit workspace MUST fail
     assert!(state.ensure_owner_admission(&owner).is_err());
-    assert!(state.admit_workspace(&owner, ws_id.clone()).is_err());
-    assert!(state.get_workspace_admission(&owner, &ws_id).is_err());
+    assert!(admit_workspace(&state, &owner, ws_id.clone()).is_err());
+    assert!(state.workspace_grant(&owner, &ws_id).is_err());
 
     // Verification that workspace session is closed in service
     assert_eq!(
