@@ -25,15 +25,16 @@ test('real PDF viewport preserves forward/inverse points through crop, rotation,
 	});
 	await writeFile(path.join(directory, 'Harness.svelte'), `<script>
 import PdfView from ${JSON.stringify(component.replaceAll('\\', '/'))};
-let active = $state(true), reveal = $state(undefined);
+let active = $state(true), reveal = $state(undefined), bytes = $state(new Uint8Array(${JSON.stringify(realPdf())}));
 const points = [], errors = [];
 let renders = 0;
 window.pdfHarness = {
  reveal(value) { reveal = value; }, active(value) { active = value; },
+ reload() { bytes = new Uint8Array(bytes); },
  snapshot() { return { points: [...points], errors: [...errors], renders }; }
 };
 </script>
-<div style="width:340px;height:300px"><PdfView bytes={new Uint8Array(${JSON.stringify(realPdf())})} {active} {reveal} locale="en" onPoint={point => points.push(point)} onError={error => errors.push(error)} onPageCount={() => {}} onRendered={() => renders++} /></div>`);
+<div style="width:340px;height:300px"><PdfView {bytes} {active} {reveal} locale="en" onPoint={point => points.push(point)} onError={error => errors.push(error)} onPageCount={() => {}} onRendered={() => renders++} /></div>`);
 	await writeFile(path.join(directory, 'main.js'), "import { mount } from 'svelte'; import Harness from './Harness.svelte'; mount(Harness, { target: document.getElementById('app') });");
 	await writeFile(path.join(directory, 'index.html'), '<!doctype html><html><body><div id="app"></div><script type="module" src="/main.js"></script></body></html>');
 	server = await createServer({ root: directory, configFile: false, plugins: [svelte()], server: { host: '127.0.0.1', port: 0, fs: { allow: [repository] } }, logLevel: 'error' });
@@ -89,6 +90,15 @@ window.pdfHarness = {
 	await page.locator('canvas').focus();
 	await page.keyboard.press('Enter');
 	assert.equal((await page.evaluate(() => window.pdfHarness.snapshot())).points.length, beforeInvalid.points.length + 1);
+	const beforeReload = await page.evaluate(() => {
+		window.retainedPdfCanvas = document.querySelector('canvas');
+		return window.pdfHarness.snapshot().renders;
+	});
+	await page.evaluate(() => window.pdfHarness.reload());
+	await page.waitForFunction(before => window.pdfHarness.snapshot().renders > before, beforeReload);
+	assert.equal(await page.locator('select').inputValue(), '200', 'PDF reload preserves zoom');
+	assert.equal(await page.locator('input[type="number"]').inputValue(), '2', 'PDF reload preserves current page');
+	assert.equal(await page.evaluate(() => document.querySelector('canvas') === window.retainedPdfCanvas), true, 'PDF reload retains the canvas');
 	await page.evaluate(() => window.pdfHarness.active(false));
 	await page.waitForTimeout(50);
 	await page.keyboard.press('Enter');

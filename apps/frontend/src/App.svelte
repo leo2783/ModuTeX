@@ -2714,7 +2714,7 @@ function compileSnapshotIsCurrent(
 								{#key pdfLoadKey}{#await import('./features/pdf/PdfView.svelte')}
 									<div class="empty-state" role="status"><p>{t('正在開啟 PDF 預覽…', 'Loading PDF preview…')}</p></div>
 								{:then { default: PdfView }}
-								{#key pdfBytes}<PdfView
+									<PdfView
 										bytes={pdfBytes}
 										active={route === 'workbench' && active}
 										locale={preferences.language}
@@ -2723,7 +2723,7 @@ function compileSnapshotIsCurrent(
 										onPageCount={(count) => (pageCount = count)}
 										onRendered={() => { pdfRendered = true; pdfDisplayFailed = false; }}
 										onError={(code) => { pdfDisplayFailed = true; errorState = fileErrorDescriptor(new Error(code)); }}
-									/>{/key}
+										/>
 								{:catch}
 									<div class="empty-state" role="alert"><p>{t('無法載入 PDF 預覽。', 'The PDF preview could not be loaded.')}</p><button onclick={() => pdfLoadKey++}>{t('重試', 'Retry')}</button></div>
 								{/await}{/key}

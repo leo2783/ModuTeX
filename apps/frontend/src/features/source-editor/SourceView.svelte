@@ -71,11 +71,17 @@
 	let mode = $state<'source' | 'visual'>(untrack(() => viewMode));
 	$effect(() => {
 		const next = viewMode;
-		untrack(() => { if (mode !== next) mode = next; });
+		const changed = untrack(() => {
+			if (mode === next) return false;
+			mode = next;
+			return true;
+		});
+		if (changed && next === 'visual') untrack(() => syncVisualProjection());
 	});
 	function setMode(next: 'source' | 'visual') {
 		if (mode === next) return;
 		mode = next;
+		if (next === 'visual') syncVisualProjection();
 		onViewModeChange?.(next);
 	}
 	let visualStatus = $state<'ready' | 'updating'>('updating');
@@ -183,6 +189,37 @@
 	let parsed = $state.raw<SourceProjection | null>(null);
 	let pendingParagraph: { documentId: string; version: number; from: number } | null = null;
 	let pendingBlock: { documentId: string; version: number; to: number; kind: 'table_block' | 'math_block' } | null = null;
+	function syncVisualProjection() {
+		const view = editor, currentVisual = visual, projection = parsed;
+		if (mode !== 'visual' || !view || !currentVisual || !projection) return;
+		const current = view.state.field(sourceState).projection.document;
+		if (projection.documentId !== current.documentId || projection.version !== current.version) return;
+		currentVisual.sync(projection);
+		if (pendingParagraph) {
+			if (projection.documentId === pendingParagraph.documentId && projection.version === pendingParagraph.version) {
+				const from = pendingParagraph.from;
+				currentVisual.view.state.doc.forEach((node) => {
+					if (node.attrs.from === from && node.attrs.name === 'par') currentVisual.navigate({ documentId: projection.documentId, version: projection.version, from, to: node.attrs.to }, true);
+				});
+				pendingParagraph = null;
+			} else if (projection.documentId !== pendingParagraph.documentId || projection.version > pendingParagraph.version) {
+				pendingParagraph = null;
+			}
+		}
+		if (pendingBlock) {
+			if (projection.documentId === pendingBlock.documentId && projection.version === pendingBlock.version) {
+				let selected: SourceSpan | null = null;
+				const request = pendingBlock;
+				currentVisual.view.state.doc.forEach((node) => {
+					if (node.type.name === request.kind && node.attrs.to <= request.to) selected = { documentId: projection.documentId, version: projection.version, from: node.attrs.from, to: node.attrs.to };
+				});
+				if (selected) currentVisual.navigate(selected);
+				pendingBlock = null;
+			} else if (projection.documentId !== pendingBlock.documentId || projection.version > pendingBlock.version) {
+				pendingBlock = null;
+			}
+		}
+	}
 	function focusInsertedBlock(kind: 'table_block' | 'math_block') {
 		if (!editor || mode !== 'visual') return;
 		const projection = editor.state.field(sourceState).projection;
@@ -229,6 +266,28 @@
 			if (bytes > maximum) return null;
 		}
 		return bytes;
+	}
+	function splitsSourceBoundary(value: string, offset: number): boolean {
+		if (offset <= 0 || offset >= value.length) return false;
+		const previous = value.charCodeAt(offset - 1), current = value.charCodeAt(offset);
+		return (previous >= 0xd800 && previous <= 0xdbff && current >= 0xdc00 && current <= 0xdfff) ||
+			(previous === 0x0d && current === 0x0a);
+	}
+	function minimalSourcePatch(before: string, after: string): SourcePatch | null {
+		if (before === after) return null;
+		const commonLength = Math.min(before.length, after.length);
+		let prefix = 0;
+		while (prefix < commonLength && before.charCodeAt(prefix) === after.charCodeAt(prefix)) prefix++;
+		if (splitsSourceBoundary(before, prefix) || splitsSourceBoundary(after, prefix)) prefix--;
+		let suffix = 0;
+		while (
+			suffix < before.length - prefix && suffix < after.length - prefix &&
+			before.charCodeAt(before.length - suffix - 1) === after.charCodeAt(after.length - suffix - 1)
+		) suffix++;
+		while (suffix > 0 &&
+			(splitsSourceBoundary(before, before.length - suffix) || splitsSourceBoundary(after, after.length - suffix))) suffix--;
+		const to = before.length - suffix, afterTo = after.length - suffix;
+		return { from: prefix, to, insert: after.slice(prefix, afterTo), expected: before.slice(prefix, to) };
 	}
 	function sourceFormatFailure(error: unknown): string {
 		const detail = typeof error === 'string' ? error : error instanceof Error ? error.message : '';
@@ -286,18 +345,16 @@
 					range.anchor === selection[index]?.[0] && range.head === selection[index]?.[1]);
 			if (editor !== view || document.documentId !== documentId || document.version !== documentVersion ||
 				current.documentId !== documentId || current.version !== documentVersion ||
-				current.read() !== sourceText || formatWorkspaceId !== workspaceId ||
+				formatWorkspaceId !== workspaceId ||
 				!selectionMatches || mode !== 'source' || !active || saving || tool !== null ||
 				view.state.readOnly || !isTauri()) {
 				sourceFormatMessage = t('內容或選取位置已變更，格式化結果未套用。', 'The source or selection changed. The formatting result was not applied.');
 				return;
 			}
-			if (formatted !== sourceText) {
+			const patch = minimalSourcePatch(sourceText, formatted);
+			if (patch) {
 				const transaction = sourcePatchTransaction(view.state, { documentId, version: documentVersion }, [{
-					from: 0,
-					to: sourceText.length,
-					insert: formatted,
-					expected: sourceText
+					...patch
 				}]);
 				view.dispatch(transaction);
 			}
@@ -758,19 +815,12 @@
 			try {
 				return new ParserClient(new Worker(new URL('../parser/parser.worker.ts', import.meta.url), { type: 'module' }),
 					source, (projection) => {
-						parsed = projection; editor?.dispatch({ effects: foldProjection.of(projection) }); visual?.sync(projection); onProjection(projection);
-						if (pendingParagraph && projection.documentId === pendingParagraph.documentId && projection.version === pendingParagraph.version) {
-							const from = pendingParagraph.from;
-							visual?.view.state.doc.forEach((node) => { if (node.attrs.from === from && node.attrs.name === 'par') visual?.navigate({ documentId: projection.documentId, version: projection.version, from, to: node.attrs.to }, true); });
-							pendingParagraph = null;
-						}
-						if (pendingBlock && projection.documentId === pendingBlock.documentId && projection.version === pendingBlock.version) {
-							let selected: SourceSpan | null = null;
-							const request = pendingBlock;
-							visual?.view.state.doc.forEach((node) => { if (node.type.name === request.kind && node.attrs.to <= request.to) selected = { documentId: projection.documentId, version: projection.version, from: node.attrs.from, to: node.attrs.to }; });
-							if (selected) visual?.navigate(selected);
-							pendingBlock = null;
-						}
+						const current = editor?.state.field(sourceState).projection.document ?? initial;
+						if (projection.documentId !== current.documentId || projection.version !== current.version) return;
+						parsed = projection;
+						editor?.dispatch({ effects: foldProjection.of(projection) });
+						onProjection(projection);
+						syncVisualProjection();
 					}, failParser);
 			} catch { failParser(); return null; }
 		};

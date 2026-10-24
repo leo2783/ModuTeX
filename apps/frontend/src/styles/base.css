@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 :root {
 	color-scheme: light;
-	--canvas: #f4f3ef;
+	--canvas: #fff;
 	--surface: #fff;
 	--ink: #24292e;
 	--muted: #5d6670;
@@ -375,7 +375,7 @@ button.primary {
 				justify-content: space-between;
 				padding: 4px 8px;
 				margin: 0;
-				background: var(--canvas, #f4f3ef);
+				background: var(--canvas, #fff);
 				border: 1px solid var(--line, #cdd2d7);
 				border-radius: 4px;
 				font-size: 12px;
@@ -511,7 +511,7 @@ button.primary {
 				outline-offset: 2px;
 			}
 			.visual-cell-boundary .boundary-trigger:disabled {
-				background: var(--canvas, #f4f3ef);
+				background: var(--canvas, #fff);
 				border-color: var(--line, #cdd2d7);
 				color: var(--muted, #5d6670);
 				cursor: not-allowed;
@@ -535,7 +535,7 @@ button.primary {
 				font-size: 12px;
 				padding: 2px 8px;
 				min-height: 24px;
-				background: var(--canvas, #f4f3ef);
+				background: var(--canvas, #fff);
 				border: 1px solid var(--line, #cdd2d7);
 				border-radius: 3px;
 				color: var(--ink, #24292e);

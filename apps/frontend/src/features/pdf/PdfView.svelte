@@ -38,6 +38,33 @@
 	let requestedRenderId = 0;
 	let displayedRenderId = 0;
 	let lastHandledRevealId: number | undefined;
+	let activeBytes: Uint8Array | undefined;
+	let replaceBytes: ((nextBytes: Uint8Array, obsoleteRevealId?: number) => void) | null = null;
+	let observedBytes: Uint8Array | undefined;
+	let observedRevealId: number | undefined;
+	let observedProps = false;
+	function revealRequestId(value: typeof reveal): number | undefined {
+		return value && typeof value.requestId === 'number' && Number.isSafeInteger(value.requestId)
+			? value.requestId
+			: undefined;
+	}
+	$effect(() => {
+		const nextBytes = bytes;
+		const nextRevealId = revealRequestId(reveal);
+		untrack(() => {
+			const first = !observedProps;
+			const bytesChanged = first || observedBytes !== nextBytes;
+			const previousRevealId = observedRevealId;
+			const revealChanged = nextRevealId !== previousRevealId;
+			const obsoleteRevealId = first || (revealChanged && nextRevealId !== undefined)
+				? undefined
+				: previousRevealId;
+			observedProps = true;
+			observedBytes = nextBytes;
+			observedRevealId = nextRevealId;
+			if (bytesChanged) replaceBytes?.(nextBytes, obsoleteRevealId);
+		});
+	});
 	function extractViewBox(viewport: ReturnType<PDFPageProxy['getViewport']> | undefined) {
 		if (!viewport) return undefined;
 		const box = viewport.viewBox;
@@ -68,7 +95,7 @@
 		return { minX, maxX, minY, maxY, pageWidth, pageHeight };
 	}
 	function tryReveal() {
-		if (!active || disposed) return;
+		if (!active || disposed || activeBytes !== bytes) return;
 		const req = reveal;
 		if (!req) return;
 		if (typeof req.requestId !== 'number' || !Number.isSafeInteger(req.requestId)) return;
@@ -123,7 +150,7 @@
 		target.scrollTop = Math.max(0, pointY - target.clientHeight / 2);
 	}
 	function emitPointAtClient(clientX: number, clientY: number) {
-		if (!onPoint || !active || disposed || busy || !currentViewport || displayedPage < 1) return;
+		if (!onPoint || !active || disposed || activeBytes !== bytes || busy || !currentViewport || displayedPage < 1) return;
 		if (displayedPage !== pageNumber || displayedRenderId !== requestedRenderId) return;
 		const rect = canvas.getBoundingClientRect();
 		if (rect.width <= 0 || rect.height <= 0) return;
@@ -175,19 +202,20 @@
 		disposed = false;
 		let document: PDFDocumentProxy | undefined;
 		let loading: PDFDocumentLoadingTask | undefined;
-		let destroyPromise: Promise<void> | undefined;
-		const destroyLoading = () => {
-			if (!loading) return Promise.resolve();
-			return (destroyPromise ??= loading.destroy());
-		};
 		let render: RenderTask | undefined;
+		let loadGeneration = 0;
+		let documentBytes: Uint8Array | undefined;
 		let resizeFrame = 0;
 		const queue = new PdfRenderQueue<{ id: number; page: number; zoom: string }>(async (request, current) => {
-			if (!document || !current() || disposed || !active || request.id !== requestedRenderId) return;
+			const pdf = document, generation = loadGeneration;
+			if (!pdf || documentBytes !== bytes || !current() || disposed || !active || request.id !== requestedRenderId) return;
 			let page: PDFPageProxy | undefined;
+			let renderCanvas: HTMLCanvasElement | undefined;
+			let task: RenderTask | undefined;
 			try {
-				page = await document.getPage(request.page);
-				if (!current() || disposed || !active || request.id !== requestedRenderId) return;
+				page = await pdf.getPage(request.page);
+				if (!current() || disposed || !active || request.id !== requestedRenderId ||
+					document !== pdf || documentBytes !== bytes || generation !== loadGeneration) return;
 				const base = page.getViewport({ scale: 1 });
 				if (!Number.isFinite(base.width) || !Number.isFinite(base.height) || base.width <= 0 || base.height <= 0)
 					throw new Error('PDF_SIZE');
@@ -195,13 +223,23 @@
 				const requestedScale = request.zoom === 'fit' ? Math.max(1, target.clientWidth - 48) / base.width : Number(request.zoom) / 100;
 				const scale = Math.min(requestedScale, 4096 / (base.width * ratio), 4096 / (base.height * ratio));
 				const viewport = page.getViewport({ scale });
-				canvas.width = Math.ceil(viewport.width * ratio); canvas.height = Math.ceil(viewport.height * ratio);
-				canvas.style.width = viewport.width + 'px'; canvas.style.height = viewport.height + 'px';
-				const context = canvas.getContext('2d');
+				renderCanvas = canvas.ownerDocument.createElement('canvas');
+				renderCanvas.width = Math.ceil(viewport.width * ratio);
+				renderCanvas.height = Math.ceil(viewport.height * ratio);
+				const context = renderCanvas.getContext('2d');
 				if (!context) throw new Error('CANVAS');
-				render = page.render({ canvas, canvasContext: context, viewport, transform: [ratio, 0, 0, ratio, 0, 0] });
-				await render.promise;
-				if (current() && !disposed && active && request.id === requestedRenderId) {
+				task = page.render({ canvas: renderCanvas, canvasContext: context, viewport, transform: [ratio, 0, 0, ratio, 0, 0] });
+				render = task;
+				await task.promise;
+				if (current() && !disposed && active && request.id === requestedRenderId &&
+					document === pdf && documentBytes === bytes && generation === loadGeneration) {
+					const displayContext = canvas.getContext('2d');
+					if (!displayContext) throw new Error('CANVAS');
+					canvas.width = renderCanvas.width;
+					canvas.height = renderCanvas.height;
+					canvas.style.width = viewport.width + 'px';
+					canvas.style.height = viewport.height + 'px';
+					displayContext.drawImage(renderCanvas, 0, 0);
 					displayedPage = request.page;
 					displayedRenderId = request.id;
 					currentViewport = viewport;
@@ -210,7 +248,11 @@
 					onRendered?.();
 				}
 			} finally {
-				render = undefined;
+				if (render === task) render = undefined;
+				if (renderCanvas) {
+					renderCanvas.width = 0;
+					renderCanvas.height = 0;
+				}
 				page?.cleanup();
 			}
 		}, () => render?.cancel(), () => {
@@ -219,32 +261,75 @@
 			onError('PDF_RENDER');
 		});
 		schedule = () => {
-			if (!document || disposed || !active) return;
+			if (!document || documentBytes !== bytes || disposed || !active) return;
 			busy = true;
 			currentViewport = undefined;
 			const id = ++requestedRenderId;
 			queue.request({ id, page: pageNumber, zoom });
 		};
 		pause = () => { cancelAnimationFrame(resizeFrame); currentViewport = undefined; queue.pause(); };
-		void import('pdfjs-dist').then(async ({ getDocument, GlobalWorkerOptions }) => {
-			if (disposed) return;
-			GlobalWorkerOptions.workerSrc = workerUrl;
-			loading = getDocument({ data: new Uint8Array(bytes), enableXfa: false, stopAtErrors: true,
-				disableAutoFetch: true, disableStream: true, useSystemFonts: true, maxImageSize: 16777216 });
-			const pdf = await loading.promise;
-			if (disposed) { await destroyLoading(); return; }
-			document = pdf; count = pdf.numPages; onPageCount(count);
-			if (reveal && typeof reveal.requestId === 'number' && Number.isSafeInteger(reveal.requestId) && typeof reveal.page === 'number' && Number.isSafeInteger(reveal.page)) {
-				if (lastHandledRevealId === undefined || reveal.requestId > lastHandledRevealId) {
-					if (reveal.page >= 1 && reveal.page <= count) {
-						pageNumber = reveal.page;
-					} else {
-						lastHandledRevealId = reveal.requestId;
+		replaceBytes = (nextBytes, obsoleteRevealId) => {
+			const generation = ++loadGeneration;
+			activeBytes = nextBytes;
+			const oldLoading = loading;
+			loading = undefined;
+			document = undefined;
+			documentBytes = undefined;
+			queue.pause();
+			requestedRenderId++;
+			busy = true;
+			count = 0;
+			currentViewport = undefined;
+			if (obsoleteRevealId !== undefined &&
+				(lastHandledRevealId === undefined || obsoleteRevealId > lastHandledRevealId)) {
+				lastHandledRevealId = obsoleteRevealId;
+			}
+			if (oldLoading) void oldLoading.destroy().catch(() => {});
+			const isCurrentLoad = () => !disposed && generation === loadGeneration &&
+				activeBytes === nextBytes && bytes === nextBytes;
+			void import('pdfjs-dist').then(async ({ getDocument, GlobalWorkerOptions }) => {
+				if (!isCurrentLoad()) return;
+				GlobalWorkerOptions.workerSrc = workerUrl;
+				const task = getDocument({ data: new Uint8Array(nextBytes), enableXfa: false, stopAtErrors: true,
+					disableAutoFetch: true, disableStream: true, useSystemFonts: true, maxImageSize: 16777216 });
+				loading = task;
+				const pdf = await task.promise;
+				if (!isCurrentLoad() || loading !== task) return;
+				document = pdf;
+				documentBytes = nextBytes;
+				count = pdf.numPages;
+				onPageCount(count);
+				if (count > 0) pageNumber = Math.min(Math.max(pageNumber, 1), count);
+				const req = reveal;
+				const requestId = revealRequestId(req);
+				if (req && requestId !== undefined && typeof req.page === 'number' && Number.isSafeInteger(req.page)) {
+					if (lastHandledRevealId === undefined || requestId > lastHandledRevealId) {
+						if (req.page >= 1 && req.page <= count) {
+							pageNumber = req.page;
+						} else {
+							lastHandledRevealId = requestId;
+						}
 					}
 				}
-			}
-			schedule?.();
-		}).catch(() => { if (!disposed) { busy = false; currentViewport = undefined; onError('PDF_LOAD'); } });
+				schedule?.();
+			}).catch(() => {
+				if (!isCurrentLoad()) return;
+				const failedLoading = loading;
+				loading = undefined;
+				if (failedLoading) void failedLoading.destroy().catch(() => {});
+				document = undefined;
+				documentBytes = undefined;
+				busy = false;
+				currentViewport = undefined;
+				onError('PDF_LOAD');
+			});
+		};
+		if (!observedProps) {
+			observedProps = true;
+			observedBytes = bytes;
+			observedRevealId = revealRequestId(reveal);
+		}
+		replaceBytes(bytes);
 		let observedWidth = target.clientWidth;
 		const observer = new ResizeObserver(() => {
 			const width = target.clientWidth;
@@ -255,8 +340,21 @@
 		});
 		observer.observe(target);
 		return () => {
-			disposed = true; currentViewport = undefined; schedule = undefined; pause = undefined; observer.disconnect(); cancelAnimationFrame(resizeFrame);
-			queue.dispose(); void destroyLoading().catch(() => {});
+			disposed = true;
+			loadGeneration++;
+			activeBytes = undefined;
+			currentViewport = undefined;
+			schedule = undefined;
+			pause = undefined;
+			replaceBytes = null;
+			observer.disconnect();
+			cancelAnimationFrame(resizeFrame);
+			queue.dispose();
+			const oldLoading = loading;
+			loading = undefined;
+			document = undefined;
+			documentBytes = undefined;
+			if (oldLoading) void oldLoading.destroy().catch(() => {});
 		};
 	});
 </script>

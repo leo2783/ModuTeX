@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 const frontendRoot = fileURLToPath(new URL('../../', import.meta.url));
 const screenshotRoot = fileURLToPath(new URL('../../../../.verification-artifacts/', import.meta.url));
 const channel = process.env.MODUTEX_TEST_BROWSER_CHANNEL || 'chrome';
-if (!['chrome', 'msedge'].includes(channel)) throw new Error('Unsupported browser channel');
+if (!['chrome', 'msedge', 'chromium'].includes(channel)) throw new Error('Unsupported browser channel');
 
 test('actual frontend modes, math rendering and help layout', { timeout: 120000 }, async (t) => {
 	const server = await createServer({ root: frontendRoot, cacheDir: screenshotRoot + 'vite-workbench-ui', server: { host: '127.0.0.1', port: 0, strictPort: false } });
@@ -37,6 +37,17 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 				assert.equal(await button.getAttribute('title'), name);
 				assert.equal(await button.locator('svg').count(), name === '數學' ? 2 : 1);
 			}
+		});
+		await t.test('source edits defer hidden visual projection until switching modes', async () => {
+			const before = await page.locator('.visual .ProseMirror').textContent();
+			await sourceEditor.click();
+			await page.keyboard.press('Control+A');
+			await page.keyboard.insertText('\\documentclass{article}\n\\begin{document}\n\\section{Deferred outline}\nDeferred visual projection.\n\\end{document}\n');
+			await page.locator('aside').getByRole('button', { name: 'Deferred outline', exact: true }).waitFor();
+			assert.equal(await page.locator('.visual .ProseMirror').textContent(), before);
+			await page.getByRole('button', { name: '視覺化', exact: true }).click();
+			await page.waitForFunction(() => document.querySelector('.visual .ProseMirror')?.textContent.includes('Deferred visual projection.'));
+			await page.getByRole('button', { name: '原始碼', exact: true }).click();
 		});
 		await t.test('visual equations and matrix use actual MathLive elements', async () => {
 			await sourceEditor.click();
