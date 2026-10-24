@@ -7,8 +7,17 @@ import test from 'node:test';
 import yaml from 'js-yaml';
 
 const quote=value=>"'"+value.replaceAll("'","''")+"'";
-const notices=['LICENSE','NOTICE','apps/frontend/LICENSE','apps/frontend/NOTICE','apps/frontend/THIRD_PARTY_NOTICES.md','packages/frontend-contracts/LICENSE','vendor/notices/TECTONIC-LICENSE.txt','vendor/notices/TECTONIC-NOTICE.md'];
-for(const [workflow,job] of [['tauri-rust.yml','rust-clippy'],['tauri-rust.yml','rust-tests'],['tauri-desktop-build.yml','desktop-build']]){
+const producer=yaml.load(await readFile(new URL('../../.github/workflows/tauri-frontend.yml',import.meta.url),'utf8'));
+const upload=producer.jobs['frontend-build'].steps.find(step=>step.name==='Upload Tauri frontend assets and required notices');
+const notices=upload.with.path.trim().split(/\r?\n/).map(path=>path.trim()).filter(path=>path!=='apps/frontend/dist-tauri');
+test('frontend artifact notices exist in the actual source checkout',async()=>{
+  assert.equal(upload.with['include-hidden-files'],true,'Built .vite metadata must be uploaded');
+  for(const path of notices){
+    const bytes=await readFile(new URL(`../../${path}`,import.meta.url));
+    assert(bytes.length>0,`${path} must contain the source notice`);
+  }
+});
+for(const [workflow,job] of [['tauri-rust.yml','rust-clippy'],['tauri-rust.yml','rust-tests'],['tauri-desktop-build.yml','desktop-build'],['tauri-package-validation.yml','package-validation']]){
   test(`${workflow} ${job} stages frontend artifacts without overwriting checkout licenses`,async()=>{
     const document=yaml.load(await readFile(new URL(`../../.github/workflows/${workflow}`,import.meta.url),'utf8'));
     const target=document.jobs[job];
@@ -22,7 +31,7 @@ for(const [workflow,job] of [['tauri-rust.yml','rust-clippy'],['tauri-rust.yml',
       await writeFile(join(checkout,'LICENSE'),'Original checkout license\n');
       for(const file of notices.filter(file=>file!=='LICENSE')){
         await mkdir(dirname(join(checkout,file)),{recursive:true});
-        await writeFile(join(checkout,file),`Original ${file}\n`);
+        await writeFile(join(checkout,file),await readFile(new URL(`../../${file}`,import.meta.url)));
       }
       const script=join(directory,'exercise.ps1');
       await writeFile(script,`$ErrorActionPreference='Stop'
@@ -46,6 +55,8 @@ function gh {
   $dist=Join-Path $destination 'apps/frontend/dist-tauri'
   New-Item -ItemType Directory -Path $dist -Force | Out-Null
   'Real staged frontend' | Set-Content -LiteralPath (Join-Path $dist 'index.html')
+  New-Item -ItemType Directory -Path (Join-Path $dist '.vite') | Out-Null
+  '{"entry":"index.html"}' | Set-Content -LiteralPath (Join-Path $dist '.vite/manifest.json')
   foreach($notice in @(${notices.map(quote).join(',')})){
     $target=Join-Path $destination $notice
     New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
@@ -60,6 +71,7 @@ if (-not (Test-Path -LiteralPath 'apps/frontend/dist-tauri/index.html' -PathType
       assert.equal(result.status,0,result.stderr||result.stdout);
       assert.equal(await readFile(join(checkout,'LICENSE'),'utf8'),'Original checkout license\n');
       assert.equal((await readFile(join(checkout,'apps/frontend/dist-tauri/index.html'),'utf8')).trim(),'Real staged frontend');
+      assert.deepEqual(JSON.parse(await readFile(join(checkout,'apps/frontend/dist-tauri/.vite/manifest.json'),'utf8')),{entry:'index.html'});
     }finally{
       assert.equal(resolve(directory).startsWith(resolve(tmpdir())),true);
       await rm(directory,{recursive:true,force:true,maxRetries:3});

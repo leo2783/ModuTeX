@@ -99,7 +99,7 @@ jobs:
           }
           $required = @(
             'LICENSE',
-            'NOTICE',
+            'apps/desktop-tauri/NOTICE',
             'apps/frontend/LICENSE',
             'apps/frontend/NOTICE',
             'apps/frontend/THIRD_PARTY_NOTICES.md',

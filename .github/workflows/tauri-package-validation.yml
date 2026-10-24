@@ -92,8 +92,63 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FRONTEND_ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir .
+          $artifactDirectory = Join-Path $env:RUNNER_TEMP ('modutex-tauri-frontend-' + [guid]::NewGuid().ToString('N'))
+          if (Test-Path -LiteralPath $artifactDirectory) {
+            throw 'Frontend artifact staging directory unexpectedly exists'
+          }
+          New-Item -ItemType Directory -Path $artifactDirectory -ErrorAction Stop | Out-Null
+          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir $artifactDirectory
           if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
+          $dist = Join-Path $artifactDirectory 'apps/frontend/dist-tauri'
+          if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
+            throw 'Frontend build artifact did not contain apps/frontend/dist-tauri'
+          }
+          $frontendFiles = @(Get-ChildItem -LiteralPath $dist -File -Recurse -Force)
+          if ($frontendFiles.Count -eq 0) { throw 'Frontend build artifact is empty' }
+          if (-not (Test-Path -LiteralPath (Join-Path $dist 'index.html') -PathType Leaf)) {
+            throw 'Frontend build artifact did not contain the built Tauri index.html'
+          }
+          $required = @(
+            'LICENSE',
+            'apps/desktop-tauri/NOTICE',
+            'apps/frontend/LICENSE',
+            'apps/frontend/NOTICE',
+            'apps/frontend/THIRD_PARTY_NOTICES.md',
+            'packages/frontend-contracts/LICENSE',
+            'vendor/notices/TECTONIC-LICENSE.txt',
+            'vendor/notices/TECTONIC-NOTICE.md'
+          )
+          foreach ($path in $required) {
+            $artifactNotice = Join-Path $artifactDirectory $path
+            if (-not (Test-Path -LiteralPath $artifactNotice -PathType Leaf)) {
+              throw "Required frontend build artifact notice missing: $path"
+            }
+            if ((Get-Item -LiteralPath $artifactNotice).Length -le 0) {
+              throw "Required frontend build artifact notice is empty: $path"
+            }
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Required checked-out frontend notice missing: $path"
+            }
+            if ((Get-Item -LiteralPath $path).Length -le 0) {
+              throw "Required checked-out frontend notice is empty: $path"
+            }
+            $artifactHash = (Get-FileHash -LiteralPath $artifactNotice -Algorithm SHA256).Hash
+            $checkoutHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+            if ($artifactHash -ne $checkoutHash) {
+              throw "Frontend artifact notice does not match checked-out source: $path"
+            }
+          }
+          $checkoutDist = 'apps/frontend/dist-tauri'
+          if (Test-Path -LiteralPath $checkoutDist) {
+            Remove-Item -LiteralPath $checkoutDist -Recurse -Force -ErrorAction Stop
+          }
+          New-Item -ItemType Directory -Path $checkoutDist -ErrorAction Stop | Out-Null
+          Get-ChildItem -LiteralPath $dist -Force |
+            Copy-Item -Destination $checkoutDist -Recurse -Force -ErrorAction Stop |
+            Out-Null
+          if (-not (Test-Path -LiteralPath (Join-Path $checkoutDist 'index.html') -PathType Leaf)) {
+            throw 'The staged Tauri frontend index.html was not installed in the checkout'
+          }
       - name: Verify and download the exact release executable artifact
         env:
           GH_TOKEN: ${{ github.token }}
@@ -195,7 +250,7 @@ jobs:
 
           $required = @(
             'LICENSE',
-            'NOTICE',
+            'apps/desktop-tauri/NOTICE',
             'apps/frontend/LICENSE',
             'apps/frontend/NOTICE',
             'apps/frontend/THIRD_PARTY_NOTICES.md',

@@ -163,7 +163,7 @@ jobs:
           path: |
             apps/frontend/dist-tauri
             LICENSE
-            NOTICE
+            apps/desktop-tauri/NOTICE
             apps/frontend/LICENSE
             apps/frontend/NOTICE
             apps/frontend/THIRD_PARTY_NOTICES.md
@@ -171,6 +171,7 @@ jobs:
             vendor/notices/TECTONIC-LICENSE.txt
             vendor/notices/TECTONIC-NOTICE.md
           if-no-files-found: error
+          include-hidden-files: true
   contracts-tests:
     name: Shared frontend contract tests
     runs-on: windows-2025
