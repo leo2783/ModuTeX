@@ -82,6 +82,7 @@ out
 .nuxt
 dist
 apps/frontend/dist-tauri/
+apps/frontend/src/features/document-core/generated/
 .output
 
 # Gatsby files
@@ -168,13 +169,10 @@ electron/dist/
 electron/server-dist/
 roundtrip-diff/
 
-# Required source-controlled build and parser fixtures
-!build/
-build/*
-!build/license.txt
-!build/icons/
-!build/deb-after-install.tpl
-!apps/texpile-editor/tests/unit/lib/latex-log/fixtures/*.log
+# Local agent orchestration
+/scripts/agents/
+/tests/scripts/agents/
+/tests/scripts/luna-input.test.mjs
 
 # Local review configuration and disposable browser-test output.
 .cbmignore

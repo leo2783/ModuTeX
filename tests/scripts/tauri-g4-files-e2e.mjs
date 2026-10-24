@@ -153,4 +153,3 @@ try {
  console.log(JSON.stringify(receipt));
 }
 
-
