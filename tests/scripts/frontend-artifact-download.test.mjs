@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -17,7 +17,15 @@ test('frontend artifact notices exist in the actual source checkout',async()=>{
     assert(bytes.length>0,`${path} must contain the source notice`);
   }
 });
-for(const [workflow,job] of [['tauri-rust.yml','rust-clippy'],['tauri-rust.yml','rust-tests'],['tauri-desktop-build.yml','desktop-build'],['tauri-package-validation.yml','package-validation']]){
+const consumers=[];
+for(const workflow of (await readdir(new URL('../../.github/workflows/',import.meta.url))).filter(name=>name.endsWith('.yml'))){
+  const document=yaml.load(await readFile(new URL(`../../.github/workflows/${workflow}`,import.meta.url),'utf8'));
+  for(const [job,definition] of Object.entries(document.jobs??{})){
+    if(definition.steps?.some(step=>typeof step.run==='string'&&step.run.includes('gh run download')&&step.env?.FRONTEND_ARTIFACT_NAME)) consumers.push([workflow,job]);
+  }
+}
+assert(consumers.length>0,'Frontend artifact consumers must be discovered from the real workflow graph');
+for(const [workflow,job] of consumers){
   test(`${workflow} ${job} stages frontend artifacts without overwriting checkout licenses`,async()=>{
     const document=yaml.load(await readFile(new URL(`../../.github/workflows/${workflow}`,import.meta.url),'utf8'));
     const target=document.jobs[job];

@@ -103,8 +103,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FRONTEND_ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir .
+          $staging = Join-Path $env:RUNNER_TEMP ("modutex-frontend-" + [guid]::NewGuid().ToString('N'))
+          if (Test-Path -LiteralPath $staging) { throw 'Frontend artifact staging path already exists' }
+          New-Item -ItemType Directory -Path $staging | Out-Null
+          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir $staging
           if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
+          $artifactDist = Join-Path $staging 'apps/frontend/dist-tauri'
+          $index = Join-Path $artifactDist 'index.html'
+          if (-not (Test-Path -LiteralPath $index -PathType Leaf) -or (Get-Item -LiteralPath $index).Length -le 0) {
+            throw 'Native E2E frontend artifact did not contain a nonempty apps/frontend/dist-tauri/index.html'
+          }
+          $targetDist = 'apps/frontend/dist-tauri'
+          New-Item -ItemType Directory -Path $targetDist | Out-Null
+          Get-ChildItem -LiteralPath $artifactDist -Force | Copy-Item -Destination $targetDist -Recurse -Force
       - name: Verify and download the exact release executable artifact
         env:
           GH_TOKEN: ${{ github.token }}
