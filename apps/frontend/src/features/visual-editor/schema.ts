@@ -1,7 +1,7 @@
 import { Fragment, Schema, type Node as VisualNode, type Mark } from 'prosemirror-model';
 import type { Transaction } from 'prosemirror-state';
 import { parseTable } from '../tables/source.ts';
-import { mapPosition, parseSource, projectionIsCurrent, type SourceDocument, type SourceProjection, type SyntaxNode, type SourcePatch, type SourceChange } from '../document-core/core.ts';
+import { mapPosition, parseSource, projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan, type SyntaxNode, type SourcePatch, type SourceChange } from '../document-core/core.ts';
 
 const anchors = { from: {}, to: {}, editFrom: {}, editTo: {}, role: { default: 'paragraph' }, name: { default: '' }, level: { default: 2 } };
 const visualFormatMarks: Record<string, string> = { textbf: 'strong', textit: 'em', emph: 'em', underline: 'underline' };
@@ -137,6 +137,86 @@ function decodeInline(source: SourceDocument, nodes: readonly SyntaxNode[]): { c
 	};
 	return walk(nodes, [], []) ? { content: Fragment.from(children), segments: Object.freeze(segments) } : null;
 }
+type MaketitleRole = 'heading' | 'paragraph';
+type DecodedInline = NonNullable<ReturnType<typeof decodeInline>>;
+interface MaketitleField {
+	readonly node: SyntaxNode;
+	readonly role: MaketitleRole;
+	readonly contentFrom: number;
+	readonly contentTo: number;
+	readonly inline: DecodedInline;
+}
+interface MaketitleMetadata {
+	readonly fields: readonly MaketitleField[];
+	readonly fallbackNodes: readonly SyntaxNode[];
+}
+const maketitleFieldRoles: Readonly<Record<string, MaketitleRole>> = Object.freeze({
+	title: 'heading', author: 'paragraph', date: 'paragraph'
+});
+function sourceSpanIsCurrent(source: SourceDocument, span: SourceSpan): boolean {
+	return span.documentId === source.documentId && span.version === source.version &&
+		Number.isSafeInteger(span.from) && Number.isSafeInteger(span.to) &&
+		span.from >= 0 && span.to >= span.from && span.to <= source.length;
+}
+function hasSimpleMaketitleArgument(source: SourceDocument, node: SyntaxNode): boolean {
+	if (!node.content || !sourceSpanIsCurrent(source, node.span) || !sourceSpanIsCurrent(source, node.content)) return false;
+	const content = node.content;
+	if (content.from < node.span.from || content.to > node.span.to) return false;
+	return source.read(node.span.from, content.from) === `\\${node.name}{` &&
+		source.read(content.to, node.span.to) === '}';
+}
+function decodeMaketitleInline(source: SourceDocument, node: SyntaxNode): DecodedInline | null {
+	if (!node.content) return null;
+	const inline = decodeInline(source, node.children);
+	if (!inline) return null;
+	if (inline.segments.length) return inline;
+	const emptySegment: InlineSegment = Object.freeze({
+		from: 0, to: 0, editFrom: node.content.from, editTo: node.content.to,
+		boundaries: Object.freeze([0]), marks: Object.freeze([]), wrapped: false, wrappers: Object.freeze([])
+	});
+	return Object.freeze({ content: inline.content, segments: Object.freeze([emptySegment]) });
+}
+function projectMaketitleMetadata(
+	source: SourceDocument, parsed: SourceProjection, body: SyntaxNode
+): MaketitleMetadata | null {
+	if (!projectionIsCurrent(source, parsed) || !sourceSpanIsCurrent(source, body.span)) throw new Error('STALE_VISUAL');
+	const preamble: SyntaxNode[] = [];
+	for (const node of parsed.nodes) {
+		if (node === body) continue;
+		if (!sourceSpanIsCurrent(source, node.span)) throw new Error('STALE_VISUAL');
+		if (node.span.to <= body.span.from) preamble.push(node);
+	}
+	const candidates = preamble.filter(node => Object.hasOwn(maketitleFieldRoles, node.name));
+	if (!candidates.length) return null;
+	const counts = new Map<string, number>();
+	for (const node of candidates) counts.set(node.name, (counts.get(node.name) ?? 0) + 1);
+	const fieldsByName = new Map<string, MaketitleField>();
+	const fallbackNodes: SyntaxNode[] = [];
+	for (const node of candidates) {
+		if (!sourceSpanIsCurrent(source, node.span) ||
+			(node.content !== null && !sourceSpanIsCurrent(source, node.content))) throw new Error('STALE_VISUAL');
+		const role = maketitleFieldRoles[node.name]!;
+		const expectedKind = node.name === 'title' ? 'heading' : 'raw';
+		if (counts.get(node.name) !== 1 || node.kind !== expectedKind || !hasSimpleMaketitleArgument(source, node)) {
+			fallbackNodes.push(node);
+			continue;
+		}
+		const inline = decodeMaketitleInline(source, node);
+		if (!inline || !node.content) {
+			fallbackNodes.push(node);
+			continue;
+		}
+		fieldsByName.set(node.name, Object.freeze({
+			node, role, contentFrom: node.content.from, contentTo: node.content.to, inline
+		}));
+	}
+	const fields: MaketitleField[] = [];
+	for (const name of ['title', 'author', 'date']) {
+		const field = fieldsByName.get(name);
+		if (field) fields.push(field);
+	}
+	return Object.freeze({ fields: Object.freeze(fields), fallbackNodes: Object.freeze(fallbackNodes) });
+}
 export function projectVisual(source: SourceDocument, parsed: SourceProjection): VisualProjection {
 	if (!projectionIsCurrent(source, parsed)) throw new Error('STALE_VISUAL');
 	const blocks: VisualNode[] = [];
@@ -199,6 +279,8 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 	const body = parsed.nodes.find((node) => node.kind === 'environment' && node.name === 'document');
 	let plainNodes: SyntaxNode[] = [];
 	let paragraphMarker: SyntaxNode | null = null;
+	const maketitleMetadata = body ? projectMaketitleMetadata(source, parsed, body) : null;
+	let projectedMaketitleMetadata = false;
 	const flush = () => {
 		if (!plainNodes.length) { if (paragraphMarker) add(paragraphMarker); paragraphMarker = null; return; }
 		const from = plainNodes[0]!.span.from, to = plainNodes.at(-1)!.span.to;
@@ -216,7 +298,37 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 	};
 	const nodes = body ? body.children : parsed.nodes;
 	for (const node of nodes) {
-		if (node.kind === 'raw' && node.name === 'maketitle' && titleMarkers.has(node.span.from)) { flush(); continue; }
+		if (node.kind === 'raw' && node.name === 'maketitle') {
+			flush();
+			if (titleMarkers.has(node.span.from)) continue;
+			const exactMaketitle = node.content === null && source.read(node.span.from, node.span.to) === '\\maketitle';
+			if (exactMaketitle && !projectedMaketitleMetadata && maketitleMetadata &&
+				(maketitleMetadata.fields.length > 0 || maketitleMetadata.fallbackNodes.length > 0)) {
+				for (const field of maketitleMetadata.fields) {
+					blocks.push(visualSchema.nodes.source_block!.create({
+						from: field.node.span.from, to: field.node.span.to,
+						editFrom: field.contentFrom, editTo: field.contentTo,
+						role: field.role, name: field.node.name, level: field.role === 'heading' ? 1 : 2
+					}, field.inline.content));
+					boundaries.push(null);
+					segments.push(field.inline.segments);
+				}
+				for (const item of maketitleMetadata.fallbackNodes) {
+					blocks.push(visualSchema.nodes.raw_block!.create({
+						from: item.span.from, to: item.span.to,
+						editFrom: item.span.from, editTo: item.span.to,
+						role: 'paragraph', name: item.name, level: 2,
+						source: source.read(item.span.from, item.span.to)
+					}));
+					boundaries.push(null);
+					segments.push(null);
+				}
+				projectedMaketitleMetadata = true;
+				continue;
+			}
+			add(node);
+			continue;
+		}
 		if (node.kind === 'raw' && node.name === 'par' && node.content === null && source.read(node.span.from, node.span.to) === '\\par') { flush(); paragraphMarker = node; continue; }
 		if (node.kind === 'text' || (node.kind === 'raw' && Object.hasOwn(decodedEscapes, source.read(node.span.from, node.span.to))) || (node.kind === 'format' || node.kind === 'math' && ['$', '('].includes(node.name)) && decodeInline(source, [node])) plainNodes.push(node);
 		else { flush(); add(node); }
@@ -538,7 +650,7 @@ export function visualPatches(source: SourceDocument, projection: VisualProjecti
 /** One immutable, identity-bound edit analysis shared by patching and canonical advancement. */
 export function prepareVisualEdit(source: SourceDocument, projection: VisualProjection, transaction: Transaction): PreparedVisualEdit {
 	const edits = Object.freeze([...blockEdits(source, projection, transaction)]);
-	const patches = edits.map(edit => edit.patch);
+	const patches = edits.map(edit => edit.patch).sort((left, right) => left.from - right.from || left.to - right.to);
 	const end = projection.document.lastChild?.attrs.to;
 	if (edits.length && typeof end === 'number' && end > 0 && source.read(end, Math.min(source.length, end + 14)).startsWith('\\end{document}') && !/[\r\n]/.test(source.read(end - 1, end))) {
 		const last = patches.at(-1);
@@ -584,7 +696,7 @@ export function advanceVisual(
 		delta += patch.insert.length - (patch.to - patch.from);
 	}
 	if (next.length !== source.length + delta) throw new Error('VISUAL_RECEIPT');
-	const separatedEnd = patches.length !== edits.length || patches.some((patch, index) => patch.insert !== edits[index]?.patch.insert);
+	const separatedEnd = patches.some((patch) => !edits.some((edit) => edit.patch === patch));
 	const blocks: VisualNode[] = [], boundaries: (readonly number[] | null)[] = [], segments: (readonly InlineSegment[] | null)[] = [];
 	const byIndex = new Map<number, BlockEdit[]>();
 	let firstEditedIndex = transaction.doc.childCount;
@@ -593,8 +705,17 @@ export function advanceVisual(
 		if (group) group.push(edit); else byIndex.set(edit.index, [edit]);
 		firstEditedIndex = Math.min(firstEditedIndex, edit.index);
 	}
-	// Earlier canonical nodes and their relative maps cannot move; retain them rather than
-	// recalculating their source anchors for a length-changing edit later in the document.
+	const positionMoved = (position: unknown, bias: 'before' | 'after') =>
+		typeof position === 'number' && Number.isSafeInteger(position) && mapPosition(change, position, bias) !== position;
+	for (let index = 0; index < firstEditedIndex; index++) {
+		const attrs = projection.document.child(index).attrs;
+		if (positionMoved(attrs.from, 'after') || positionMoved(attrs.editFrom, 'after') ||
+			positionMoved(attrs.to, 'before') || positionMoved(attrs.editTo, 'before')) {
+			firstEditedIndex = index;
+			break;
+		}
+	}
+	// Earlier canonical nodes are reusable only when their source anchors did not move.
 	for (let index = 0; index < firstEditedIndex; index++) {
 		blocks.push(projection.document.child(index));
 		boundaries.push(projection.boundaries[index] ?? null);

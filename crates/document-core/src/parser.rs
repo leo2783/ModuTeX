@@ -790,6 +790,17 @@ impl Parser {
                                     Some(content_span),
                                     children,
                                 )?);
+                            } else if is_maketitle_metadata(&command.name) && !starred {
+                                let content_span = self.span(content_from, content_to);
+                                let children = self.parse(content_from, content_to, depth + 1)?;
+                                nodes.push(self.node(
+                                    SyntaxKind::Raw,
+                                    start,
+                                    i,
+                                    command.name,
+                                    Some(content_span),
+                                    children,
+                                )?);
                             } else if is_formatting(&command.name) && !starred {
                                 let content_span = self.span(content_from, content_to);
                                 let children = self.parse(content_from, content_to, depth + 1)?;
@@ -914,6 +925,10 @@ fn is_container(name: &str) -> bool {
 
 fn is_heading(name: &str) -> bool {
     matches!(name, "title" | "section" | "subsection" | "subsubsection")
+}
+
+fn is_maketitle_metadata(name: &str) -> bool {
+    matches!(name, "author" | "date")
 }
 
 fn is_formatting(name: &str) -> bool {
