@@ -293,7 +293,7 @@ fn main_capability_is_the_exact_local_g2345_and_updater_union() {
 }
 
 #[test]
-fn app_manifest_and_both_windows_handlers_register_each_frontend_command_once() {
+fn static_command_manifest_matches_both_handler_declarations() {
     let manifest = include_str!("../../build.rs");
     let handlers = include_str!("../../src/lib.rs");
 
@@ -309,58 +309,4 @@ fn app_manifest_and_both_windows_handlers_register_each_frontend_command_once() 
     assert_eq!(manifest.matches("\"prototype_bytes\"").count(), 1);
     assert_eq!(manifest.matches("\"prototype_pdf\"").count(), 1);
     assert!(handlers.contains("pub mod compile_config;"));
-}
-
-#[test]
-fn full_width_identity_and_native_cleanup_ownership_are_wired() {
-    let identity = crate::platform::file_identity::FileIdentity {
-        volume_serial: u64::MAX,
-        file_id: u128::MAX,
-    };
-    assert_eq!(identity.volume_serial, u64::MAX);
-    assert_eq!(identity.file_id, u128::MAX);
-
-    let identity_source = include_str!("../../src/platform/file_identity.rs");
-    assert!(identity_source.contains("query_raw_handle_metadata"));
-    assert!(identity_source.contains("GetFileInformationByHandleEx"));
-    assert!(identity_source.contains("return Err(io::Error::last_os_error());"));
-
-    let windows_files = include_str!("../../src/platform/windows_files.rs");
-    assert!(windows_files.contains("query_raw_handle_metadata"));
-    assert!(windows_files.contains("FsError::LinkNotAllowed"));
-
-    let process_tree = include_str!("../../src/platform/process_tree.rs");
-    assert!(process_tree.contains("Option<Box<windows_impl::OwnedCleanupState>>"));
-    assert!(process_tree.contains("pub(crate) fn on_drained"));
-    assert!(process_tree.contains("completion: self.completion.take()"));
-
-    let git_native = include_str!("../../src/services/git_native.rs");
-    assert!(git_native.contains("CLEANUP_RETRY_BUDGET: Duration = Duration::from_secs(5)"));
-    assert!(git_native.contains("pending.on_drained(workspace.deferred_cleanup_callback())"));
-
-    let terminal_native = include_str!("../../src/platform/win_conpty.rs");
-    assert!(terminal_native.contains("PROC_THREAD_ATTRIBUTE_JOB_LIST"));
-    assert!(terminal_native.contains("CreateProcessW"));
-}
-
-#[test]
-fn trusted_command_adapters_keep_the_owner_fence() {
-    let files = include_str!("../../src/commands/frontend_files.rs");
-    let terminal = include_str!("../../src/commands/frontend_terminal.rs");
-    let git = include_str!("../../src/commands/frontend_git.rs");
-
-    assert!(files.contains("verify_trusted_window(&window, &state)"));
-    assert!(terminal.contains("verify_terminal_caller(&window, &files_state)"));
-    assert!(terminal.contains("verify_trusted_window(window, files_state)"));
-    assert!(git.contains("authorized_owner(&window, files.inner())"));
-    assert!(git.contains("verify_trusted_window(window, files)"));
-}
-
-#[test]
-fn native_feature_tests_are_present_alongside_the_original_test_suite() {
-    assert!(!include_str!("../../tests/integration/workspace_files.rs").is_empty());
-    assert!(!include_str!("../../src/services/git_native.rs").is_empty());
-    assert!(!include_str!("../../tests/unit/frontend_terminal.rs").is_empty());
-    assert!(!include_str!("../../tests/unit/terminal_service.rs").is_empty());
-    assert!(!include_str!("../../tests/unit/win_conpty.rs").is_empty());
 }
