@@ -3,31 +3,26 @@ use std::{
     env,
     ffi::OsString,
     fs,
-    io::{Read, Write},
-    os::windows::{
-        ffi::OsStrExt,
-        fs::{MetadataExt, OpenOptionsExt},
-    },
+    io::Write,
+    os::windows::ffi::OsStrExt,
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use uuid::Uuid;
-use windows_sys::Win32::Storage::FileSystem::{
-    FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
-};
 
 use crate::{
     platform::process_tree::{run, CancellationToken, ProcessSpec},
-    schemas::protocol::{OwnerId, WorkspaceId},
-    services::filesystem::{FilesystemService, TerminalWorkspace},
+    schemas::protocol::{OwnerId, WorkspaceId, WorkspaceKind},
+    services::filesystem::FilesystemService,
+    shared::relative_path::RelativePath,
 };
 
 pub(crate) const MAX_SOURCE_BYTES: usize = 5 * 1024 * 1024;
-const MAX_PATH_ENTRIES: usize = 32;
 const MAX_PATH_VALUE_WIDE_UNITS: usize = 32_767;
 const MAX_LOCAL_SETTINGS_BYTES: usize = 128 * 1024;
 const LOCAL_SETTINGS_NAME: &str = "localSettings.yaml";
+const CLEANUP_RETRY_BUDGET: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SourceFormatError {
@@ -87,16 +82,15 @@ fn find_latexindent() -> Option<PathBuf> {
     {
         return None;
     }
-    for directory in env::split_paths(&path).take(MAX_PATH_ENTRIES) {
+    for directory in env::split_paths(&path) {
         if !directory.is_absolute() {
             continue;
         }
         let executable = directory.join("latexindent.exe");
-        if fs::metadata(&executable)
-            .map(|metadata| metadata.is_file())
-            .unwrap_or(false)
+        if let Ok(executable) =
+            crate::services::compile_service::resolve_trusted_executable(&executable)
         {
-            return Some(fs::canonicalize(&executable).unwrap_or(executable));
+            return Some(executable);
         }
     }
     None
@@ -106,34 +100,28 @@ fn read_local_settings(
     filesystem: &FilesystemService,
     owner: &OwnerId,
     workspace_id: &WorkspaceId,
-    workspace: &TerminalWorkspace,
 ) -> Result<Option<Vec<u8>>, SourceFormatError> {
-    let _read_access = filesystem
+    let (kind, _) = filesystem
+        .workspace_info(owner, workspace_id)
+        .map_err(|_| SourceFormatError::WorkspaceUnavailable)?;
+    if matches!(kind, WorkspaceKind::File) {
+        return Ok(None);
+    }
+
+    let path = RelativePath::parse(LOCAL_SETTINGS_NAME)
+        .map_err(|_| SourceFormatError::SettingsUnavailable)?;
+    let read_access = filesystem
         .workspace_file_read_access(owner, workspace_id)
         .map_err(|_| SourceFormatError::WorkspaceUnavailable)?;
-    let path = workspace.root().join(LOCAL_SETTINGS_NAME);
-    let mut options = fs::OpenOptions::new();
-    options
-        .read(true)
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
-    let file = match options.open(path) {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+    let read = read_access
+        .root
+        .read_file_bounded(&path, MAX_LOCAL_SETTINGS_BYTES);
+    drop(read_access);
+    let bytes = match read {
+        Ok(output) => output.bytes,
+        Err(crate::platform::windows_files::FsError::NotFound) => return Ok(None),
         Err(_) => return Err(SourceFormatError::SettingsUnavailable),
     };
-    let metadata = file
-        .metadata()
-        .map_err(|_| SourceFormatError::SettingsUnavailable)?;
-    if !metadata.is_file()
-        || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-        || metadata.len() > MAX_LOCAL_SETTINGS_BYTES as u64
-    {
-        return Err(SourceFormatError::SettingsUnavailable);
-    }
-    let mut bytes = Vec::new();
-    file.take((MAX_LOCAL_SETTINGS_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|_| SourceFormatError::SettingsUnavailable)?;
     if bytes.len() > MAX_LOCAL_SETTINGS_BYTES || std::str::from_utf8(&bytes).is_err() {
         return Err(SourceFormatError::SettingsUnavailable);
     }
@@ -166,15 +154,14 @@ pub(crate) fn format_latex(
     filesystem: &FilesystemService,
     owner: &OwnerId,
     workspace_id: &WorkspaceId,
-    workspace: &TerminalWorkspace,
     source: &str,
     cancellation: &CancellationToken,
 ) -> Result<String, SourceFormatError> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(SourceFormatError::InputTooLarge);
     }
+    let local_settings = read_local_settings(filesystem, owner, workspace_id)?;
     let executable = find_latexindent().ok_or(SourceFormatError::ToolMissing)?;
-    let local_settings = read_local_settings(filesystem, owner, workspace_id, workspace)?;
     let scratch = ScratchDirectory::create()?;
     let input = create_scratch_file(&scratch.path, "input.tex", source.as_bytes())?;
     let log = scratch.path.join("latexindent.log");
@@ -196,10 +183,25 @@ pub(crate) fn format_latex(
     let output = match run(&spec, cancellation) {
         Ok(output) => output,
         Err(mut error) => {
+            let cleanup_deadline = Instant::now() + CLEANUP_RETRY_BUDGET;
             while error.has_pending_cleanup() {
-                let _ = error.retry_cleanup(Duration::from_secs(20));
+                let remaining = cleanup_deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                let _ = error.retry_cleanup(remaining.min(Duration::from_millis(250)));
                 if error.has_pending_cleanup() {
-                    std::thread::sleep(Duration::from_millis(50));
+                    let pause = Duration::from_millis(20)
+                        .min(cleanup_deadline.saturating_duration_since(Instant::now()));
+                    if !pause.is_zero() {
+                        std::thread::sleep(pause);
+                    }
+                }
+            }
+            if error.has_pending_cleanup() {
+                if let Some(mut pending) = error.take_pending_cleanup() {
+                    pending.on_drained(move || drop(scratch));
+                    drop(pending);
                 }
             }
             return Err(SourceFormatError::ProcessFailed);
@@ -215,3 +217,7 @@ pub(crate) fn format_latex(
     }
     String::from_utf8(output.logs.stdout).map_err(|_| SourceFormatError::InvalidOutput)
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/source_format_settings.rs"]
+mod tests;

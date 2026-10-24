@@ -85,9 +85,6 @@ pub(crate) async fn frontend_format_latex(
     })?;
     let filesystem = files.shared_service();
     let workspace_id = request.workspace_id;
-    let admission = filesystem
-        .acquire_terminal_workspace(&owner, &workspace_id)
-        .map_err(|_| "SOURCE_FORMAT_WORKSPACE: The workspace is no longer available.".to_owned())?;
 
     let cancellation = permit.cancellation_token();
     let text = request.text;
@@ -95,20 +92,13 @@ pub(crate) async fn frontend_format_latex(
     let document_version = request.document_version;
     let joined = tauri::async_runtime::spawn_blocking(move || {
         let _permit = permit;
-        let _admission = admission;
-        source_format::format_latex(
-            &filesystem,
-            &owner,
-            &workspace_id,
-            &_admission,
-            &text,
-            &cancellation,
+        source_format::format_latex(&filesystem, &owner, &workspace_id, &text, &cancellation).map(
+            |formatted| FormatLatexReceipt {
+                formatted,
+                document_id,
+                document_version,
+            },
         )
-        .map(|formatted| FormatLatexReceipt {
-            formatted,
-            document_id,
-            document_version,
-        })
     })
     .await
     .map_err(|_| {
