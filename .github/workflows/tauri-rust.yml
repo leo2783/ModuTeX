@@ -37,16 +37,12 @@ jobs:
           test "$(npm --version)" = '11.17.0'
       - name: Install document-core test dependencies
         run: npm ci --ignore-scripts
-      - name: Install Rust 1.97.1 with the WebAssembly target
-        run: |
-          rustup toolchain install 1.97.1 --profile minimal --target wasm32-unknown-unknown
-          rustup default 1.97.1
-          rustup target add wasm32-unknown-unknown --toolchain 1.97.1
-          test "$(rustc --version | cut -d ' ' -f 2)" = '1.97.1'
+      - name: Set up pinned document-core WASM toolchain
+        uses: ./.github/actions/setup-document-core-wasm
       - name: Fetch locked document-core dependencies
         run: cargo fetch --locked --manifest-path crates/document-core/Cargo.toml --target wasm32-unknown-unknown
-      - name: Build document-core for WebAssembly
-        run: cargo build --locked --manifest-path crates/document-core/Cargo.toml --target wasm32-unknown-unknown
+      - name: Build document-core WASM and generate bindings
+        run: npm run build:document-core --workspace=modutex-frontend
       - name: Run document-core WASM and resource-limit regression tests
         run: node --test crates/document-core/tests/wasm.test.mjs crates/document-core/tests/resource-limits.test.mjs
   rust-format:
@@ -89,6 +85,23 @@ jobs:
           ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
           fetch-depth: 1
+      - name: Download source-matched Tauri frontend assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FRONTEND_ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir .
+          if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
+          $dist = 'apps/frontend/dist-tauri'
+          if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
+            throw 'Frontend artifact did not contain apps/frontend/dist-tauri'
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $dist 'index.html') -PathType Leaf)) {
+            throw 'Frontend artifact did not contain the built Tauri index.html'
+          }
+          if (@(Get-ChildItem -LiteralPath $dist -File -Recurse).Count -eq 0) {
+            throw 'Tauri frontend artifact is empty'
+          }
       - name: Install Rust toolchain 1.97.1 with Clippy
         run: |
           rustup toolchain install 1.97.1 --profile minimal --component rustfmt,clippy --target x86_64-pc-windows-msvc
@@ -135,6 +148,23 @@ jobs:
           ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
           fetch-depth: 1
+      - name: Download source-matched Tauri frontend assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FRONTEND_ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir .
+          if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
+          $dist = 'apps/frontend/dist-tauri'
+          if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
+            throw 'Frontend artifact did not contain apps/frontend/dist-tauri'
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $dist 'index.html') -PathType Leaf)) {
+            throw 'Frontend artifact did not contain the built Tauri index.html'
+          }
+          if (@(Get-ChildItem -LiteralPath $dist -File -Recurse).Count -eq 0) {
+            throw 'Tauri frontend artifact is empty'
+          }
       - name: Install Rust toolchain 1.97.1
         run: |
           rustup toolchain install 1.97.1 --profile minimal --target x86_64-pc-windows-msvc
@@ -195,7 +225,6 @@ jobs:
             "--local-package-repository=$repository",
             '--package-set=basic',
             "--portable=$installDirectory",
-            '--shared=no',
             '--use-registry=no',
             '--modify-path=no'
           )

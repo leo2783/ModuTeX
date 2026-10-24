@@ -41,8 +41,7 @@ const jsonTargets = [
 		references: [['dependencies', '@modutex/frontend-contracts']]
 	},
 	{ path: 'apps/desktop-tauri/tauri.conf.json' },
-	{ path: 'packages/frontend-contracts/package.json' },
-	{ path: 'packages/document-core/package.json' }
+	{ path: 'packages/frontend-contracts/package.json' }
 ];
 const cargoTargets = [
 	'apps/desktop-tauri/Cargo.toml',

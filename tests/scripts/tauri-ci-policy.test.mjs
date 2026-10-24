@@ -7,6 +7,7 @@ import { dump, load } from 'js-yaml';
 
 const ROOT = resolve(import.meta.dirname, '../..');
 const ACTIONS = new Set([
+	'./.github/actions/setup-document-core-wasm',
 	'actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd',
 	'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
 	'actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f'
@@ -507,6 +508,41 @@ test('reusable workflow expansion rejects missing workflow files and workflow-re
 		await assert.rejects(workflowNode(cycleA, fixture), /Reusable workflow cycle detected/);
 	} finally {
 		await rm(fixture, { recursive: true, force: true });
+	}
+});
+
+test('clean runners prepare real WASM bindings and frontend artifacts before dependent compilation', async () => {
+	const wf = await workflow();
+	const jobs = expandedJobs(wf);
+	const actionPath = './.github/actions/setup-document-core-wasm';
+	for (const id of ['frontend-types', 'frontend-unit', 'frontend-browser-e2e', 'frontend-build', 'document-core-wasm']) {
+		const entry = jobs.find(item => item.jobId === id);
+		assert(entry, `required job ${id}`);
+		assert(stepsOf(entry.job).some(step => step.uses === actionPath), `${id} needs the pinned WASM toolchain`);
+	}
+	assert(needsOf(wf.workflow.jobs.rust).includes('frontend'), 'Rust app compilation must wait for actual frontend assets');
+	for (const id of ['rust-clippy', 'rust-tests']) {
+		const entry = jobs.find(item => item.jobId === id);
+		assert(entry);
+		const steps = stepsOf(entry.job);
+		const download = steps.findIndex(step => /Download source-matched Tauri frontend assets/.test(step.name ?? ''));
+		const compile = steps.findIndex(step => /cargo (clippy|test)\b/.test(step.run ?? ''));
+		assert(download >= 0 && download < compile, `${id} must download assets before Cargo compiles the app`);
+		assert.match(steps[download].run, /gh run download \$env:GITHUB_RUN_ID/);
+		assert.match(steps[download].env.FRONTEND_ARTIFACT_NAME, /github.run_id.*github.run_attempt/);
+		assert.match(steps[download].run, /index\.html/);
+	}
+	const rust = jobs.find(item => item.jobId === 'rust-tests').job;
+	assert.doesNotMatch(commands(rust), /--shared=no/, 'portable MiKTeX cannot also select shared mode');
+	assert.match(commands(rust), /--portable=/);
+	const action = load(await readFile(resolve(ROOT, '.github/actions/setup-document-core-wasm/action.yml'), 'utf8'));
+	assert.equal(action.runs.using, 'composite');
+	for (const step of action.runs.steps) {
+		assert.equal(step.uses, undefined, 'bootstrap must not pull unreviewed nested actions');
+		assert.match(step.run, /rustup toolchain install 1\.97\.1/);
+		assert.match(step.run, /cargo install wasm-bindgen-cli --version 0\.2\.126 --locked/);
+		assert.match(step.run, /wasm-bindgen --version/);
+		assert.doesNotMatch(step.run, /secrets\./);
 	}
 });
 

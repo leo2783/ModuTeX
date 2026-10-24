@@ -191,6 +191,9 @@ jobs:
           npm ci --ignore-scripts
           if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE" }
 
+      - name: Set up pinned document-core WASM toolchain
+        uses: ./.github/actions/setup-document-core-wasm
+
       - name: Download exact CI-tested release executable and verify artifact provenance
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

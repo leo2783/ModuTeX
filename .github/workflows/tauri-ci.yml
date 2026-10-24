@@ -165,6 +165,7 @@ jobs:
     name: Rust, WASM, formatting, Clippy, and tests
     needs:
       - source-identity
+      - frontend
     uses: ./.github/workflows/tauri-rust.yml
     with:
       checkout_ref: ${{ needs.source-identity.outputs.git_commit }}

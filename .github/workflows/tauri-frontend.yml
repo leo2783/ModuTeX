@@ -34,8 +34,12 @@ jobs:
           if ((npm --version) -ne '11.17.0') { throw 'npm 11.17.0 required' }
       - name: Install frontend dependencies
         run: npm ci --ignore-scripts
+      - name: Set up pinned document-core WASM toolchain
+        uses: ./.github/actions/setup-document-core-wasm
       - name: Build shared contracts
         run: npm run build:shared --workspace=modutex-frontend
+      - name: Build document-core WASM bindings
+        run: npm run build:document-core --workspace=modutex-frontend
       - name: Run Svelte-check and TypeScript verification
         run: npm run frontend:check
   frontend-unit:
@@ -59,6 +63,8 @@ jobs:
           if ((npm --version) -ne '11.17.0') { throw 'npm 11.17.0 required' }
       - name: Install frontend dependencies
         run: npm ci --ignore-scripts
+      - name: Set up pinned document-core WASM toolchain
+        uses: ./.github/actions/setup-document-core-wasm
       - name: Build shared contracts
         run: npm run build:shared --workspace=modutex-frontend
       - name: Run frontend unit tests, including the Draft paragraph regression
@@ -91,6 +97,8 @@ jobs:
           test "$(npm --version)" = '11.17.0'
       - name: Install frontend browser-test dependencies
         run: npm ci --ignore-scripts
+      - name: Set up pinned document-core WASM toolchain
+        uses: ./.github/actions/setup-document-core-wasm
       - name: Build shared contracts
         run: npm run build:shared --workspace=modutex-frontend
       - name: Build the frontend for browser E2E
@@ -125,6 +133,8 @@ jobs:
           if ((npm --version) -ne '11.17.0') { throw 'npm 11.17.0 required' }
       - name: Install frontend dependencies
         run: npm ci --ignore-scripts
+      - name: Set up pinned document-core WASM toolchain
+        uses: ./.github/actions/setup-document-core-wasm
       - name: Build shared contracts
         run: npm run build:shared --workspace=modutex-frontend
       - name: Remove stale Tauri frontend output
