@@ -28,8 +28,9 @@ pub(super) fn normalize_gzip<'a>(
     {
         return None;
     }
+    let root_text = normalize_absolute(input_root.to_str()?)?;
     let canonical_root = fs::canonicalize(input_root).ok()?;
-    let root_text = normalize_absolute(canonical_root.to_str()?)?;
+    let canonical_root_text = normalize_absolute(canonical_root.to_str()?)?;
     let mut sources: HashMap<String, Option<&'a RelativePath>> = HashMap::new();
     let mut source_count = 0usize;
     for source in snapshot_paths {
@@ -94,7 +95,8 @@ pub(super) fn normalize_gzip<'a>(
             if tag.is_empty() || !tag.bytes().all(|byte| byte.is_ascii_digit()) {
                 return None;
             }
-            let source = source_for_input(raw_path, &root_text, &sources);
+            let source = source_for_input(raw_path, &root_text, &sources)
+                .or_else(|| source_for_input(raw_path, &canonical_root_text, &sources));
             let safe_source = match source {
                 Some(source) => {
                     let safe = *safe_sources

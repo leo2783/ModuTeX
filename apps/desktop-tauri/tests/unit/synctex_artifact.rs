@@ -392,16 +392,45 @@ fn real_tectonic_normalized_artifact_preserves_entry_include_and_pdf_locations()
     let normalized_text = gunzip(&normalized);
     assert_relative_anchor_distances(&normalized_text);
     assert!(anchor_values(&normalized_text).len() >= 4);
+    let raw_text = gunzip(&raw);
     let raw_index = SynctexIndex::parse(&raw).expect("raw engine SyncTeX parses");
     let index = SynctexIndex::parse(&normalized).expect("normalized engine SyncTeX parses");
     for (source, line) in [(&paths[0], 3), (&paths[1], 1)] {
-        let absolute = input.join(source.as_str());
+        let expected =
+            fs::canonicalize(input.join(source.as_str())).expect("expected source exists");
+
+        let raw_source = raw_text
+            .lines()
+            .filter_map(|record| {
+                let value = record.strip_prefix("Input:")?;
+                let (_, path) = value.split_once(':')?;
+
+                if path.is_empty() {
+                    return None;
+                }
+
+                let observed = Path::new(path);
+                let observed = if observed.is_absolute() {
+                    observed.to_path_buf()
+                } else {
+                    input.join(observed)
+                };
+
+                let canonical = fs::canonicalize(observed).ok()?;
+
+                (canonical == expected).then_some(path)
+            })
+            .next()
+            .expect("real SyncTeX contains the expected source");
+
         let location = index
             .forward_search(source.as_str(), line, None)
             .expect("relative source maps");
+
         let original = raw_index
-            .forward_search(absolute.to_str().unwrap(), line, None)
-            .expect("original absolute source maps");
+            .forward_search(raw_source, line, None)
+            .expect("original source maps");
+
         assert_eq!(
             location, original,
             "normalization preserves exact PDF points"
