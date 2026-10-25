@@ -386,33 +386,104 @@ jobs:
           }
           Write-Host "[MiKTeX] Automatic package installation verified: $installerState"
 
-          Write-Host '[MiKTeX] Installing LuaLaTeX, fontspec, declared fontspec dependencies, and packages missing from the CI catalog'
-          # Include fontspec dependencies and packages reported missing by the prior portable MiKTeX catalog run.
-          foreach ($package in @(
-            'ltxbase',
-            'miktex-luatex',
-            'miktex-luatex-bin-x64-2.9',
-            'tex-ini-files',
-            'hyph-utf8',
-            'luaotfload',
-            'fontspec',
-            'l3kernel',
-            'l3packages',
-            'lm',
-            'ms',
-            'showframe',
-            'thailatex',
-            'luxi'
-          )) {
-            Write-Host "[MiKTeX] Installing package: $package"
-            Invoke-CiBoundedProcess -FilePath $mpmPath -Arguments @("--install=$package") -LogPath (Join-Path $logDirectory "mpm-install-$package.log") -PortableRoot $installDirectory -TimeoutSeconds 120
+          Write-Host '[MiKTeX] Preparing explicit LuaLaTeX dependencies'
+
+          $miktexExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'miktex.exe' -File -Recurse)
+          if ($miktexExecutables.Count -ne 1) {
+            throw "Expected exactly one installed miktex.exe, found $($miktexExecutables.Count)"
           }
+          $miktexPath = $miktexExecutables[0].FullName
+
+          $texmfInstall = Join-Path $installDirectory 'texmfs/install'
+          $requiredPackages = @(
+            [pscustomobject]@{
+              Id = 'unicode-data'
+              RelativePath = 'tex/generic/unicode-data/UnicodeData.txt'
+            },
+            [pscustomobject]@{
+              Id = 'lua-uni-algos'
+              RelativePath = 'tex/luatex/lua-uni-algos/lua-uni-data.lua'
+            }
+          )
+
+          foreach ($package in $requiredPackages) {
+            $requiredFile = Join-Path $texmfInstall $package.RelativePath
+
+            if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
+              Write-Host "[MiKTeX] Installing missing package: $($package.Id)"
+
+              Invoke-CiBoundedProcess `
+                -FilePath $miktexPath `
+                -Arguments @(
+                  '--disable-installer',
+                  'packages',
+                  'install',
+                  '--repository',
+                  $selectedPackageMirror,
+                  $package.Id
+                ) `
+                -LogPath (Join-Path $logDirectory "install-$($package.Id).log") `
+                -PortableRoot $installDirectory `
+                -TimeoutSeconds 120 | Out-Null
+            }
+
+            if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
+              throw "MiKTeX package $($package.Id) did not provide required file: $requiredFile"
+            }
+
+            if ((Get-Item -LiteralPath $requiredFile).Length -eq 0) {
+              throw "MiKTeX required file is empty: $requiredFile"
+            }
+
+            Write-Host "[MiKTeX] Verified package: $($package.Id)"
+          }
+
+          Write-Host '[MiKTeX] Refreshing filename database'
+
+          Invoke-CiBoundedProcess `
+            -FilePath $miktexPath `
+            -Arguments @('--disable-installer', 'fndb', 'refresh') `
+            -LogPath (Join-Path $logDirectory 'miktex-fndb-refresh.log') `
+            -PortableRoot $installDirectory `
+            -TimeoutSeconds 60 | Out-Null
+
+          $findtexmfExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'findtexmf.exe' -File -Recurse)
+          if ($findtexmfExecutables.Count -ne 1) {
+            throw "Expected exactly one installed findtexmf.exe, found $($findtexmfExecutables.Count)"
+          }
+          $findtexmfPath = $findtexmfExecutables[0].FullName
+
+          Write-Host '[MiKTeX] Verifying Lua module discovery'
+
+          $luaLookupLog = Join-Path $logDirectory 'findtexmf-lua-uni-data.log'
+
+          Invoke-CiBoundedProcess `
+            -FilePath $findtexmfPath `
+            -Arguments @('--file-type=lua', 'lua-uni-data.lua') `
+            -LogPath $luaLookupLog `
+            -PortableRoot $installDirectory `
+            -TimeoutSeconds 30 | Out-Null
+
+          $luaLookupPaths = @(
+            Get-Content -LiteralPath $luaLookupLog |
+              ForEach-Object { $_.Trim().Trim('"') } |
+              Where-Object {
+                $_ -and (Test-Path -LiteralPath $_ -PathType Leaf)
+              }
+          )
+
+          if ($luaLookupPaths.Count -lt 1) {
+            throw 'lua-uni-data.lua exists but is not discoverable by MiKTeX'
+          }
+
+          Write-Host "[MiKTeX] Verified Lua module: $($luaLookupPaths[0])"
 
           $lualatexExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'lualatex.exe' -File -Recurse)
           if ($lualatexExecutables.Count -ne 1) {
             throw "Expected exactly one installed lualatex.exe, found $($lualatexExecutables.Count)"
           }
           $lualatexPath = $lualatexExecutables[0].FullName
+
 
           $miktexExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'miktex.exe' -File -Recurse)
           if ($miktexExecutables.Count -ne 1) {
