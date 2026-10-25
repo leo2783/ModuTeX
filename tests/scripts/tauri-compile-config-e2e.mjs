@@ -24,7 +24,7 @@ if (coldCache) {
 }
 const scratch=await mkdtemp(join(tmpdir(),'modutex-compile-config-e2e-')),workspace=join(scratch,`project \u6e2c\u8a66 ${basename(scratch)}`);await mkdir(join(workspace,'out'),{recursive:true});
 await writeFile(join(workspace,'standalone.tex'),'\\documentclass{article}\n\\begin{document}Unconfigured main test.\\end{document}\n');
-await writeFile(join(workspace,'main.tex'),'\\documentclass{article}\n\\begin{document}Main document.\\input{chapter}\\end{document}\n');
+await writeFile(join(workspace,'main.tex'),"\\documentclass{article}\n\\usepackage{amsmath}\n\\title{Cell safety}\n\\author{}\n\\date{}\n\\begin{document}\n\\maketitle\nMain document.\n\\[\\frac{\\partial^2 f}{\\partial x^2}\\]\n\\input{chapter}\n\\end{document}\n");
 const chapter='Included chapter material.\n';await writeFile(join(workspace,'chapter.tex'),chapter);
 const nativeCdp=await createNativeCdpConfig(join(scratch,'webview'));
 const app=spawn(exe,[],{cwd:root,windowsHide:true,stdio:['ignore','ignore','pipe'],env:{...process.env,...nativeCdp.env}});
