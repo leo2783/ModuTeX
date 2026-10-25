@@ -264,40 +264,112 @@ jobs:
           if (-not $archiveVerified) {
             throw 'MiKTeX setup archive download failed or failed SHA-256 verification at every pinned CTAN mirror'
           }
+          
           Write-Host '[MiKTeX] Extracting verified setup archive'
           $setupDirectory = Join-Path $miktexRoot 'setup'
-          $repository = Join-Path $miktexRoot 'repository'
           $installDirectory = Join-Path $miktexRoot 'portable'
-          New-Item -ItemType Directory -Path $setupDirectory, $repository, $installDirectory -ErrorAction Stop | Out-Null
+          New-Item -ItemType Directory -Path $setupDirectory, $installDirectory -ErrorAction Stop | Out-Null
           Expand-Archive -LiteralPath $archivePath -DestinationPath $setupDirectory
           $setupExecutables = @(Get-ChildItem -LiteralPath $setupDirectory -Filter 'miktexsetup_standalone.exe' -File -Recurse)
           if ($setupExecutables.Count -ne 1) {
             throw "Expected exactly one miktexsetup_standalone.exe in the verified archive, found $($setupExecutables.Count)"
           }
           $setupPath = $setupExecutables[0].FullName
-          $setupOptions = @(
-            "--local-package-repository=$repository",
-            '--package-set=basic',
-            "--portable=$installDirectory",
-            '--use-registry=no',
-            '--modify-path=no'
+
+          $packageMirrors = @(
+            [pscustomobject]@{
+              Name = 'latigo'
+              Uri = 'https://mirror.latigo.net/ctan/systems/win32/miktex/tm/packages/'
+            },
+            [pscustomobject]@{
+              Name = 'ibiblio'
+              Uri = 'https://mirrors.ibiblio.org/CTAN/systems/win32/miktex/tm/packages/'
+            }
           )
-          $downloadArguments = $setupOptions + @('download')
-          Write-Host '[MiKTeX] Downloading portable basic package set'
-          Invoke-CiBoundedProcess -FilePath $setupPath -Arguments $downloadArguments -LogPath (Join-Path $logDirectory 'setup-download.log') -PortableRoot $installDirectory -TimeoutSeconds 300
-          $installArguments = $setupOptions + @('install')
+
+          $selectedPackageMirror = $null
+          $setupOptions = $null
+          $attempt = 0
+
+          foreach ($mirror in $packageMirrors) {
+            $attempt++
+            $candidateRepository = Join-Path $miktexRoot "repository-$attempt"
+            New-Item -ItemType Directory -Path $candidateRepository -ErrorAction Stop | Out-Null
+
+            $candidateOptions = @(
+              "--local-package-repository=$candidateRepository",
+              '--package-set=basic',
+              "--portable=$installDirectory",
+              '--use-registry=no',
+              '--modify-path=no'
+            )
+
+            $downloadArguments = @("--remote-package-repository=$($mirror.Uri)") + $candidateOptions + @('download')
+            $downloadLog = Join-Path $logDirectory "setup-download-$attempt.log"
+
+            Write-Host "[MiKTeX] Downloading portable basic package set from $($mirror.Name)"
+
+            try {
+              Invoke-CiBoundedProcess `
+                -FilePath $setupPath `
+                -Arguments $downloadArguments `
+                -LogPath $downloadLog `
+                -PortableRoot $installDirectory `
+                -TimeoutSeconds 180 | Out-Null
+
+              $setupOptions = $candidateOptions
+              $selectedPackageMirror = $mirror.Uri
+              break
+            } catch {
+              $stderrLog = "$downloadLog.stderr.log"
+              $stderrTail = if (Test-Path -LiteralPath $stderrLog) {
+                (Get-Content -LiteralPath $stderrLog -Tail 8) -join " | "
+              } else {
+                ""
+              }
+
+              Write-Warning "[MiKTeX] Package mirror $($mirror.Name) failed: $($_.Exception.Message); stderr: $stderrTail"
+            }
+          }
+
+          if (-not $selectedPackageMirror) {
+            throw 'MiKTeX basic package download failed at every configured package mirror; inspect setup-download-*.log.stderr.log'
+          }
+
           Write-Host '[MiKTeX] Installing portable basic package set'
-          Invoke-CiBoundedProcess -FilePath $setupPath -Arguments $installArguments -LogPath (Join-Path $logDirectory 'setup-install.log') -PortableRoot $installDirectory -TimeoutSeconds 180
+
+          Invoke-CiBoundedProcess `
+            -FilePath $setupPath `
+            -Arguments ($setupOptions + @('install')) `
+            -LogPath (Join-Path $logDirectory 'setup-install.log') `
+            -PortableRoot $installDirectory `
+            -TimeoutSeconds 180 | Out-Null
 
           $mpmExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'mpm.exe' -File -Recurse)
           if ($mpmExecutables.Count -ne 1) {
             throw "Expected exactly one installed mpm.exe, found $($mpmExecutables.Count)"
           }
+
           $mpmPath = $mpmExecutables[0].FullName
-          Write-Host '[MiKTeX] Selecting online package repository'
-          Invoke-CiBoundedProcess -FilePath $mpmPath -Arguments @('--pick-repository-url') -LogPath (Join-Path $logDirectory 'mpm-repository.log') -PortableRoot $installDirectory -TimeoutSeconds 60
+
+          Write-Host "[MiKTeX] Using the successful package mirror: $selectedPackageMirror"
+
+          Invoke-CiBoundedProcess `
+            -FilePath $mpmPath `
+            -Arguments @("--set-repository=$selectedPackageMirror") `
+            -LogPath (Join-Path $logDirectory 'mpm-repository.log') `
+            -PortableRoot $installDirectory `
+            -TimeoutSeconds 60 | Out-Null
+
           Write-Host '[MiKTeX] Updating online package catalog'
-          Invoke-CiBoundedProcess -FilePath $mpmPath -Arguments @('--update-db') -LogPath (Join-Path $logDirectory 'mpm-update-db.log') -PortableRoot $installDirectory -TimeoutSeconds 120
+
+          Invoke-CiBoundedProcess `
+            -FilePath $mpmPath `
+            -Arguments @('--update-db') `
+            -LogPath (Join-Path $logDirectory 'mpm-update-db.log') `
+            -PortableRoot $installDirectory `
+            -TimeoutSeconds 120 | Out-Null
+
           $initexmfExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'initexmf.exe' -File -Recurse)
           if ($initexmfExecutables.Count -ne 1) {
             throw "Expected exactly one installed initexmf.exe, found $($initexmfExecutables.Count)"
