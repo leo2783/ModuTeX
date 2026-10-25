@@ -288,6 +288,101 @@ jobs:
       - name: Configure app-scoped WebView2 CDP policy
         id: webview2-cdp-policy
         run: pwsh -NoProfile -File tests/scripts/helpers/webview2-cdp-policy.ps1 -Action Configure
+      - name: Prewarm Tectonic for compile-config E2E
+        if: matrix.lane == 'compile-config'
+        timeout-minutes: 12
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . ./tests/scripts/helpers/ci-bounded-process.ps1
+
+          $script:CiProcessDeadline = [DateTime]::UtcNow.AddSeconds(650)
+
+          $tectonic = (Resolve-Path 'vendor/tectonic/windows-x64/tectonic.exe').Path
+          $root = Join-Path $env:RUNNER_TEMP ('modutex-tectonic-prewarm-' + [guid]::NewGuid().ToString('N'))
+          $logs = Join-Path $env:GITHUB_WORKSPACE '.verification-artifacts/tauri'
+          New-Item -ItemType Directory -Force -Path $root, $logs | Out-Null
+
+          $source = Join-Path $root 'prewarm.tex'
+          @'
+          \documentclass{article}
+          \usepackage{amsmath}
+          \usepackage[top=1.5cm,bottom=2.5cm,left=3cm,right=4cm]{geometry}
+          \begin{document}
+          Real Tectonic prewarm.
+          \[
+          \frac{\partial^2 f}{\partial x^2}
+          \]
+          \end{document}
+          '@ | Set-Content -LiteralPath $source -Encoding utf8
+
+          if (-not $env:LOCALAPPDATA) {
+            throw 'LOCALAPPDATA is required for the managed Tectonic cache'
+          }
+
+          $managedCache = Join-Path $env:LOCALAPPDATA 'io.github.leo2783.modutex.tauri/tectonic'
+          $modes = @(
+            @{ Name = 'managed'; Cache = $managedCache },
+            @{ Name = 'custom'; Cache = $null }
+          )
+
+          foreach ($mode in $modes) {
+            if ($mode.Cache) {
+              $env:TECTONIC_CACHE_DIR = $mode.Cache
+            } else {
+              Remove-Item Env:TECTONIC_CACHE_DIR -ErrorAction SilentlyContinue
+            }
+
+            $output = Join-Path $root "output-$($mode.Name)"
+            New-Item -ItemType Directory -Force -Path $output | Out-Null
+
+            $success = $false
+
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              $log = Join-Path $logs "tectonic-prewarm-$($mode.Name)-$attempt.log"
+              Write-Host "[Tectonic] $($mode.Name) attempt $attempt"
+
+              try {
+                Invoke-CiBoundedProcess `
+                  -FilePath $tectonic `
+                  -Arguments @(
+                    '--untrusted',
+                    '--keep-logs',
+                    '--synctex',
+                    '--outdir',
+                    $output,
+                    $source
+                  ) `
+                  -LogPath $log `
+                  -PortableRoot $root `
+                  -TimeoutSeconds 150 | Out-Null
+
+                $pdf = Join-Path $output 'prewarm.pdf'
+                if (-not (Test-Path -LiteralPath $pdf -PathType Leaf)) {
+                  throw 'Tectonic prewarm produced no PDF'
+                }
+
+                $bytes = [System.IO.File]::ReadAllBytes($pdf)
+                if ($bytes.Length -lt 5 -or
+                    [System.Text.Encoding]::ASCII.GetString($bytes, 0, 5) -ne '%PDF-') {
+                  throw 'Tectonic prewarm produced an invalid PDF'
+                }
+
+                $success = $true
+                break
+              } catch {
+                Write-Warning "[Tectonic] $($mode.Name) attempt $attempt failed: $_"
+                if ($attempt -lt 3) {
+                  Start-Sleep -Seconds 5
+                }
+              }
+            }
+
+            if (-not $success) {
+              throw "Tectonic $($mode.Name) prewarm failed after three attempts"
+            }
+          }
+
+          Remove-Item Env:TECTONIC_CACHE_DIR -ErrorAction SilentlyContinue
       - name: Run native E2E lane (${{ matrix.lane }})
         env:
           MODUTEX_TEST_PERIODIC_WATCH: ${{ matrix.lane == 'compile-config' && '1' || '0' }}
@@ -304,4 +399,5 @@ jobs:
           name: ModuTeX-Tauri-Native-E2E-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             .verification-artifacts/tauri/*-e2e.*
+            .verification-artifacts/tauri/tectonic-prewarm-*.log
           if-no-files-found: warn

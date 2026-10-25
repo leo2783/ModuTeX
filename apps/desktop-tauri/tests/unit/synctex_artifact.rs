@@ -372,8 +372,23 @@ fn real_tectonic_normalized_artifact_preserves_entry_include_and_pdf_locations()
         .unwrap()
         .starts_with(b"%PDF-"));
     let raw = fs::read(output.join("main.synctex.gz")).unwrap();
-    let normalized = normalize_gzip(&raw, &input, paths.iter(), &paths[0])
-        .expect("real engine artifact normalizes");
+    let normalized = normalize_gzip(&raw, &input, paths.iter(), &paths[0]).unwrap_or_else(|| {
+        let mut decoded = Vec::new();
+        let decode_result = MultiGzDecoder::new(raw.as_slice()).read_to_end(&mut decoded);
+
+        let excerpt = String::from_utf8_lossy(&decoded);
+        panic!(
+            "SyncTeX normalization failed\n\
+             input root: {}\n\
+             expected paths: {:?}\n\
+             gzip decoding: {:?}\n\
+             raw SyncTeX:\n{}",
+            input.display(),
+            paths.iter().map(|p| p.as_str()).collect::<Vec<_>>(),
+            decode_result,
+            excerpt.lines().take(30).collect::<Vec<_>>().join("\n")
+        );
+    });
     let normalized_text = gunzip(&normalized);
     assert_relative_anchor_distances(&normalized_text);
     assert!(anchor_values(&normalized_text).len() >= 4);

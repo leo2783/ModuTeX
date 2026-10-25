@@ -2709,12 +2709,25 @@ mod windows_impl {
                         "interactive response deadline expired",
                     ));
                 }
+
                 if self.session_stdout_eof || self.session_disconnected {
+                    #[cfg(test)]
+                    eprintln!(
+                        "Interactive child exited before marker.\nstdout:\n{}\nstderr:\n{}",
+                        String::from_utf8_lossy(
+                            &self.session_stdout[self.session_stdout.len().saturating_sub(4096)..]
+                        ),
+                        String::from_utf8_lossy(
+                            &self.session_stderr[self.session_stderr.len().saturating_sub(4096)..]
+                        )
+                    );
+
                     return Err(SessionError::new(
                         SessionErrorKind::ReadFailure,
                         "interactive child ended before its response marker",
                     ));
                 }
+
                 let wait = deadline
                     .saturating_duration_since(Instant::now())
                     .min(POLL_INTERVAL);
