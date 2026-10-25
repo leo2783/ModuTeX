@@ -21,17 +21,23 @@ test('bottom dock uses one scroll region and preserves its session across real p
         await rm(directory, { recursive: true, force: true });
     });
     const component = path.join(frontend, 'src/components/WorkbenchDock.svelte').replaceAll('\\', '/');
+    const terminalView = path.join(frontend, 'src/features/terminal/xterm-view.ts').replaceAll('\\', '/');
+    const baseStyles = path.join(frontend, 'src/styles/base.css').replaceAll('\\', '/');
     await writeFile(path.join(directory, 'Harness.svelte'), `<script>
 import WorkbenchDock from ${JSON.stringify(component)};
+import { createXtermView } from ${JSON.stringify(terminalView)};
 let activeTab = $state(null);
 const evidence = window.dockEvidence = { starts: 0, closes: 0, disposes: 0, fits: 0, resizes: 0 };
 const controller = { availability: async () => ({ available: true, reason: '', detail: '' }),
  start: async () => { evidence.starts++; }, send: () => true,
  resize: () => { evidence.resizes++; return true; }, close: async () => { evidence.closes++; } };
-const sessionFactory = async () => controller;
-const viewFactory = async (host, handlers) => ({ write: async () => {}, focus: () => {},
- fit: () => { evidence.fits++; handlers.onResize(90, 25); }, size: () => ({ cols: 90, rows: 25 }),
- reset: () => {}, dispose: () => { evidence.disposes++; } });
+const sessionFactory = async (_owner, callbacks) => { window.dockCallbacks = callbacks; return controller; };
+const viewFactory = async (host, handlers) => {
+ const view = createXtermView(host, handlers);
+ window.dockTerminalSize = () => view.size();
+ return { ...view, fit: () => { evidence.fits++; view.fit(); },
+  dispose: () => { evidence.disposes++; view.dispose(); } };
+};
 const diagnostics = Array.from({length: 100}, (_, i) => ({ severity: 'error', message: 'Problem ' + i,
  path: 'main.tex', line: i + 1, column: 1 }));
 </script>
@@ -39,7 +45,7 @@ const diagnostics = Array.from({length: 100}, (_, i) => ({ severity: 'error', me
  bind:activeTab {diagnostics} compileLog={'Output line\\n'.repeat(300)}
  terminalSessionFactory={sessionFactory} terminalViewFactory={viewFactory} /></div>
 <style>:global(html),:global(body){margin:0;height:100%;overflow:hidden}.shell{height:100dvh;display:flex;flex-direction:column;min-height:0}.editor{flex:1;min-height:0}</style>`);
-    await writeFile(path.join(directory, 'main.js'), "import {mount} from 'svelte';import Harness from './Harness.svelte';mount(Harness,{target:document.getElementById('app')});");
+    await writeFile(path.join(directory, 'main.js'), `import {mount} from 'svelte';import ${JSON.stringify(baseStyles)};import Harness from './Harness.svelte';mount(Harness,{target:document.getElementById('app')});`);
     await writeFile(path.join(directory, 'index.html'), '<!doctype html><html><body><div id="app"></div><script type="module" src="/main.js"></script></body></html>');
     server = await createServer({ root: directory, configFile: false, plugins: [svelte()],
         server: { host: '127.0.0.1', port: 0, fs: { allow: [root] } }, logLevel: 'error' });
@@ -73,6 +79,21 @@ const diagnostics = Array.from({length: 100}, (_, i) => ({ severity: 'error', me
     await page.getByRole('tab', { name: 'Terminal', exact: true }).click();
     await page.getByRole('button', { name: /Start terminal/ }).click();
     await page.waitForFunction(() => dockEvidence.starts === 1);
+    await page.evaluate(async () => {
+        await window.dockCallbacks.onOutput(new TextEncoder().encode('X'.repeat(2000) + '\r\n' + 'Terminal history\r\n'.repeat(100)));
+    });
+    let previousColumns = await page.evaluate(() => window.dockTerminalSize().cols);
+    for (const width of [640, 480]) {
+        await page.setViewportSize({ width, height: 720 });
+        await page.waitForFunction(previous => window.dockTerminalSize().cols < previous, previousColumns);
+        previousColumns = await page.evaluate(() => window.dockTerminalSize().cols);
+        const widths = await dock.evaluate(element => [element, ...element.querySelectorAll('.workbench-dock-body, .terminal-panel-content, .terminal-toolbar, .terminal-panel, .terminal-host')].map(node => ({ name: node.className, scroll: node.scrollWidth, client: node.clientWidth })));
+        assert(widths.every(value => value.scroll <= value.client + 1), JSON.stringify(widths));
+        await page.locator('.terminal-host').hover();
+        await page.mouse.wheel(400, 0);
+        assert.equal(await page.locator('.workbench-dock-body').evaluate(element => element.scrollLeft), 0);
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    }
     await page.getByRole('tab', { name: /^Problems/ }).click();
     await page.getByRole('button', { name: 'Close panel', exact: true }).click();
     assert.equal(await page.locator('.workbench-dock-body').isVisible(), false);

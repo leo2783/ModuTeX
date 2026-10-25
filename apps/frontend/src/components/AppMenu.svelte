@@ -65,21 +65,22 @@
 		z-index: 60;
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
-		min-width: 208px;
-		max-width: min(320px, 90vw);
-		padding: 5px;
+		gap: 1px;
+		min-width: min(208px, calc(100vw - 16px));
+		max-width: calc(100vw - 16px);
+		padding: 4px;
 		border: 1px solid var(--line);
 		border-radius: 7px;
 		background: var(--surface);
 		box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
 	}
+	.app-menu.more-menu > .app-menu-items { min-width: min(196px, calc(100vw - 16px)); }
 	.app-menu.file-menu > .app-menu-items { inset-inline-start: 0; inset-inline-end: auto; }
 	.app-menu-items :global(button),
 	.app-menu-items :global(a) {
 		width: 100%;
-		min-height: 36px;
-		padding: 7px 10px;
+		min-height: 34px;
+		padding: 6px 10px;
 		border: 0;
 		border-radius: 4px;
 		background: transparent;
@@ -87,6 +88,7 @@
 		text-align: start;
 		text-decoration: none;
 		white-space: nowrap;
+		line-height: 1.35;
 	}
 	.app-menu-items :global(button:hover:not(:disabled)),
 	.app-menu-items :global(a:hover) { background: var(--selection); }

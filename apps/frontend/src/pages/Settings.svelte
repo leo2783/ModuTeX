@@ -1,24 +1,50 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import type { Preferences } from '../state/preferences.ts';
 	import { text } from '../i18n/text.ts';
+	import type { FileDesktopPort } from '../features/files/desktop.ts';
+	import type { FileEntry, WorkspaceInfo } from '@modutex/frontend-contracts';
+	import type { SourceDocument, SourcePatch } from '../features/document-core/core.ts';
+	import CompileSettings from './CompileSettings.svelte';
+
+	type SettingsSection = 'general-preferences' | 'appearance' | 'editor-preferences' | 'shortcut-preferences' | 'compile-settings' | 'restore-preferences';
 
 	let {
 		preferences,
+		desktop = null,
+		workspace = null,
+		entries = [],
+		source = null,
+		sourcePath = '',
+		sourceDirty = false,
+		sourceCommandDisabled = false,
+		onApplySourcePatches = () => false,
+		activeSection: selectedSection = 'general-preferences',
 		notice,
 		locale,
 		onChange,
-		onRestore
+		onRestore,
+		onSectionChange = () => {}
 	}: {
 		preferences: Preferences;
+		desktop?: FileDesktopPort | null;
+		workspace?: WorkspaceInfo | null;
+		entries?: readonly FileEntry[];
+		source?: SourceDocument | null;
+		sourcePath?: string;
+		sourceDirty?: boolean;
+		sourceCommandDisabled?: boolean;
+		onApplySourcePatches?: (identity: { readonly documentId: string; readonly version: number }, patches: readonly SourcePatch[]) => boolean;
+		activeSection?: SettingsSection;
 		notice: string;
 		locale?: import('../i18n/text.ts').Language;
 		onChange: <K extends keyof Preferences>(key: K, value: Preferences[K]) => void;
 		onRestore: () => void;
+		onSectionChange?: (section: SettingsSection) => void;
 	} = $props();
 
-	type SettingsSection = 'general-preferences' | 'appearance' | 'editor-preferences' | 'shortcut-preferences' | 'restore-preferences';
-	let activeSection = $state<SettingsSection>('general-preferences');
+	let activeSection = $state<SettingsSection>(untrack(() => selectedSection));
+	$effect(() => { activeSection = selectedSection; });
 
 	const t = (zh: string, en: string) => text(locale ?? preferences.language, zh, en);
 
@@ -105,8 +131,9 @@
 
 	async function navigateToSection(id: SettingsSection) {
 		activeSection = id;
+		onSectionChange(id);
 		await tick();
-		const target = document.getElementById(id);
+		const target = document.getElementById(id === 'compile-settings' ? 'compile-settings-title' : id);
 		if (target) {
 			target.focus();
 		}
@@ -139,6 +166,12 @@
 			aria-current={activeSection === 'shortcut-preferences' ? 'true' : undefined}
 			onclick={() => navigateToSection('shortcut-preferences')}
 		>{t('快捷鍵', 'Shortcuts')}</button>
+		<button
+			type="button"
+			class="text-button"
+			aria-current={activeSection === 'compile-settings' ? 'true' : undefined}
+			onclick={() => navigateToSection('compile-settings')}
+		>{t('編譯', 'Compilation')}</button>
 		<button
 			type="button"
 			class="text-button"
@@ -245,8 +278,10 @@
 					<option value="none">{t('不使用快捷鍵', 'Disabled')}</option>
 				</select>
 			</div>
-			<p class="settings-notice">{t('Ctrl／Command + O 開啟文件；Ctrl／Command + S 儲存。', 'Ctrl / Command + O opens a document; Ctrl / Command + S saves.')}</p>
+			<p class="settings-notice">{t('Ctrl／Command + O 可開啟文件，Ctrl／Command + S 可儲存。', 'Ctrl / Command + O opens a document. Ctrl / Command + S saves it.')}</p>
 		</section>
+		{:else if activeSection === 'compile-settings'}
+		<CompileSettings {desktop} {workspace} {entries} {source} {sourcePath} {sourceDirty} {sourceCommandDisabled} {onApplySourcePatches} locale={preferences.language} />
 		{:else if activeSection === 'restore-preferences'}
 		<section aria-labelledby="restore-preferences">
 			<h2 id="restore-preferences" tabindex="-1">{t('恢復預設值', 'Restore defaults')}</h2>

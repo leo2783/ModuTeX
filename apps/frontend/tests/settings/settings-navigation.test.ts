@@ -288,13 +288,14 @@ test('section nav buttons update aria-current truthfully and shift focus to h2 h
 		const aside = container.querySelector('aside');
 		assert.ok(aside, 'Aside navigation element must exist');
 		const navButtons = Array.from(aside.querySelectorAll('button'));
-		assert.equal(navButtons.length, 5, 'Must have 5 section nav buttons');
+		assert.equal(navButtons.length, 6, 'Must have 6 section nav buttons');
 
-		const [generalBtn, appearanceBtn, editorBtn, shortcutsBtn, restoreBtn] = navButtons;
+		const [generalBtn, appearanceBtn, editorBtn, shortcutsBtn, compilationBtn, restoreBtn] = navButtons;
 		assert.ok(generalBtn, 'General section nav button must exist');
 		assert.ok(appearanceBtn, 'Appearance section nav button must exist');
 		assert.ok(editorBtn, 'Editor section nav button must exist');
 		assert.ok(shortcutsBtn, 'Shortcuts section nav button must exist');
+		assert.ok(compilationBtn, 'Compilation section nav button must exist');
 		assert.ok(restoreBtn, 'Restore defaults section nav button must exist');
 
 		// Initial state: first button general-preferences is aria-current="true"
@@ -653,7 +654,7 @@ test('required onRestore executes truthfully and explanatory description clarifi
 	try {
 		const aside = container.querySelector('aside');
 		assert.ok(aside);
-		const restoreNavBtn = aside.querySelectorAll('button')[4];
+		const restoreNavBtn = Array.from(aside.querySelectorAll('button')).find(button => button.textContent?.includes('恢復預設值'));
 		assert.ok(restoreNavBtn);
 		restoreNavBtn.click();
 		flushSync();

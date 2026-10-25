@@ -363,7 +363,7 @@ test(
 			assert.equal(input.getAttribute('aria-invalid'), 'true');
 
 			// Navigate to Restore defaults section
-			const restoreNavBtn = navButtons[4];
+			const restoreNavBtn = navButtons.find(button => /恢復預設值|Restore defaults/.test(button.textContent ?? ''));
 			assert.ok(restoreNavBtn, 'Restore defaults nav button must exist');
 			restoreNavBtn.click();
 			api.flushSync();

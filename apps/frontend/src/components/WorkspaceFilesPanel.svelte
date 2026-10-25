@@ -3,6 +3,7 @@
 	import { onDestroy, untrack } from 'svelte';
 	import type { FileEntry } from '@modutex/frontend-contracts';
 	import { text, type Language } from '../i18n/text.ts';
+	import { getTemplateSource } from '../features/files/templates.ts';
 	import {
 		isWorkspaceFilesCapabilityUnavailable,
 		type WorkspaceFileDeleteReceipt,
@@ -190,7 +191,9 @@
 		untrack(() => {
 			tool = requestedTool;
 			createFilePath = requestedPath;
-			createFileContents = '';
+			createFileContents = requestedTool === 'create-file' && /\.tex$/i.test(requestedPath)
+				? getTemplateSource('blank')
+				: '';
 			binaryFileBytes = null;
 			binaryFileLabel = '';
 			if (binaryInput) binaryInput.value = '';

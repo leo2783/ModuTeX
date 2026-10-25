@@ -10,7 +10,7 @@ import type {
 	ReadReceipt,
 	WorkspaceInfo
 } from '@modutex/frontend-contracts';
-import type { SourceDocument, SourceSpan } from '../document-core/core.ts';
+import type { SourceDocument, SourcePatch, SourceSpan } from '../document-core/core.ts';
 import type { FileDesktopPort } from '../files/desktop.ts';
 import type { TemplateId } from '../files/templates.ts';
 import type { WorkspaceFilesPort, WorkspaceFilesTask } from '../files/workspace-files.ts';
@@ -22,6 +22,7 @@ export type NoticeDescriptor = [string, string] | { readonly raw: string };
 export type LineDiagnostic = Diagnostic & { readonly path: string; readonly line: number };
 
 export interface SourceViewHandle {
+	applySourcePatches?(identity: { readonly documentId: string; readonly version: number }, patches: readonly SourcePatch[]): boolean;
 	getEditorSelection(documentId: string, documentVersion: number): {
 		readonly documentId?: string;
 		readonly documentVersion?: number;

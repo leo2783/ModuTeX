@@ -466,7 +466,7 @@ import { createTerminalSession, createTerminalView } from './terminal-runtime.mj
 		gap: 8px;
 		padding: 4px 8px;
 		background: var(--canvas);
-		overflow-x: auto;
+		overflow-x: hidden;
 		white-space: nowrap;
 	}
 	.terminal-toolbar button {

@@ -571,13 +571,15 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 				await structure.click(); await page.locator('.structure-options [data-structure="'+kind+'"]').click();
 				await page.locator(selector).filter({ hasText: 'Structured text.' }).waitFor({ state: 'visible' });
 				assert.match(await sourceEditor.textContent(), source);
+				assert.match(await sourceEditor.textContent(), /\\documentclass\{article\}/);
+				assert.match(await sourceEditor.textContent(), /\\begin\{document\}[\s\S]*\\end\{document\}/);
 				assert.equal(await page.locator('.visual-raw').count(), 0, 'generated structure stays visually editable');
 			}
 			await page.screenshot({ path: screenshotRoot + 'text-structure-20261012.png' });
 		});
 		await t.test('visible language switch updates editor tools and settings and persists across reload', async () => {
 			const original = await sourceEditor.innerText();
-			await openMoreMenu(); const language = page.locator('summary[aria-label="語言"]'); await language.waitFor({ state: 'visible' }); assert.equal(await language.locator('svg').count(), 1); assert.equal(await language.textContent(), '');
+			await openMoreMenu(); const language = page.locator('details.language-menu > summary'); await language.waitFor({ state: 'visible' }); assert.match(await language.innerText(), /語言.*繁體中文/s);
 			await language.click(); assert.equal(await page.locator('.app').getAttribute('lang'), 'zh-Hant'); assert.equal(await page.getByRole('button', { name: '繁體中文', exact: true }).getAttribute('aria-pressed'), 'true');
 			await page.keyboard.press('Escape'); assert.equal(await page.locator('.language-menu').evaluate(menu => menu.open), false); await openMoreMenu(); await language.click();
 			await page.screenshot({ path: screenshotRoot + 'language-globe-menu.png' });
@@ -590,9 +592,9 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			assert.equal(await sourceEditor.innerText(), original, 'locale and canceled English tools preserve source');
 			await openMoreMenu(); await page.getByRole('link', { name: 'Settings', exact: true }).click(); await page.locator('#language-value').selectOption('zh-Hant');
 			assert.equal(await page.locator('.app').getAttribute('lang'), 'zh-Hant');
-			await openMoreMenu(); await page.locator('summary[aria-label="語言"]').click(); await page.getByRole('button', { name: 'English', exact: true }).click();
+			await openMoreMenu(); await page.locator('details.language-menu > summary').click(); await page.getByRole('button', { name: 'English', exact: true }).click();
 			page.once('dialog', dialog => dialog.accept()); await page.reload();
-			await openMoreMenu(); await page.locator('summary[aria-label="Language"]').waitFor({ state: 'visible' }); await page.locator('summary[aria-label="Language"]').click(); assert.equal(await page.locator('.app').getAttribute('lang'), 'en');
+			await openMoreMenu(); await page.locator('details.language-menu > summary').waitFor({ state: 'visible' }); await page.locator('details.language-menu > summary').click(); assert.equal(await page.locator('.app').getAttribute('lang'), 'en');
 			await page.getByRole('button', { name: '繁體中文', exact: true }).click(); assert.equal(await page.locator('.app').getAttribute('lang'), 'zh-Hant');
 		});
 		await t.test('help topics are readable in both themes at desktop widths', async () => {

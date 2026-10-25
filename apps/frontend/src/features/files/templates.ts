@@ -12,8 +12,12 @@ const sources: Readonly<Record<TemplateId, string>> = Object.freeze({
 	article: '\\documentclass{article}\n\\usepackage[margin=2cm]{geometry}\n\n\\title{Document title}\n\\author{}\n\\date{}\n\n\\begin{document}\n\\maketitle\n\n\\section{Introduction}\n\n\\end{document}\n',
 	report: '\\documentclass{report}\n\\usepackage[margin=2cm]{geometry}\n\n\\title{Report title}\n\\author{}\n\\date{}\n\n\\begin{document}\n\\maketitle\n\n\\chapter{Introduction}\n\n\\end{document}\n'
 });
+export function getTemplateSource(value: TemplateId): string {
+	if (!Object.hasOwn(sources, value)) throw new Error('BAD_TEMPLATE');
+	return sources[value];
+}
 /** Closed identifiers, not arbitrary source paths or inherited object properties. */
 export function createDraft(value: unknown): SourceDocument {
 	if (typeof value !== 'string' || !templateOptions.some(option => option.id === value)) throw new Error('BAD_TEMPLATE');
-	return SourceDocument.open(new TextEncoder().encode(sources[value as TemplateId]));
+	return SourceDocument.open(new TextEncoder().encode(getTemplateSource(value as TemplateId)));
 }

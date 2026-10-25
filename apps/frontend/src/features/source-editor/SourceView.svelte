@@ -468,6 +468,20 @@
 			return null;
 		}
 	}
+	export function applySourcePatches(
+		identity: { readonly documentId: string; readonly version: number },
+		patches: readonly SourcePatch[]
+	): boolean {
+		if (!editor || disposed || saving || tool !== null) return false;
+		try {
+			const current = editor.state.field(sourceState).projection.document;
+			if (current.documentId !== identity.documentId || current.version !== identity.version) return false;
+			editor.dispatch(sourcePatchTransaction(editor.state, identity, patches, false, true));
+			return true;
+		} catch {
+			return false;
+		}
+	}
 	function completeDiagnosticNavigation(sequence: number) {
 		handledDiagnosticNavigation = Math.max(handledDiagnosticNavigation, sequence);
 	}

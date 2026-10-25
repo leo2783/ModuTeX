@@ -154,8 +154,8 @@ export function paragraphInsertionTransaction(state: EditorState, span: SourceSp
 	return { transaction, paragraph: { documentId: next.documentId, version: next.version, from: span.from + offset } };
 }
 
-export function sourcePatchTransaction(state: EditorState, identity: { documentId: string; version: number }, patches: readonly SourcePatch[], preserveLineEndings = false) {
-	if (state.readOnly) throw new Error('EDITOR_READ_ONLY');
+export function sourcePatchTransaction(state: EditorState, identity: { documentId: string; version: number }, patches: readonly SourcePatch[], preserveLineEndings = false, allowReadOnly = false) {
+	if (state.readOnly && !allowReadOnly) throw new Error('EDITOR_READ_ONLY');
 	const projection = state.field(sourceState).projection, source = projection.document;
 	if (source.documentId !== identity.documentId || source.version !== identity.version) throw new Error('STALE_VISUAL');
 	const editorOffset = (offset: number) => {

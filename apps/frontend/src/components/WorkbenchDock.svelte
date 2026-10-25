@@ -200,7 +200,8 @@
 		flex: 1 1 auto;
 		min-width: 0;
 		min-height: 0;
-		overflow: auto;
+		overflow-x: hidden;
+		overflow-y: auto;
 		overscroll-behavior: contain;
 	}
 	.workbench-dock-body[hidden] { display: none !important; }

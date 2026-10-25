@@ -1120,6 +1120,9 @@ test('workspace new-file form keeps failed input and opens a successfully create
 		assert.ok(pathInput);
 		assert.ok(contents);
 		assert.equal(pathInput.value, 'notes/new.tex');
+		assert.match(contents.value, /\\documentclass\{article\}/);
+		assert.match(contents.value, /\\usepackage\[margin=2cm\]\{geometry\}/);
+		assert.match(contents.value, /\\begin\{document\}[\s\S]*\\end\{document\}/);
 		contents.value = 'new TeX content';
 		contents.dispatchEvent(new win.Event('input', { bubbles: true }));
 		const createButton = Array.from(form.querySelectorAll<HTMLButtonElement>('button[type="submit"]'))[0];

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { SourceDocument, SourceProjection, SourceSpan } from './features/document-core/core.ts';
+import type { SourceDocument, SourcePatch, SourceProjection, SourceSpan } from './features/document-core/core.ts';
 	import { projectionIsCurrent } from './features/document-core/projection-state.ts';
 	import type { OutlineEntry } from './features/source-editor/outline.ts';
 	import { onDestroy, onMount, tick } from 'svelte';
@@ -111,7 +111,19 @@
 	let diagnosticNavigation = $state.raw<DiagnosticNavigationRequest | null>(null);
 	let diagnosticNavigationSequence = 0;
 	let navigationSequence = 0;
-	let route = $state<'home' | 'workbench' | 'settings' | 'compile-settings' | 'release-notes' | 'help'>('home');
+	type SettingsSection = 'general-preferences' | 'appearance' | 'editor-preferences' | 'shortcut-preferences' | 'compile-settings' | 'restore-preferences';
+	let route = $state<'home' | 'workbench' | 'settings' | 'release-notes' | 'help'>('home');
+	let settingsSection = $state<SettingsSection>('general-preferences');
+	function updateSettingsSection(section: SettingsSection) {
+		settingsSection = section;
+		const hash = section === 'compile-settings' ? '#/compile-settings' : '#/settings';
+		if (window.location.hash !== hash) window.history.replaceState(null, '', hash);
+	}
+	function applySettingsSourcePatches(identity: { readonly documentId: string; readonly version: number }, patches: readonly SourcePatch[]): boolean {
+		if (saving || opening || confirming || compiling) return false;
+		if (!source || source.documentId !== identity.documentId || source.version !== identity.version) return false;
+		return sourceViewInstance?.applySourcePatches?.(identity, patches) ?? false;
+	}
 	$effect(() => { if (route === 'workbench') workbenchVisited = true; });
 	let homeLoadKey = $state(0);
 	let recent = $state.raw<readonly RecentDocument[]>([]);
@@ -876,7 +888,8 @@
 			const hash = window.location.hash;
 			showLimitations = hash === '#/release-notes/limitations';
 			selectedHelp = helpTopic(hash);
-			route = hash === '#/help' || hash.startsWith('#/help/') ? 'help' : hash === '#/compile-settings' ? 'compile-settings' : hash === '#/settings' ? 'settings' : hash === '#/release-notes' || showLimitations ? 'release-notes' : hash === '#/workbench' || hash === '#/workspace' ? 'workbench' : 'home';
+			settingsSection = hash === '#/compile-settings' ? 'compile-settings' : 'general-preferences';
+			route = hash === '#/help' || hash.startsWith('#/help/') ? 'help' : hash === '#/compile-settings' || hash === '#/settings' ? 'settings' : hash === '#/release-notes' || showLimitations ? 'release-notes' : hash === '#/workbench' || hash === '#/workspace' ? 'workbench' : 'home';
 		}; routes(); window.addEventListener('hashchange', routes);
 		const warn = (event: BeforeUnloadEvent) => {
 			if (closeIsConfirmedForCurrentSource() || !dirty || !source) return;
@@ -1292,37 +1305,37 @@
 					<button type="button" onclick={saveSourceAs} disabled={opening || saving || compiling || confirming}>{t('另存新檔', 'Save as')}</button>
 				{/if}
 			</AppMenu>
-			{#if route === 'workbench' && desktop && source && !sourceMissingOnDisk()}
-				<div class="global-compile-primary" inert={desktopLoading}>
-					{#if compiling}
-						<button type="button" class="primary" onclick={cancelCompile} disabled={compileCancellationRequestedFor === compileTicket}>{compileCancellationRequestedFor === compileTicket ? t('正在取消…', 'Cancelling…') : t('取消編譯', 'Cancel compilation')}</button>
-					{:else}
-						<button type="button" class="primary" onclick={compileSource} disabled={opening || saving || confirming}>{t('編譯 PDF', 'Compile PDF')}</button>
-					{/if}
-				</div>
-			{/if}
-			<a class="secondary-navigation" href="#/compile-settings" aria-current={route === 'compile-settings' ? 'page' : undefined}>{t('編譯設定', 'Compile settings')}</a>
-			<AppMenu label={t('更多', 'More')} menuClass="more-menu">
-				<div class="compact-menu-group">
-					<a href="#/" aria-current={route === 'home' ? 'page' : undefined}>{t('首頁', 'Home')}</a>
-					<a href="#/workbench" aria-current={route === 'workbench' ? 'page' : undefined}>{t('工作台', 'Workbench')}</a>
-					<button type="button" onclick={() => newDocument('blank')} disabled={opening || saving || compiling || confirming}>{t('新增文件', 'New document')}</button>
-					<button type="button" onclick={() => openWorkspaceFileCreate()} disabled={opening || saving || compiling || confirming}>{t('新增工作區檔案', 'New workspace file')}</button>
-					<button type="button" onclick={() => void chooseSource()} disabled={opening || saving}>{t('開啟文件', 'Open document')}</button>
-					{#if desktop}<button type="button" onclick={() => void chooseSource('folder')} disabled={opening || saving}>{t('開啟資料夾', 'Open folder')}</button>{/if}
-					{#if desktop && source}
-						<button type="button" onclick={saveSource} disabled={opening || saving || compiling || confirming || !dirty || sourceMissingOnDisk()}>{t('儲存', 'Save')}</button>
-						<button type="button" onclick={saveSourceAs} disabled={opening || saving || compiling || confirming}>{t('另存新檔', 'Save as')}</button>
-					{/if}
-					<a href="#/compile-settings">{t('編譯設定', 'Compile settings')}</a>
-				</div>
-				<hr />
-				<a href="#/settings" aria-current={route === 'settings' ? 'page' : undefined}>{t('設定', 'Settings')}</a>
-				<a href="#/help" aria-current={route === 'help' ? 'page' : undefined}>{t('說明', 'Help')}</a>
-				<a href="#/release-notes" aria-current={route === 'release-notes' ? 'page' : undefined}>{t('版本紀錄', 'Release notes')}</a>
-				{#if isTauri()}<button type="button" onclick={openNewWindow} disabled={openingWindow}>{t('新增視窗', 'New window')}</button>{/if}
-				{#await import('./components/LanguageMenu.svelte') then { default: LanguageMenu }}<LanguageMenu locale={preferences.language} onChange={language => changePreference('language', language)} />{/await}
-			</AppMenu>
+			<div class="global-actions">
+				{#if route === 'workbench' && desktop && source && !sourceMissingOnDisk()}
+					<div class="global-compile-primary" inert={desktopLoading}>
+						{#if compiling}
+							<button type="button" class="primary" onclick={cancelCompile} disabled={compileCancellationRequestedFor === compileTicket}>{compileCancellationRequestedFor === compileTicket ? t('正在取消…', 'Cancelling…') : t('取消編譯', 'Cancel compilation')}</button>
+						{:else}
+							<button type="button" class="primary" onclick={compileSource} disabled={opening || saving || confirming}>{t('編譯 PDF', 'Compile PDF')}</button>
+						{/if}
+					</div>
+				{/if}
+				<AppMenu label={t('更多', 'More')} menuClass="more-menu">
+					<div class="compact-menu-group">
+						<a href="#/" aria-current={route === 'home' ? 'page' : undefined}>{t('首頁', 'Home')}</a>
+						<a href="#/workbench" aria-current={route === 'workbench' ? 'page' : undefined}>{t('工作台', 'Workbench')}</a>
+						<button type="button" onclick={() => newDocument('blank')} disabled={opening || saving || compiling || confirming}>{t('新增文件', 'New document')}</button>
+						<button type="button" onclick={() => openWorkspaceFileCreate()} disabled={opening || saving || compiling || confirming}>{t('新增工作區檔案', 'New workspace file')}</button>
+						<button type="button" onclick={() => void chooseSource()} disabled={opening || saving}>{t('開啟文件', 'Open document')}</button>
+						{#if desktop}<button type="button" onclick={() => void chooseSource('folder')} disabled={opening || saving}>{t('開啟資料夾', 'Open folder')}</button>{/if}
+						{#if desktop && source}
+							<button type="button" onclick={saveSource} disabled={opening || saving || compiling || confirming || !dirty || sourceMissingOnDisk()}>{t('儲存', 'Save')}</button>
+							<button type="button" onclick={saveSourceAs} disabled={opening || saving || compiling || confirming}>{t('另存新檔', 'Save as')}</button>
+						{/if}
+					</div>
+					<hr class="compact-menu-separator" />
+					<a href="#/settings" aria-current={route === 'settings' ? 'page' : undefined}>{t('設定', 'Settings')}</a>
+					<a href="#/help" aria-current={route === 'help' ? 'page' : undefined}>{t('說明', 'Help')}</a>
+					<a href="#/release-notes" aria-current={route === 'release-notes' ? 'page' : undefined}>{t('版本紀錄', 'Release notes')}</a>
+					{#await import('./components/LanguageMenu.svelte') then { default: LanguageMenu }}<LanguageMenu locale={preferences.language} onChange={language => changePreference('language', language)} />{/await}
+					{#if isTauri()}<hr /><button type="button" onclick={openNewWindow} disabled={openingWindow}>{t('新增視窗', 'New window')}</button>{/if}
+				</AppMenu>
+			</div>
 		</nav>
 	</header>
 	{#if isTauri() && rootStateReady}
@@ -1357,17 +1370,6 @@
 	{#if route !== 'workbench'}
 	<div class="app-page-content">
 	{#if route === 'home'}{#key homeLoadKey}{#await import('./pages/Home.svelte')}<main class="empty-state" role="status"><p>{t('正在開啟首頁…', 'Loading home…')}</p></main>{:then { default: Home }}<Home locale={preferences.language} desktop={!!desktop} busy={opening || saving || compiling || desktopLoading} currentName={sourceName} {dirty} {recent} {recentNotice} onRecent={openRecent} onRemoveRecent={removeRecent} onOpen={openFromHome} onCreate={newDocument} />{:catch}<main class="empty-state" role="alert"><p>{t('無法載入首頁，文件內容已保留。', 'Home could not be loaded. Your document is preserved.')}</p><button onclick={() => homeLoadKey++}>{t('重試', 'Retry')}</button></main>{/await}{/key}{/if}
-	{#if route === 'compile-settings'}
-		{#key settingsLoadKey}
-		{#await import('./pages/CompileSettings.svelte')}
-			<main class="empty-state" role="status"><p>{t('正在讀取編譯設定…', 'Loading compile settings…')}</p></main>
-		{:then { default: CompileSettings }}
-			<CompileSettings {desktop} {workspace} {entries} locale={preferences.language} />
-		{:catch}
-			<main class="empty-state" role="alert"><p>{t('無法載入編譯設定。', 'Compile settings could not be loaded.')}</p><button onclick={() => settingsLoadKey++}>{t('重試', 'Retry')}</button></main>
-		{/await}
-		{/key}
-	{/if}
 	{#if route === 'settings'}
 		{#key settingsLoadKey}
 			{#await import('./pages/Settings.svelte')}
@@ -1375,10 +1377,20 @@
 			{:then { default: Settings }}
 				<Settings
 					{preferences}
+					{desktop}
+					{workspace}
+					{entries}
+					source={source}
+					sourcePath={sourceName}
+					sourceDirty={dirty}
+					sourceCommandDisabled={opening || saving || confirming || compiling}
+					onApplySourcePatches={applySettingsSourcePatches}
+					activeSection={settingsSection}
 					locale={preferences.language}
 					notice={preferencesNotice}
 					onChange={changePreference}
 					onRestore={restoreDefaults}
+					onSectionChange={updateSettingsSection}
 				/>
 			{:catch}
 				<main class="empty-state" role="alert"><p>{t('無法載入設定，文件內容已保留。', 'Settings could not be loaded. Your document is preserved.')}</p><button onclick={() => settingsLoadKey++}>{t('重試', 'Retry')}</button></main>

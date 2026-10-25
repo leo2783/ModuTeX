@@ -56,6 +56,11 @@
 	let result = $state<DraftDocumentResult | null>(null);
 	let pdfBytes = $state<Uint8Array | undefined>(undefined);
 	let error = $state<string | null>(null);
+	let hasAttempted = $state(false);
+	let failureDetails = $state<{
+		diagnostics: DraftDocumentResult['diagnostics'];
+		log: string;
+	} | null>(null);
 	let currentMode = $state<'full' | 'paragraph'>('full');
 	let resultIsStale = $derived.by(() => {
 		const currentResult = result;
@@ -78,6 +83,37 @@
 	let prevWorkspaceId: string | null = null;
 	let prevDocumentId: string | null = null;
 	let prevActive = untrack(() => active);
+
+	function presentDraftFailure(message: string, hasDetails = false): string {
+		const nonzeroExit = /^The TeX tool exited with a nonzero status\.(?:\s*Exit code:\s*(\d+)\.)?$/.exec(
+			message.trim()
+		);
+		if (!nonzeroExit) return message;
+
+		const code = nonzeroExit[1];
+		if (code && hasDetails) {
+			return t(
+				`TeX 排版失敗（結束碼 ${code}）。請展開下方排版詳情查看原因。`,
+				`TeX compilation failed (exit code ${code}). Expand the details below to review the cause.`
+			);
+		}
+		if (code) {
+			return t(
+				`TeX 排版失敗（結束碼 ${code}）。請檢查排版問題後重試。`,
+				`TeX compilation failed (exit code ${code}). Review the typesetting issue and try again.`
+			);
+		}
+		return t(
+			'TeX 排版工具無法完成編譯。請檢查排版問題後重試。',
+			'The TeX tool could not complete compilation. Review the typesetting issue and try again.'
+		);
+	}
+
+	function captureFailureDetails(failed: DraftDocumentResult): boolean {
+		const hasDetails = failed.diagnostics.length > 0 || failed.log.trim().length > 0;
+		failureDetails = hasDetails ? { diagnostics: failed.diagnostics, log: failed.log } : null;
+		return hasDetails;
+	}
 
 	function teardownWarmDaemon(targetWorkspaceId: string | null) {
 		operationTicket++;
@@ -103,12 +139,18 @@
 				teardownWarmDaemon(prevWorkspaceId);
 				result = null;
 				pdfBytes = undefined;
+				hasAttempted = false;
+				failureDetails = null;
+				error = null;
 				busy = false;
 				stopping = false;
 			} else if (prevDocumentId !== null && prevDocumentId !== currentDocId) {
 				teardownWarmDaemon(currentWs);
 				result = null;
 				pdfBytes = undefined;
+				hasAttempted = false;
+				failureDetails = null;
+				error = null;
 				busy = false;
 				stopping = false;
 			}
@@ -158,6 +200,7 @@
 
 		const ticket = ++operationTicket;
 		busy = true;
+		failureDetails = null;
 		error = null;
 		currentMode = 'full';
 
@@ -186,6 +229,7 @@
 				pdfBytes = res.pdfBytes;
 				onResult?.(res, res.pdfBytes);
 			} else {
+				hasAttempted = true;
 				const failureMessage =
 					res.failure ||
 					res.diagnostics[0]?.message ||
@@ -194,14 +238,16 @@
 						: res.status === 'preempted'
 							? t('排版已被搶佔', 'Draft compilation preempted')
 							: t('Draft 排版失敗', 'Draft compilation failed'));
+				const hasDetails = res.status === 'failure' && captureFailureDetails(res);
 				const normalized = normalizeDraftError(new Error(failureMessage));
-				error = normalized.message || failureMessage;
+				error = presentDraftFailure(normalized.message || failureMessage, hasDetails);
 				onError?.(normalized);
 			}
 		} catch (err) {
 			if (ticket !== operationTicket) return;
+			hasAttempted = true;
 			const normalized = normalizeDraftError(err);
-			error = normalized.message;
+			error = presentDraftFailure(normalized.message);
 			onError?.(normalized);
 		} finally {
 			if (ticket === operationTicket) {
@@ -272,6 +318,7 @@
 
 		const ticket = ++operationTicket;
 		busy = true;
+		failureDetails = null;
 		error = null;
 		currentMode = 'paragraph';
 
@@ -300,6 +347,7 @@
 				pdfBytes = res.pdfBytes;
 				onResult?.(res, res.pdfBytes);
 			} else {
+				hasAttempted = true;
 				const failureMessage =
 					res.failure ||
 					res.diagnostics[0]?.message ||
@@ -308,14 +356,16 @@
 						: res.status === 'preempted'
 							? t('排版已被搶佔', 'Draft compilation preempted')
 							: t('段落排版失敗', 'Paragraph typesetting failed'));
+				const hasDetails = res.status === 'failure' && captureFailureDetails(res);
 				const normalized = normalizeDraftError(new Error(failureMessage));
-				error = normalized.message || failureMessage;
+				error = presentDraftFailure(normalized.message || failureMessage, hasDetails);
 				onError?.(normalized);
 			}
 		} catch (err) {
 			if (ticket !== operationTicket) return;
+			hasAttempted = true;
 			const normalized = normalizeDraftError(err);
-			error = normalized.message;
+			error = presentDraftFailure(normalized.message);
 			onError?.(normalized);
 		} finally {
 			if (ticket === operationTicket) {
@@ -443,7 +493,7 @@
 		{/if}
 		{#if resultIsStale}
 			<div class="draft-stale-indicator" role="status">
-				{t('目前文件已變更；以下保留的是先前 Draft 排版結果。', 'The current document has changed; showing the previous Draft result.')}
+				{t('目前文件已變更，以下保留的是先前 Draft 排版結果。', 'The current document has changed. The previous Draft result is still shown.')}
 			</div>
 		{/if}
 	</div>
@@ -453,6 +503,46 @@
 			<span>{error}</span>
 			<button class="text-button" onclick={() => (error = null)}>{t('關閉', 'Close')}</button>
 		</div>
+	{/if}
+	{#if failureDetails}
+		<details class="draft-error-details">
+			<summary>
+				{t(
+					failureDetails.diagnostics.length && failureDetails.log.trim()
+						? '查看編譯問題與排版記錄'
+						: failureDetails.diagnostics.length
+							? '查看編譯問題'
+							: '查看排版記錄',
+					failureDetails.diagnostics.length && failureDetails.log.trim()
+						? 'View compilation problems and typesetting log'
+						: failureDetails.diagnostics.length
+							? 'View compilation problems'
+							: 'View typesetting log'
+				)}
+			</summary>
+			{#if failureDetails.diagnostics.length}
+				<ul aria-label={t('編譯問題', 'Compilation problems')}>
+					{#each failureDetails.diagnostics as diagnostic}
+						<li>
+							<span class="diagnostic-severity" data-severity={diagnostic.severity}>
+								{diagnostic.severity === 'error'
+									? t('錯誤', 'Error')
+									: diagnostic.severity === 'warning'
+									? t('警告', 'Warning')
+									: t('資訊', 'Info')}
+							</span>
+							<span>{diagnostic.message}</span>
+							{#if diagnostic.path || diagnostic.line !== null}
+								<span class="diagnostic-location">{diagnostic.path ?? ''}{diagnostic.line !== null ? `:${diagnostic.line}` : ''}</span>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			{#if failureDetails.log.trim()}
+				<pre aria-label={t('TeX 排版記錄', 'TeX typesetting log')}>{failureDetails.log}</pre>
+			{/if}
+		</details>
 	{/if}
 
 	<div class="draft-body">
@@ -465,7 +555,13 @@
 			/>
 		{:else}
 			<div class="draft-placeholder">
-				<p>{t('尚未執行 Draft 排版。點選「全篇 Draft 排版」或「段落排版」開始。', 'No draft typesetting has been run yet. Click "Full Draft" or "Typeset Paragraph" to begin.')}</p>
+				{#if !busy}
+					<p>
+						{hasAttempted
+							? t('本次排版未產生預覽。可重新執行 Draft。', 'This run did not produce a preview. Run Draft again to retry.')
+							: t('尚未執行 Draft 排版。點選「全篇 Draft 排版」或「段落排版」開始。', 'No draft typesetting has been run yet. Click "Full Draft" or "Typeset Paragraph" to begin.')}
+					</p>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -523,6 +619,44 @@
 		color: #991b1b;
 		border-bottom: 1px solid #fee2e2;
 		font-size: 13px;
+	}
+	.draft-error-details {
+		padding: 6px 12px;
+		background: var(--surface, #ffffff);
+		border-bottom: 1px solid var(--line, #e2e8f0);
+		font-size: 12px;
+	}
+	.draft-error-details summary {
+		width: fit-content;
+		cursor: pointer;
+		color: var(--primary, #0284c7);
+	}
+	.draft-error-details ul {
+		display: grid;
+		gap: 4px;
+		margin: 8px 0;
+		padding-left: 20px;
+	}
+	.draft-error-details li {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.diagnostic-severity[data-severity='error'] { color: #b91c1c; }
+	.diagnostic-severity[data-severity='warning'] { color: #a16207; }
+	.diagnostic-severity[data-severity='info'] { color: var(--muted, #64748b); }
+	.diagnostic-location { color: var(--muted, #64748b); font-family: monospace; }
+	.draft-error-details pre {
+		max-height: 240px;
+		margin: 8px 0 0;
+		padding: 8px;
+		overflow: auto;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+		background: var(--canvas, #fdfdfd);
+		color: var(--ink, #0f172a);
+		border: 1px solid var(--line, #e2e8f0);
+		font: 12px/1.5 ui-monospace, monospace;
 	}
 	.draft-body {
 		flex: 1;

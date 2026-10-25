@@ -100,7 +100,7 @@ button:disabled {
 .global-navigation {
 	display: flex;
 	align-items: center;
-	flex: 1;
+	flex: 1 1 auto;
 	min-width: 0;
 	flex-wrap: nowrap;
 	gap: 8px;
@@ -118,7 +118,7 @@ button:disabled {
 }
 .global-navigation > a,
 .global-navigation > .app-menu,
-.global-compile-primary {
+.global-actions {
 	flex: none;
 }
 .global-navigation > a:not(.brand) {
@@ -156,7 +156,6 @@ button:disabled {
 	border-color: var(--line);
 	opacity: 1;
 }
-.global-navigation > .more-menu { margin-inline-start: auto; }
 .global-bar nav {
 	display: flex;
 	min-width: 0;
@@ -172,10 +171,12 @@ button:disabled {
 }
 .global-actions {
 	display: flex;
+	align-items: center;
 	gap: 8px;
-	margin-left: auto;
+	margin-inline-start: auto;
 }
 .compact-menu-group { display: none; }
+.compact-menu-separator { display: none; }
 .app-menu-items { max-height: 80dvh; overflow: auto; }
 .app-menu-items .compact-menu-group { display: none; }
 .app-page-content {
@@ -377,19 +378,23 @@ button.primary {
 	.global-navigation > .secondary-navigation { display: none; }
 	.global-navigation > a.secondary-navigation[href="#/workbench"] { display: flex; }
 	.app-menu-items .compact-menu-group { display: flex; flex-direction: column; }
+	.app-menu-items .compact-menu-separator { display: block; }
 	.workbench-layout.narrow .files { display: none !important; }
 }
 @media (max-width: 960px) {
 	.global-navigation > a:not(.brand) { padding-inline: 8px; }
 	.global-navigation > .app-menu > summary { padding-inline: 8px; }
+	.global-actions > .app-menu > summary { padding-inline: 8px; }
 	.global-compile-primary button { padding-inline: 9px; }
 }
 @media (max-width: 620px) {
-	.global-bar { height: 52px; min-height: 52px; padding: 4px 8px; }
-	.global-navigation { gap: 2px; }
+	.global-bar { height: auto; min-height: 52px; padding: 4px 8px; }
+	.global-navigation { gap: 2px; row-gap: 0; flex-wrap: wrap; white-space: normal; }
 	.global-bar .brand { font-size: 18px; }
 	.global-navigation > a:not(.brand) { padding-inline: 6px; font-size: 13px; }
 	.global-navigation > .app-menu > summary { gap: 3px; padding-inline: 6px; font-size: 13px; }
+	.global-actions { gap: 2px; }
+	.global-actions > .app-menu > summary { gap: 3px; padding-inline: 6px; font-size: 13px; }
 	.global-compile-primary button { padding-inline: 7px; font-size: 12px; }
 	.status-bar { flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding-inline: 8px; white-space: nowrap; }
 	.editor-bar .muted { display: none; }
