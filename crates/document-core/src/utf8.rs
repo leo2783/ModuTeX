@@ -23,12 +23,11 @@ const SPLIT_SURROGATE: usize = usize::MAX;
 #[derive(Clone, Debug)]
 pub(crate) struct Segment {
     text: String,
-    bytes: Vec<u8>,
     offsets: Vec<usize>,
 }
 
 impl Segment {
-    pub(crate) fn new(text: String, bytes: Vec<u8>) -> Self {
+    pub(crate) fn new(text: String) -> Self {
         let utf16_length = text.encode_utf16().count();
         let mut offsets = vec![SPLIT_SURROGATE; utf16_length + 1];
         let mut units = 0;
@@ -43,11 +42,7 @@ impl Segment {
             offsets[0] = 0;
         }
 
-        Self {
-            text,
-            bytes,
-            offsets,
-        }
+        Self { text, offsets }
     }
 
     pub(crate) fn utf16_len(&self) -> usize {
@@ -70,7 +65,7 @@ impl Segment {
     pub(crate) fn byte_slice(&self, from: usize, to: usize) -> Option<&[u8]> {
         let byte_from = self.byte_boundary(from)?;
         let byte_to = self.byte_boundary(to)?;
-        self.bytes.get(byte_from..byte_to)
+        self.text.as_bytes().get(byte_from..byte_to)
     }
 }
 

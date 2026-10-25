@@ -99,8 +99,7 @@ fn compact(pieces: &mut Vec<Piece>) -> Result<(), SourceError> {
                     .ok_or(SourceError::Range)?,
             );
         }
-        let bytes = text.as_bytes().to_vec();
-        let source = Arc::new(Segment::new(text, bytes));
+        let source = Arc::new(Segment::new(text));
         let to = source.utf16_len();
         pieces.splice(
             best_start..end,
@@ -158,7 +157,7 @@ impl SourceDocument {
         let bom = bytes.starts_with(&[0xef, 0xbb, 0xbf]);
         let body = if bom { &bytes[3..] } else { bytes };
         let text = std::str::from_utf8(body).map_err(|_| SourceError::Encoding)?;
-        let source = Arc::new(Segment::new(text.to_owned(), body.to_vec()));
+        let source = Arc::new(Segment::new(text.to_owned()));
         let source_length = source.utf16_len();
         let pieces = if source_length == 0 {
             Vec::new()
@@ -415,10 +414,7 @@ impl SourceDocument {
             }
 
             if !patch.insert.is_empty() {
-                let source = Arc::new(Segment::new(
-                    patch.insert.clone(),
-                    patch.insert.as_bytes().to_vec(),
-                ));
+                let source = Arc::new(Segment::new(patch.insert.clone()));
                 let inserted_length = source.utf16_len();
                 append(
                     &mut pieces,
