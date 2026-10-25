@@ -4,11 +4,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'vite';
-import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { chromium } from 'playwright';
 import { clickFileAction } from '../../../../tests/scripts/helpers/app-file-actions.mjs';
 
 const frontendRoot = fileURLToPath(new URL('../../', import.meta.url));
+const browserChannel = process.env.MODUTEX_TEST_BROWSER_CHANNEL ?? (process.platform === 'win32' ? 'msedge' : 'chromium');
+if (!['chrome', 'msedge', 'chromium'].includes(browserChannel)) throw new Error('Unsupported browser channel');
 
 function deferred() {
 	let resolve;
@@ -41,26 +42,7 @@ test('async replacement confirmation semantics test suite', { timeout: 300_000 }
 	try {
 		viteServer = await createServer({
 			root: frontendRoot,
-			configFile: false,
-			plugins: [
-				svelte(),
-				{
-					name: 'test-harness-unmount-hook',
-					transform(code, id) {
-						if (id.replaceAll('\\', '/').split('?')[0] === path.join(frontendRoot, 'src', 'main.ts').replaceAll('\\', '/')) {
-							return `import { mount, unmount } from 'svelte';
-import App from './App.svelte';
-import './styles/base.css';
-
-const target = document.getElementById('app');
-if (!target) throw new Error('Missing application mount');
-const appInstance = mount(App, { target });
-window.__unmountApp = () => unmount(appInstance);
-`;
-						}
-					}
-				}
-			],
+			cacheDir: path.resolve(frontendRoot, '../../.verification-artifacts/tauri/vite-replacement-confirmation'),
 			server: { port: 0, host: '127.0.0.1' },
 			logLevel: 'error'
 		});
@@ -71,7 +53,7 @@ window.__unmountApp = () => unmount(appInstance);
 
 		browser = await chromium.launch({
 			headless: true,
-			...(process.platform === 'win32' ? { channel: 'msedge' } : {}),
+			channel: browserChannel,
 			args: ['--disable-gpu']
 		});
 		context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -113,7 +95,7 @@ window.__unmountApp = () => unmount(appInstance);
 
 			window.modutexFiles = {
 				openWorkspace: async (kind) => {
-					currentWorkspace = { id: 'ws-1', label: 'test-ws', entryPath: 'main.tex' };
+					currentWorkspace = { id: 'ws-1', label: 'test-ws', entryPath: kind === 'folder' ? null : 'main.tex' };
 					return currentWorkspace;
 				},
 				listRecent: async () => [],
