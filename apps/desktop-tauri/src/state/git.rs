@@ -17,6 +17,7 @@ use crate::{
         },
     },
     shared::relative_path::RelativePath,
+    state::workspace_leases::LeaseKind,
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -89,12 +90,13 @@ impl FrontendGitState {
         &self,
         owner: &OwnerId,
         workspace_id: &WorkspaceId,
+        kind: LeaseKind,
         operation: impl FnOnce(&GitService<'_>, &GitWorkspaceLease) -> Result<T, GitError>,
     ) -> Result<T, GitCommandFailure> {
         let lease = self
             .inner
             .filesystem
-            .start_git_task(owner, workspace_id)
+            .start_git_task_with_kind(owner, workspace_id, kind)
             .map_err(GitCommandFailure::from_filesystem)?;
         let service = GitService::new(self.inner.runner.as_ref());
         let result = operation(&service, &lease);
@@ -116,9 +118,12 @@ impl FrontendGitState {
         owner: &OwnerId,
         workspace_id: &WorkspaceId,
     ) -> Result<GitStatus, GitCommandFailure> {
-        self.execute(owner, workspace_id, |service, workspace| {
-            service.status(workspace)
-        })
+        self.execute(
+            owner,
+            workspace_id,
+            LeaseKind::Read,
+            |service, workspace| service.status(workspace),
+        )
     }
 
     pub(crate) fn diff(
@@ -128,9 +133,12 @@ impl FrontendGitState {
         staged: bool,
         paths: Vec<RelativePath>,
     ) -> Result<Vec<u8>, GitCommandFailure> {
-        self.execute(owner, workspace_id, |service, workspace| {
-            service.diff(workspace, staged, &paths)
-        })
+        self.execute(
+            owner,
+            workspace_id,
+            LeaseKind::Read,
+            |service, workspace| service.diff(workspace, staged, &paths),
+        )
     }
 
     pub(crate) fn log(
@@ -138,9 +146,12 @@ impl FrontendGitState {
         owner: &OwnerId,
         workspace_id: &WorkspaceId,
     ) -> Result<Vec<u8>, GitCommandFailure> {
-        self.execute(owner, workspace_id, |service, workspace| {
-            service.log(workspace)
-        })
+        self.execute(
+            owner,
+            workspace_id,
+            LeaseKind::Read,
+            |service, workspace| service.log(workspace),
+        )
     }
 
     pub(crate) fn show(
@@ -148,9 +159,12 @@ impl FrontendGitState {
         owner: &OwnerId,
         workspace_id: &WorkspaceId,
     ) -> Result<Vec<u8>, GitCommandFailure> {
-        self.execute(owner, workspace_id, |service, workspace| {
-            service.show_head(workspace)
-        })
+        self.execute(
+            owner,
+            workspace_id,
+            LeaseKind::Read,
+            |service, workspace| service.show_head(workspace),
+        )
     }
 
     pub(crate) fn init(
@@ -158,9 +172,12 @@ impl FrontendGitState {
         owner: &OwnerId,
         workspace_id: &WorkspaceId,
     ) -> Result<(), GitCommandFailure> {
-        self.execute(owner, workspace_id, |service, workspace| {
-            service.init(workspace)
-        })
+        self.execute(
+            owner,
+            workspace_id,
+            LeaseKind::Save,
+            |service, workspace| service.init(workspace),
+        )
     }
 
     pub(crate) fn stage(
@@ -169,9 +186,12 @@ impl FrontendGitState {
         workspace_id: &WorkspaceId,
         paths: Vec<RelativePath>,
     ) -> Result<(), GitCommandFailure> {
-        self.execute(owner, workspace_id, |service, workspace| {
-            service.stage(workspace, &paths)
-        })
+        self.execute(
+            owner,
+            workspace_id,
+            LeaseKind::Save,
+            |service, workspace| service.stage(workspace, &paths),
+        )
     }
 
     pub(crate) fn unstage(
@@ -180,9 +200,12 @@ impl FrontendGitState {
         workspace_id: &WorkspaceId,
         paths: Vec<RelativePath>,
     ) -> Result<(), GitCommandFailure> {
-        self.execute(owner, workspace_id, |service, workspace| {
-            service.unstage(workspace, &paths)
-        })
+        self.execute(
+            owner,
+            workspace_id,
+            LeaseKind::Save,
+            |service, workspace| service.unstage(workspace, &paths),
+        )
     }
 
     pub(crate) fn discard(
@@ -192,21 +215,26 @@ impl FrontendGitState {
         paths: Vec<RelativePath>,
         confirm: impl FnOnce() -> bool,
     ) -> Result<bool, GitCommandFailure> {
-        self.execute(owner, workspace_id, |service, workspace| {
-            // Validate the exact selection and its current host-owned paths
-            // before asking the user to authorize a destructive operation.
-            validate_discard_paths(&paths)?;
-            workspace.check_current()?;
-            for path in &paths {
-                workspace.validate_path(path, GitPathIntent::Discard)?;
-            }
-            if !confirm() {
-                return Ok(false);
-            }
-            let confirmation = GitDiscardConfirmation::issue(workspace, &paths)?;
-            service.discard(workspace, &paths, &confirmation)?;
-            Ok(true)
-        })
+        self.execute(
+            owner,
+            workspace_id,
+            LeaseKind::Save,
+            |service, workspace| {
+                // Validate the exact selection and its current host-owned paths
+                // before asking the user to authorize a destructive operation.
+                validate_discard_paths(&paths)?;
+                workspace.check_current()?;
+                for path in &paths {
+                    workspace.validate_path(path, GitPathIntent::Discard)?;
+                }
+                if !confirm() {
+                    return Ok(false);
+                }
+                let confirmation = GitDiscardConfirmation::issue(workspace, &paths)?;
+                service.discard(workspace, &paths, &confirmation)?;
+                Ok(true)
+            },
+        )
     }
 
     pub(crate) fn commit(
@@ -215,9 +243,12 @@ impl FrontendGitState {
         workspace_id: &WorkspaceId,
         message: String,
     ) -> Result<Vec<u8>, GitCommandFailure> {
-        self.execute(owner, workspace_id, |service, workspace| {
-            service.commit(workspace, &message)
-        })
+        self.execute(
+            owner,
+            workspace_id,
+            LeaseKind::Save,
+            |service, workspace| service.commit(workspace, &message),
+        )
     }
 
     pub(crate) fn user_name(
@@ -225,8 +256,11 @@ impl FrontendGitState {
         owner: &OwnerId,
         workspace_id: &WorkspaceId,
     ) -> Result<Option<String>, GitCommandFailure> {
-        self.execute(owner, workspace_id, |service, workspace| {
-            service.user_name(workspace)
-        })
+        self.execute(
+            owner,
+            workspace_id,
+            LeaseKind::Read,
+            |service, workspace| service.user_name(workspace),
+        )
     }
 }

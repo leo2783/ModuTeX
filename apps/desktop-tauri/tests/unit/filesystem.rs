@@ -1276,3 +1276,35 @@ mod reviewer_acceptance {
         assert_eq!(deliveries.load(Ordering::SeqCst), 1);
     }
 }
+
+#[test]
+fn git_query_lease_does_not_block_foreground_directory_creation() {
+    let tmp = TempWorkspace::new("git-query-write");
+    let service = tmp.service(DEFAULT_CLOSE_DRAIN_TIMEOUT);
+    let owner = owner("git-query-window");
+    let root = tmp.base.join("workspace");
+    fs::create_dir_all(&root).unwrap();
+    let workspace = service
+        .open_workspace_folder(&owner, &root, None, ts(1))
+        .unwrap()
+        .opened
+        .id;
+    let query = service
+        .start_git_task_with_kind(&owner, &workspace, LeaseKind::Read)
+        .unwrap();
+    service
+        .workspace_directory_create(&owner, &workspace, &rel("new-folder"))
+        .unwrap();
+    assert!(root.join("new-folder").is_dir());
+    query.finish().unwrap();
+    let writer = service.start_git_task(&owner, &workspace).unwrap();
+    assert!(matches!(
+        service.workspace_directory_create(&owner, &workspace, &rel("blocked-folder")),
+        Err(FilesystemError::WorkspaceBusy)
+    ));
+    assert!(!root.join("blocked-folder").exists());
+    writer.finish().unwrap();
+    service
+        .workspace_directory_create(&owner, &workspace, &rel("after-write"))
+        .unwrap();
+}

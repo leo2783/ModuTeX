@@ -1085,8 +1085,8 @@ impl Drop for WatchSubscription {
 }
 
 /// Host-only, owner- and generation-bound Git capability. Its registered
-/// workspace task holds the existing root-exclusive filesystem lease until
-/// the native runner has proved that its process tree and readers are drained.
+/// workspace task holds the operation's filesystem lease until the native
+/// runner has proved that its process tree and readers are drained.
 pub struct GitWorkspaceLease {
     service: FilesystemService,
     slot: Arc<WorkspaceSlot>,
@@ -2832,6 +2832,15 @@ impl FilesystemService {
         owner: &OwnerId,
         workspace_id: &WorkspaceId,
     ) -> Result<GitWorkspaceLease, FilesystemError> {
+        self.start_git_task_with_kind(owner, workspace_id, LeaseKind::Save)
+    }
+
+    pub(crate) fn start_git_task_with_kind(
+        &self,
+        owner: &OwnerId,
+        workspace_id: &WorkspaceId,
+        kind: LeaseKind,
+    ) -> Result<GitWorkspaceLease, FilesystemError> {
         let (slot, task_id) = {
             let mut state = self.lock_state();
             let slot = self.lookup_active_slot_locked(&state, owner, workspace_id, None)?;
@@ -2864,7 +2873,7 @@ impl FilesystemService {
             owner,
             workspace_id,
             Some(slot.generation),
-            LeaseKind::Save,
+            kind,
             None,
         )?;
 

@@ -1099,6 +1099,7 @@ impl<'a> GitService<'a> {
         let output = self.run_success(
             workspace,
             plain_args(&[
+                "--no-optional-locks",
                 "status",
                 "--porcelain=v1",
                 "-z",
