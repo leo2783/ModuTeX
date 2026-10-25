@@ -304,12 +304,15 @@ jobs:
           }
           $initexmfPath = $initexmfExecutables[0].FullName
           Write-Host '[MiKTeX] Disabling automatic package installation for all TeX subprocesses'
-          Invoke-CiBoundedProcess -FilePath $initexmfPath -Arguments @('--set-config-value=[MPM]AutoInstall=f') -LogPath (Join-Path $logDirectory 'initexmf-disable-installer.log') -PortableRoot $installDirectory -TimeoutSeconds 30
-          $installerStateOutput = Invoke-CiBoundedProcess -FilePath $initexmfPath -Arguments @('--show-config-value=[MPM]AutoInstall') -LogPath (Join-Path $logDirectory 'initexmf-verify-installer.log') -PortableRoot $installDirectory -TimeoutSeconds 30
-          $installerState = (($installerStateOutput | Select-Object -Last 1) -as [string]).Trim()
+          Invoke-CiBoundedProcess -FilePath $initexmfPath -Arguments @('--set-config-value=[MPM]AutoInstall=f') -LogPath (Join-Path $logDirectory 'initexmf-disable-installer.log') -PortableRoot $installDirectory -TimeoutSeconds 30 | Out-Null
+          Write-Host '[MiKTeX] Verifying automatic package installation is disabled'
+          $verifyLog = Join-Path $logDirectory 'initexmf-verify-installer.log'
+          Invoke-CiBoundedProcess -FilePath $initexmfPath -Arguments @('--show-config-value=[MPM]AutoInstall') -LogPath $verifyLog -PortableRoot $installDirectory -TimeoutSeconds 30 | Out-Null
+          $installerState = (Get-Content -LiteralPath $verifyLog -Raw -ErrorAction Stop).Trim()
           if ($installerState -notmatch '^(?i:false|f|0)$') {
             throw "MiKTeX automatic package installation must be disabled, got '$installerState'"
           }
+          Write-Host "[MiKTeX] Automatic package installation verified: $installerState"
 
           Write-Host '[MiKTeX] Installing LuaLaTeX, fontspec, declared fontspec dependencies, and packages missing from the CI catalog'
           # Include fontspec dependencies and packages reported missing by the prior portable MiKTeX catalog run.
