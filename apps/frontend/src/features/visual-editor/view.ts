@@ -43,6 +43,7 @@ interface VisualOptions {
 }
 
 let mathRendererPromise: Promise<typeof import('../math/render.ts')> | null = null;
+let boundaryMenuId = 0;
 function preloadMathRenderer(): Promise<typeof import('../math/render.ts')> {
 	if (!mathRendererPromise) {
 		mathRendererPromise = import('../math/render.ts');
@@ -274,44 +275,53 @@ export class VisualEditor {
 		trigger.append(icon);
 		trigger.title = this.text('在此處插入區塊', 'Insert block here');
 		trigger.setAttribute('aria-label', this.text('在此處插入區塊', 'Insert block here'));
+		trigger.setAttribute('aria-expanded', 'false');
 		trigger.disabled = !this.editable() || !this.options.insertBlock;
 		this.inserterButtons.add(trigger);
-		const menu = doc.createElement('div');
-		menu.className = 'boundary-menu';
-		const makeItem = (kind: 'text' | 'equation' | 'matrix' | 'table' | 'code', label: string, title: string) => {
-			const button = doc.createElement('button');
-			button.type = 'button';
-			button.className = 'boundary-btn';
-			button.textContent = label;
-			button.title = title;
-			button.setAttribute('aria-label', title);
-			button.disabled = !this.editable() || !this.options.insertBlock;
-			this.inserterButtons.add(button);
-			button.addEventListener('click', (event) => {
-				event.preventDefault();
-				event.stopPropagation();
-				container.classList.remove('open');
-				if (!this.editable() || !this.options.insertBlock) return;
-				const span = this.boundarySpan(boundaryIndex);
-				if (!span) { this.options.rejected(); return; }
-				const next = this.projection?.document.maybeChild(boundaryIndex);
-				this.options.insertBlock(kind, span, next?.type.name === 'source_block');
-			});
-			return button;
-		};
 		trigger.addEventListener('click', (event) => {
 			event.preventDefault();
 			event.stopPropagation();
-			container.classList.toggle('open');
+			const opening = !container.classList.contains('open');
+			if (opening && !trigger.hasAttribute('aria-controls')) {
+				const menu = doc.createElement('div');
+				menu.className = 'boundary-menu';
+				menu.id = `visual-boundary-menu-${boundaryMenuId++}`;
+				const makeItem = (kind: 'text' | 'equation' | 'matrix' | 'table' | 'code', label: string, title: string) => {
+					const button = doc.createElement('button');
+					button.type = 'button';
+					button.className = 'boundary-btn';
+					button.textContent = label;
+					button.title = title;
+					button.setAttribute('aria-label', title);
+					button.disabled = !this.editable() || !this.options.insertBlock;
+					this.inserterButtons.add(button);
+					button.addEventListener('click', (event) => {
+						event.preventDefault();
+						event.stopPropagation();
+						container.classList.remove('open');
+						trigger.setAttribute('aria-expanded', 'false');
+						if (!this.editable() || !this.options.insertBlock) return;
+						const span = this.boundarySpan(boundaryIndex);
+						if (!span) { this.options.rejected(); return; }
+						const next = this.projection?.document.maybeChild(boundaryIndex);
+						this.options.insertBlock(kind, span, next?.type.name === 'source_block');
+					});
+					return button;
+				};
+				menu.append(
+					makeItem('text', this.text('文字', 'Text'), this.text('插入文字段落', 'Insert text paragraph')),
+					makeItem('equation', this.text('公式', 'Equation'), this.text('插入公式', 'Insert equation')),
+					makeItem('matrix', this.text('矩陣', 'Matrix'), this.text('插入矩陣', 'Insert matrix')),
+					makeItem('table', this.text('表格', 'Table'), this.text('插入表格', 'Insert table')),
+					makeItem('code', this.text('程式碼', 'Code'), this.text('插入程式碼區塊', 'Insert code block'))
+				);
+				container.append(menu);
+				trigger.setAttribute('aria-controls', menu.id);
+			}
+			container.classList.toggle('open', opening);
+			trigger.setAttribute('aria-expanded', String(opening));
 		});
-		menu.append(
-			makeItem('text', this.text('文字', 'Text'), this.text('插入文字段落', 'Insert text paragraph')),
-			makeItem('equation', this.text('公式', 'Equation'), this.text('插入公式', 'Insert equation')),
-			makeItem('matrix', this.text('矩陣', 'Matrix'), this.text('插入矩陣', 'Insert matrix')),
-			makeItem('table', this.text('表格', 'Table'), this.text('插入表格', 'Insert table')),
-			makeItem('code', this.text('程式碼', 'Code'), this.text('插入程式碼區塊', 'Insert code block'))
-		);
-		container.append(trigger, menu);
+		container.append(trigger);
 		return container;
 	}
 

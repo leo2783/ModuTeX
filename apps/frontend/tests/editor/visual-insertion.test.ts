@@ -153,6 +153,72 @@ test('5 MiB visual tool insertion is atomically rejected by shared UTF-8 filter 
 	assert.deepEqual(reasons, ['SOURCE_TOO_LARGE']); assert.equal(historyTransaction(transaction.state, 'undo'), null);
 });
 
+test('boundary insertion menus are lazy, reusable, current-version gated, and removed on disposal', () => {
+	const fixture = domFixture();
+	let source = SourceDocument.open(bytes('left\nright'));
+	const original = source;
+	const insertions: { kind: string; span: SourceSpan; beforeText: boolean }[] = [];
+	let rejected = 0;
+	let retiredButton: HTMLButtonElement | null = null;
+	const view = new VisualEditor(fixture.target, 'boundary.tex', {
+		source: () => source,
+		apply: () => assert.fail('Boundary action must not edit source in this fixture'),
+		history: () => false, readOnly: () => false,
+		rejected: () => rejected++, status: () => {},
+		insertBlock: (kind, span, beforeText) => insertions.push({ kind, span, beforeText })
+	});
+	try {
+		view.sync(parseSource(source));
+		assert.ok(fixture.target.querySelectorAll('.visual-cell-boundary').length > 1);
+		assert.equal(fixture.target.querySelectorAll('.boundary-menu').length, 0, 'closed boundaries must not allocate their five-item menu');
+		const boundary = fixture.target.querySelector('.visual-cell-boundary') as HTMLElement | null;
+		assert.ok(boundary);
+		const trigger = boundary.querySelector('.boundary-trigger') as HTMLButtonElement | null;
+		assert.ok(trigger);
+		assert.equal(trigger.type, 'button', 'native button activation keeps keyboard Enter and Space support');
+		assert.ok(trigger.getAttribute('aria-label'));
+		assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+		trigger.click();
+		assert.equal(boundary.classList.contains('open'), true);
+		assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+		const menu = boundary.querySelector('.boundary-menu') as HTMLElement | null;
+		assert.ok(menu);
+		assert.equal(trigger.getAttribute('aria-controls'), menu.id);
+		assert.equal(menu.querySelectorAll('.boundary-btn').length, 5);
+		const equation = menu.querySelector('.boundary-btn[aria-label="插入公式"]') as HTMLButtonElement | null;
+		assert.ok(equation);
+		retiredButton = equation;
+		equation.click();
+		assert.equal(insertions.length, 1);
+		assert.deepEqual(insertions[0], { kind: 'equation', span: sourceSpan(original, 0), beforeText: true });
+		assert.equal(boundary.classList.contains('open'), false);
+		assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+
+		trigger.click();
+		assert.equal(boundary.querySelector('.boundary-menu'), menu, 'reopening reuses the one lazily created menu');
+		assert.equal(menu.querySelectorAll('.boundary-btn').length, 5);
+		const textItem = menu.querySelector('.boundary-btn[aria-label="插入文字段落"]') as HTMLButtonElement | null;
+		assert.ok(textItem);
+		source = source.apply({ expectedVersion: source.version, patches: [{ from: 0, to: 0, insert: 'new ' }] }).document;
+		textItem.click();
+		assert.equal(insertions.length, 1, 'a menu opened for an older source version cannot invoke an insertion');
+		assert.equal(rejected, 0);
+		view.sync(parseSource(source));
+		assert.equal(fixture.target.querySelectorAll('.boundary-menu').length, 1, 'only the already-opened boundary retains its menu');
+		assert.equal(boundary.querySelector('.boundary-menu'), menu, 'a stable boundary widget can reuse its menu across projections');
+		trigger.click();
+		textItem.click();
+		assert.deepEqual(insertions[1], { kind: 'text', span: sourceSpan(source, 0), beforeText: true }, 'the reused menu resolves the latest source version');
+	} finally {
+		const insertionCount = insertions.length;
+		view.dispose();
+		assert.equal(fixture.target.querySelector('.ProseMirror'), null);
+		retiredButton?.click();
+		assert.equal(insertions.length, insertionCount, 'disposed boundary controls cannot invoke callbacks');
+		fixture.restore();
+	}
+});
+
 
 test('clicked cells retain all text and toolbar insertion captures the active caret, including reverse selections and empty placeholders', () => {
  const fixture = domFixture();
