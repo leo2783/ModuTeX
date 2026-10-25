@@ -53,7 +53,7 @@ export class NativeFilesFixture {
 		} else {
 			if (!info.isDirectory()) throw new Error('Expected a folder workspace');
 			root = absolute;
-			entryPath = await this.firstTeXFile(root);
+			entryPath = null;
 		}
 
 		return this.activate(root, entryPath, path.basename(absolute));
@@ -250,14 +250,6 @@ export class NativeFilesFixture {
 				knownFiles.clear();
 			}
 		};
-	}
-
-	private async firstTeXFile(root: string): Promise<string | null> {
-		const children = await readdir(root, { withFileTypes: true });
-		return children
-			.filter((child) => child.isFile() && child.name.toLowerCase().endsWith('.tex'))
-			.map((child) => child.name)
-			.sort((left, right) => left.localeCompare(right))[0] ?? null;
 	}
 
 	private activate(root: string, entryPath: string | null, label: string): WorkspaceInfo {

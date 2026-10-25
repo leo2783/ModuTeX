@@ -204,6 +204,11 @@ export function getCurrentWindow() {
   const address = server.httpServer.address();
   browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'msedge' } : {}) });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const openNavigation = async name => {
+    const link = page.getByRole('link', {name}).filter({visible: true}).first();
+    if (!await link.isVisible()) await page.locator('details.more-menu > summary').click();
+    await link.click();
+  };
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${address.port}/#/workbench`);
@@ -226,7 +231,7 @@ export function getCurrentWindow() {
   await page.waitForFunction(count => window.appFixture.calls().filter(name => name === 'frontend_list_files').length > count, before);
   await page.waitForTimeout(100);
   assert.equal(await locate.isDisabled(), true, 'changed included source must invalidate the retained mapping');
-  await page.getByRole('link',{name:/^(編譯設定|Compile settings)$/}).click();
+  await openNavigation(/^(編譯設定|Compile settings)$/);
   const output=page.getByLabel(/^(輸出目錄|Output directory)/);
   await output.fill('build');
   await page.getByRole('button',{name:/^(儲存工作區編譯設定|Save workspace compile settings)$/}).click();
@@ -260,7 +265,7 @@ export function getCurrentWindow() {
   assert.ok(insertBox && Math.abs(insertBox.width-insertBox.height)<0.5,'Block insertion button must remain circular despite global control minimum heights');
   assert.equal(await insert.locator('svg').count(),1);
   await insert.screenshot({path:path.join(repository,'.verification-artifacts/tauri/block-insert-button-review.png')});
-  await page.getByRole('link',{name:/^(設定|Settings)$/}).click();
+  await openNavigation(/^(設定|Settings)$/);
   await page.getByRole('button',{name:/^(編輯器|Editor)$/}).click();
   await page.getByRole('heading',{name:/^(原始碼編輯器|Source editor)$/}).waitFor();
   assert.equal(await page.locator('.settings-content').getByLabel(/^(語言|Language)$/).count(),0,'Unselected categories must not remain mixed into the editor panel');
@@ -275,10 +280,10 @@ export function getCurrentWindow() {
   await page.setViewportSize({width:800,height:900});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth),'Settings must fit the supported narrow desktop width');
   await page.screenshot({path:path.join(repository,'.verification-artifacts/tauri/editor-settings-narrow-dark-review.png')});
-  await page.getByRole('link',{name:/^(編譯設定|Compile settings)$/}).click();
+  await openNavigation(/^(編譯設定|Compile settings)$/);
   await page.getByLabel(/^(輸出目錄|Output directory)/).waitFor();
   await page.screenshot({path:path.join(repository,'.verification-artifacts/tauri/compile-settings-narrow-dark-review.png')});
-  await page.getByRole('link',{name:/^(說明|Help)$/}).click();
+  await openNavigation(/^(說明|Help)$/);
   assert.equal(await page.getByRole('link',{name:/^(安裝指南|Installation guide)$/}).count(),0);
   await page.evaluate(()=>{location.hash='#/help/installation';});
   await page.getByRole('heading',{name:/^(開始使用|Getting started)$/}).waitFor();
@@ -357,12 +362,12 @@ export function getCurrentWindow() {
   assert(closeCalls.lastIndexOf('frontend_write_file') < closeCalls.lastIndexOf('native_window_close'));
   assert(Object.values(await page.evaluate(()=>window.appFixture.savedSources())).some(s=>s.includes('EDITED_DURING_CLOSE_SAVE')));
   await page.reload();
-  await page.getByRole('link',{name:/^(設定|Settings)$/}).click();
+  await openNavigation(/^(設定|Settings)$/);
   await page.getByRole('button',{name:/^(編輯器|Editor)$/}).click();
   assert.equal(await page.getByLabel(/^(字型大小|Font size)$/).inputValue(),'18','Editor preferences must persist after a real reload');
   await page.evaluate(()=>localStorage.setItem('fixture.native.hold-import','1'));
   await page.reload();
-  await page.getByRole('link',{name:/^(設定|Settings)$/}).click();
+  await openNavigation(/^(設定|Settings)$/);
   await page.getByRole('button',{name:/^(編輯器|Editor)$/}).click();
   await page.waitForFunction(()=>typeof window.appFixture.finishPreferenceImport==='function');
   const nativeFontSize=page.getByLabel(/^(字型大小|Font size)$/);

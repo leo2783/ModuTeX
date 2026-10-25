@@ -83,7 +83,7 @@ jobs:
           cargo install cargo-audit --version 0.22.2 --locked
           if ($LASTEXITCODE -ne 0) { throw "cargo-audit installation failed with exit code $LASTEXITCODE" }
           $auditVersion = cargo audit --version
-          if ($LASTEXITCODE -ne 0 -or $auditVersion -notmatch '^cargo-audit 0\.22\.2') {
+          if ($LASTEXITCODE -ne 0 -or $auditVersion -notmatch '^cargo-audit-audit 0\.22\.2$') {
             throw "cargo-audit 0.22.2 required, got $auditVersion"
           }
       - name: Audit Tauri dependencies against RustSec advisories

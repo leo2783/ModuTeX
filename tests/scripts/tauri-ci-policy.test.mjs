@@ -458,6 +458,15 @@ test('every CI Node job matches the package runtime and verifies bundled npm', a
 	assert(runtimeJobCount > 0, 'CI must pin at least one Node runtime');
 });
 
+test('frontend unit tests bound native bundler worker pools', async () => {
+	const workflow = load(await readFile(join(ROOT, '.github/workflows/tauri-frontend.yml'), 'utf8'));
+	const step = workflow.jobs['frontend-unit'].steps.find(step => step.run?.includes('npm run frontend:test'));
+	assert.ok(step, 'The complete frontend unit suite must remain enabled');
+	for (const name of ['RAYON_NUM_THREADS', 'ROLLDOWN_WORKER_THREADS', 'ROLLDOWN_MAX_BLOCKING_THREADS']) {
+		assert.equal(step.env?.[name], '1', `${name} must bound native work independently of the Node heap`);
+	}
+});
+
 test('supply-chain gates audit complete npm and Cargo lockfiles and preserve failures', async () => {
 	const wf = await workflow();
 	assert(rootAncestors(wf.workflow, 'package-validation').has('supply-chain'), 'package validation must wait for supply-chain audits');
@@ -489,7 +498,7 @@ test('supply-chain gates audit complete npm and Cargo lockfiles and preserve fai
 	const rustSteps = stepsOf(rustJob);
 	const install = rustSteps.find((step) => step.id === 'install-cargo-audit');
 	assert.match(install?.run ?? '', /cargo install cargo-audit --version 0\.22\.2 --locked/);
-	assert.match(install.run, /cargo-audit 0\\\.22\\\.2/);
+	assert(install.run.includes("-notmatch '^cargo-audit-audit 0\\.22\\.2$'"), 'The version gate must match the actual pinned CLI output exactly');
 	for (const lockfile of ['apps/desktop-tauri/Cargo.lock', 'crates/document-core/Cargo.lock']) {
 		const audit = rustSteps.find((step) => step.run?.includes(`cargo audit --file ${lockfile} --json`));
 		assert(audit, `RustSec audit must inspect ${lockfile}`);

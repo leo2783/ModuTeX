@@ -68,6 +68,10 @@ jobs:
       - name: Build shared contracts
         run: npm run build:shared --workspace=modutex-frontend
       - name: Run frontend unit tests, including the Draft paragraph regression
+        env:
+          RAYON_NUM_THREADS: '1'
+          ROLLDOWN_WORKER_THREADS: '1'
+          ROLLDOWN_MAX_BLOCKING_THREADS: '1'
         run: npm run frontend:test
       - name: Run focused Tauri IPC, production CSP, and source policy regressions
         run: >-

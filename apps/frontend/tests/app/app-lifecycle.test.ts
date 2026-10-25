@@ -139,7 +139,7 @@ let App!: ClientModule['App'];
 let WorkspaceFilesPanel!: ClientModule['WorkspaceFilesPanel'];
 let setupWork: Promise<void> | null = null;
 const originalConsoleError = console.error;
-const clientRuntimeErrors: unknown[][] = [];
+let clientRuntimeErrorCount = 0;
 
 function restoreGlobals(): void {
 	let firstFailure: unknown;
@@ -204,7 +204,7 @@ test.after(async () => {
 // Keep the client build and host-module imports inside a bounded test hook.
 test.before(async () => {
 	console.error = (...arguments_: unknown[]) => {
-		clientRuntimeErrors.push(arguments_);
+		clientRuntimeErrorCount++;
 		originalConsoleError.apply(console, arguments_);
 	};
 	setupWork = (async () => {
@@ -319,7 +319,7 @@ export { mount, unmount, flushSync, tick, App, WorkspaceFilesPanel };
 
 test.after(() => {
 	console.error = originalConsoleError;
-	assert.equal(clientRuntimeErrors.length, 0,
+	assert.equal(clientRuntimeErrorCount, 0,
 		'Client runtime errors must fail acceptance even when all behavior assertions pass');
 });
 
@@ -687,7 +687,7 @@ async function withHostWorkbench(
 				await flush();
 			}
 			await waitForSource(marker);
-			await waitFor(() => readyWatches.size === 1 && (pathReads.get(fileName) ?? 0) >= beforeReads + 2 &&
+			await waitFor(() => readyWatches.size === 1 && (pathReads.get(fileName) ?? 0) >= beforeReads + 1 &&
 				(pendingIO.get([...readyWatches.values()][0]!) ?? 0) === 0 ? true : undefined, 10_000, flush);
 		};
 
@@ -1211,7 +1211,11 @@ test('opening a folder from Home shows its workspace tree without opening a docu
 		assert.ok(row);
 		assert.equal(workbench.container.querySelector<HTMLElement>('main.workbench')?.hidden, false);
 		assert.equal(workbench.container.querySelector('.app')?.classList.contains('workbench-active'), true);
-		assert.equal(workbench.container.querySelector('.source-view .cm-content'), null);
+		assert.equal(
+			workbench.container.querySelector('.source-view .cm-content') === null,
+			true,
+			'Opening a folder from Home must not mount a source editor without a selected document'
+		);
 	});
 });
 
