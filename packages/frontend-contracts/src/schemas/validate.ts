@@ -197,10 +197,21 @@ function matchFile(actual: FileRef, expected: FileRef): void {
 }
 
 export function parseReadReceipt(value: unknown, expected: FileRef, maxFileBytes: number): ReadReceipt {
-	const input = record(value, ['workspaceId', 'path', 'bytes', 'revision']);
+	const input = record(value, ['workspaceId', 'path', 'bytes', 'revision', 'documentId', 'documentVersion']);
 	const ref = file(input);
 	matchFile(ref, expected);
-	return Object.freeze({ ...ref, bytes: copyBytes(input.bytes, maxFileBytes, 'bytes'), revision: revision(input.revision) });
+	const documentId = input.documentId === null ? null : id(input.documentId, 'documentId');
+	const documentVersion = input.documentVersion === null ? null : integer(input.documentVersion, 'documentVersion', 0);
+	if ((documentId === null) !== (documentVersion === null)) {
+		throw new ContractError('documentId', 'Read receipt document identity must be complete');
+	}
+	return Object.freeze({
+		...ref,
+		bytes: copyBytes(input.bytes, maxFileBytes, 'bytes'),
+		revision: revision(input.revision),
+		documentId,
+		documentVersion
+	});
 }
 
 export function parseWriteRequest(value: unknown, maxFileBytes: number): WriteRequest {

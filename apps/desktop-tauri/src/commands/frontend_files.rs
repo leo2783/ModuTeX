@@ -417,6 +417,8 @@ pub struct PdfReadMetadata {
     pub workspace_id: WorkspaceId,
     pub path: RelativePath,
     pub revision: Revision,
+    pub document_id: Option<crate::schemas::protocol::DocumentId>,
+    pub document_version: Option<crate::schemas::protocol::DocumentVersion>,
     pub binary_token: String,
 }
 
@@ -635,6 +637,8 @@ pub fn frontend_read_file(
         workspace_id: receipt.workspace_id,
         path: receipt.path,
         revision: receipt.revision,
+        document_id: receipt.document_id,
+        document_version: receipt.document_version,
         binary_token: token,
     }))
 }

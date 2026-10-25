@@ -440,19 +440,21 @@ export function createTauriFilesAdapter(
 			const result = await transport.invoke(command.readFile, { file: ref });
 			assertActive();
 			if (!pdf) {
-				const input = exactRecord(result, ['workspaceId', 'path', 'bytes', 'revision'], 'read receipt');
+				const input = exactRecord(result, ['workspaceId', 'path', 'bytes', 'revision', 'documentId', 'documentVersion'], 'read receipt');
 				return parseReadReceipt(
 					{ ...input, bytes: jsonBytes(input.bytes, maximum, 'bytes') },
 					file,
 					maximum
 				);
 			}
-			const input = exactRecord(result, ['workspaceId', 'path', 'revision', 'binaryToken'], 'PDF read metadata');
+			const input = exactRecord(result, ['workspaceId', 'path', 'revision', 'documentId', 'documentVersion', 'binaryToken'], 'PDF read metadata');
 			const receipt = parseReadReceipt(
 				{
 					workspaceId: input.workspaceId,
 					path: input.path,
 					revision: input.revision,
+					documentId: input.documentId,
+					documentVersion: input.documentVersion,
 					bytes: new Uint8Array(0)
 				},
 				file,

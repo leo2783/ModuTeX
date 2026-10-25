@@ -372,6 +372,14 @@ fn large_pdf_read_service_path_and_header_validation() {
     let pdf_receipt = state.service.read_file_pdf(&owner, &file_ref).unwrap();
     assert_eq!(pdf_receipt.bytes.len(), big_pdf.len());
     assert_eq!(pdf_receipt.bytes[..5], *b"%PDF-");
+    assert_eq!(
+        pdf_receipt.document_id,
+        Some(DocumentId::parse("doc-pdf-large").unwrap())
+    );
+    assert_eq!(
+        pdf_receipt.document_version,
+        Some(DocumentVersion::new(1).unwrap())
+    );
 
     // 4. Invalid header is rejected before allocation
     let fake_pdf_rel = RelativePath::parse("fake.pdf").unwrap();

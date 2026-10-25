@@ -17,6 +17,7 @@ import {
 } from '../src/index.ts';
 
 const file = { workspaceId: 'workspace-1', path: '論文/main.tex' };
+const untrackedDocument = { documentId: null, documentVersion: null };
 const write = { ...file, bytes: Uint8Array.of(65, 66), expectedRevision: 'sha256:old', documentId: 'document-1', documentVersion: 4 };
 const identity = {
 	runId: 'run-1',
@@ -126,13 +127,19 @@ test('file watchers cannot dispatch a foreign workspace notification', () => {
 
 test('read receipt binds the file and owns a byte copy', () => {
 	const bytes = Uint8Array.of(1, 2, 3);
-	const parsed = parseReadReceipt({ ...file, bytes, revision: 'rev-1' }, file, 3);
+	const parsed = parseReadReceipt({ ...file, ...untrackedDocument, bytes, revision: 'rev-1' }, file, 3);
 	bytes.fill(9);
 	assert.deepEqual(parsed.bytes, Uint8Array.of(1, 2, 3));
 	assert.equal(Object.isFrozen(parsed), true);
-	rejected(() => parseReadReceipt({ ...file, path: 'other.tex', bytes, revision: 'rev-1' }, file, 3));
-	rejected(() => parseReadReceipt({ ...file, bytes, revision: 'rev-1' }, file, 2));
-	rejected(() => parseReadReceipt({ ...file, bytes: [1, 2], revision: 'rev-1' }, file, 3));
+	rejected(() => parseReadReceipt({ ...file, ...untrackedDocument, path: 'other.tex', bytes, revision: 'rev-1' }, file, 3));
+	rejected(() => parseReadReceipt({ ...file, ...untrackedDocument, bytes, revision: 'rev-1' }, file, 2));
+	rejected(() => parseReadReceipt({ ...file, ...untrackedDocument, bytes: [1, 2], revision: 'rev-1' }, file, 3));
+	const tracked = parseReadReceipt({ ...file, documentId: 'document-1', documentVersion: 7, bytes, revision: 'rev-2' }, file, 3);
+	assert.equal(tracked.documentId, 'document-1');
+	assert.equal(tracked.documentVersion, 7);
+	rejected(() => parseReadReceipt({ ...file, documentId: 'document-1', documentVersion: null, bytes, revision: 'rev-2' }, file, 3));
+	rejected(() => parseReadReceipt({ ...file, documentId: null, documentVersion: 7, bytes, revision: 'rev-2' }, file, 3));
+	rejected(() => parseReadReceipt({ ...file, documentId: 'document-1', documentVersion: Number.MAX_SAFE_INTEGER + 1, bytes, revision: 'rev-2' }, file, 3));
 });
 
 test('byte validation does not trust overridden byteLength or iterators', () => {
@@ -150,15 +157,15 @@ test('byte validation does not trust overridden byteLength or iterators', () => 
 			throw new Error('should not execute');
 		}
 	});
-	rejected(() => parseReadReceipt({ ...file, bytes, revision: 'r' }, file, 2));
-	const parsed = parseReadReceipt({ ...file, bytes, revision: 'r' }, file, 3);
+	rejected(() => parseReadReceipt({ ...file, ...untrackedDocument, bytes, revision: 'r' }, file, 2));
+	const parsed = parseReadReceipt({ ...file, ...untrackedDocument, bytes, revision: 'r' }, file, 3);
 	assert.deepEqual(parsed.bytes, Uint8Array.of(1, 2, 3));
 	assert.equal(invoked, false);
-	rejected(() => parseReadReceipt({ ...file, bytes: new Uint16Array(1), revision: 'r' }, file, 3));
-	rejected(() => parseReadReceipt({ ...file, bytes: new Uint8Array(new SharedArrayBuffer(3)), revision: 'r' }, file, 3));
+	rejected(() => parseReadReceipt({ ...file, ...untrackedDocument, bytes: new Uint16Array(1), revision: 'r' }, file, 3));
+	rejected(() => parseReadReceipt({ ...file, ...untrackedDocument, bytes: new Uint8Array(new SharedArrayBuffer(3)), revision: 'r' }, file, 3));
 	const detached = Uint8Array.of(1);
 	structuredClone(detached.buffer, { transfer: [detached.buffer] });
-	rejected(() => parseReadReceipt({ ...file, bytes: detached, revision: 'r' }, file, 3));
+	rejected(() => parseReadReceipt({ ...file, ...untrackedDocument, bytes: detached, revision: 'r' }, file, 3));
 });
 
 test('write request retains expected disk revision and snapshot identity', () => {
@@ -312,7 +319,7 @@ test('records and arrays reject accessors, prototypes, sparse entries and extra 
 		}
 	});
 	rejected(() => parseCompileResult(payload, identity, limits));
-	const read = { ...file, bytes: Uint8Array.of(1), revision: 'r' };
+	const read = { ...file, ...untrackedDocument, bytes: Uint8Array.of(1), revision: 'r' };
 	Object.defineProperty(read, 'revision', {
 		get() {
 			invoked = true;
@@ -320,7 +327,7 @@ test('records and arrays reject accessors, prototypes, sparse entries and extra 
 		}
 	});
 	rejected(() => parseReadReceipt(read, file, 1));
-	const inherited = Object.assign(Object.create({ inherited: true }), { ...file, bytes: Uint8Array.of(1), revision: 'r' });
+	const inherited = Object.assign(Object.create({ inherited: true }), { ...file, ...untrackedDocument, bytes: Uint8Array.of(1), revision: 'r' });
 	rejected(() => parseReadReceipt(inherited, file, 1));
 	rejected(() => parseCompileResult({ ...success(), diagnostics: new Array(1) }, identity, limits));
 	rejected(() => parseCompileResult({ ...success(), unexpected: 1 }, identity, limits));

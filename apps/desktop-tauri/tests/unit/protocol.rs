@@ -179,6 +179,8 @@ fn pdf_and_read_limits_follow_the_renderer_adapter() {
         path: RelativePath::parse(path).expect("path"),
         bytes: vec![0; len],
         revision: Revision::parse("r1").expect("revision"),
+        document_id: None,
+        document_version: None,
     };
     assert!(ReadReceipt::try_from(wire("a.tex", MAX_READ_BYTES)).is_ok());
     assert!(ReadReceipt::try_from(wire("a.tex", MAX_READ_BYTES + 1)).is_err());
@@ -256,7 +258,10 @@ fn recent_documents_follow_the_contract_rules() {
     rejects::<RecentDocument>(recent(&"x".repeat(4097), json!(null)));
     accepts::<RecentDocument>(recent(&"x".repeat(4096), json!(null)));
     rejects::<RecentDocument>(recent("Thesis", json!("dir/main.tex")));
-    rejects::<RecentDocument>(recent("Thesis", json!("main.pdf")));
+    accepts::<RecentDocument>(recent("Thesis", json!("main.pdf")));
+    accepts::<RecentDocument>(recent("Thesis", json!("MAIN.PDF")));
+    rejects::<RecentDocument>(recent("Thesis", json!("folder/main.pdf")));
+    rejects::<RecentDocument>(recent("Thesis", json!("main.pdf:stream")));
     accepts::<RecentDocument>(recent("Thesis", json!("MAIN.TEX")));
     let entry = |len: usize| json!(format!("{}.tex", "a".repeat(len - 4)));
     accepts::<RecentDocument>(recent("Thesis", entry(4096)));
@@ -375,7 +380,17 @@ fn identities_round_trip_unchanged() {
             "label": "Thesis", "entryPath": "main.tex", "openedAt": 1_760_000_000_000u64}));
     round_trip::<FileEntry>(json!({"path": "figs", "kind": "directory"}));
     round_trip::<ReadReceipt>(json!({"workspaceId": "ws-1", "path": "main.tex",
-            "bytes": [0, 255], "revision": "sha256:abc"}));
+            "bytes": [0, 255], "revision": "sha256:abc", "documentId": null,
+            "documentVersion": null}));
+    round_trip::<ReadReceipt>(json!({"workspaceId": "ws-1", "path": "main.tex",
+            "bytes": [0, 255], "revision": "sha256:abc", "documentId": "doc_1",
+            "documentVersion": 3}));
+    rejects::<ReadReceipt>(json!({"workspaceId": "ws-1", "path": "main.tex",
+            "bytes": [0, 255], "revision": "sha256:abc", "documentId": "doc_1",
+            "documentVersion": null}));
+    rejects::<ReadReceipt>(json!({"workspaceId": "ws-1", "path": "main.tex",
+            "bytes": [0, 255], "revision": "sha256:abc", "documentId": null,
+            "documentVersion": 3}));
     round_trip::<WriteRequest>(write_request());
     round_trip::<WriteReceipt>(json!({"workspaceId": "ws-1", "path": "main.tex",
             "revision": "rev:2", "documentId": "doc_1", "documentVersion": 3}));

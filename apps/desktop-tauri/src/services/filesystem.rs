@@ -610,6 +610,34 @@ struct TrackedDocument {
     identity: FileIdentity,
 }
 
+fn update_read_identity(
+    tracked: &mut TrackedDocument,
+    revision: Revision,
+    identity: FileIdentity,
+) -> Result<(), FilesystemError> {
+    match (&tracked.document_id, tracked.document_version) {
+        (Some(_), Some(version)) if tracked.revision != revision => {
+            let next = version.get().checked_add(1).ok_or_else(|| {
+                FilesystemError::Protocol(ProtocolError::new(
+                    "documentVersion",
+                    "document version exhausted",
+                ))
+            })?;
+            tracked.document_version = Some(DocumentVersion::new(next)?);
+        }
+        (Some(_), Some(_)) | (None, None) => {}
+        _ => {
+            return Err(FilesystemError::Protocol(ProtocolError::new(
+                "documentId",
+                "tracked document identity must include both ID and version",
+            )))
+        }
+    }
+    tracked.revision = revision;
+    tracked.identity = identity;
+    Ok(())
+}
+
 pub type SubSystemCanceller = Box<dyn FnOnce() -> Result<(), String> + Send + 'static>;
 
 const MAX_GIT_PIN_HANDLES: usize = 131_072;
@@ -2324,30 +2352,31 @@ impl FilesystemService {
     ) -> Result<ReadReceipt, FilesystemError> {
         let op = self.begin_op(owner, &file.workspace_id, None, LeaseKind::Read)?;
         let out = op.slot.trusted_root.read_file(&file.path)?;
-        {
+        let (document_id, document_version) = {
             let mut slot_guard = op.slot.lock();
             if slot_guard.revoked {
                 return Err(FilesystemError::SessionClosed);
             }
-            slot_guard
-                .documents
-                .entry(file.path.clone())
-                .and_modify(|doc| {
-                    doc.revision = out.revision.clone();
-                    doc.identity = out.identity;
-                })
-                .or_insert(TrackedDocument {
-                    document_id: None,
-                    document_version: None,
-                    revision: out.revision.clone(),
-                    identity: out.identity,
-                });
-        }
+            let tracked =
+                slot_guard
+                    .documents
+                    .entry(file.path.clone())
+                    .or_insert(TrackedDocument {
+                        document_id: None,
+                        document_version: None,
+                        revision: out.revision.clone(),
+                        identity: out.identity,
+                    });
+            update_read_identity(tracked, out.revision.clone(), out.identity)?;
+            (tracked.document_id.clone(), tracked.document_version)
+        };
         Ok(ReadReceipt {
             workspace_id: file.workspace_id.clone(),
             path: file.path.clone(),
             bytes: out.bytes,
             revision: out.revision,
+            document_id,
+            document_version,
         })
     }
 
@@ -2363,30 +2392,31 @@ impl FilesystemService {
         }
         let op = self.begin_op(owner, &file.workspace_id, None, LeaseKind::Read)?;
         let out = op.slot.trusted_root.read_file_pdf(&file.path)?;
-        {
+        let (document_id, document_version) = {
             let mut slot_guard = op.slot.lock();
             if slot_guard.revoked {
                 return Err(FilesystemError::SessionClosed);
             }
-            slot_guard
-                .documents
-                .entry(file.path.clone())
-                .and_modify(|doc| {
-                    doc.revision = out.revision.clone();
-                    doc.identity = out.identity;
-                })
-                .or_insert(TrackedDocument {
-                    document_id: None,
-                    document_version: None,
-                    revision: out.revision.clone(),
-                    identity: out.identity,
-                });
-        }
+            let tracked =
+                slot_guard
+                    .documents
+                    .entry(file.path.clone())
+                    .or_insert(TrackedDocument {
+                        document_id: None,
+                        document_version: None,
+                        revision: out.revision.clone(),
+                        identity: out.identity,
+                    });
+            update_read_identity(tracked, out.revision.clone(), out.identity)?;
+            (tracked.document_id.clone(), tracked.document_version)
+        };
         Ok(ReadReceipt {
             workspace_id: file.workspace_id.clone(),
             path: file.path.clone(),
             bytes: out.bytes,
             revision: out.revision,
+            document_id,
+            document_version,
         })
     }
 

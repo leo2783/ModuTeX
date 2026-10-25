@@ -158,6 +158,134 @@ fn open_list_read_write_and_revision_or_document_version_conflicts() {
         .unwrap();
     assert_eq!(read_back.bytes, b"\\section{Intro}");
     assert_eq!(read_back.revision, w1.revision);
+    assert_eq!(read_back.document_id, Some(doc_id("doc_intro")));
+    assert_eq!(read_back.document_version, Some(doc_ver(2)));
+}
+
+#[test]
+fn external_file_revisions_advance_tracked_read_identity_for_source_and_pdf() {
+    let tmp = TempWorkspace::new("external-read-identity");
+    let svc = tmp.service(DEFAULT_CLOSE_DRAIN_TIMEOUT);
+    let main = owner("main");
+    let folder = tmp.base.join("project");
+    fs::create_dir_all(&folder).unwrap();
+    let ws_id = svc
+        .open_workspace_folder(&main, &folder, None, ts(100))
+        .unwrap()
+        .opened
+        .id;
+
+    fs::write(folder.join("untracked.tex"), b"untracked source").unwrap();
+    let untracked = svc
+        .read_file(
+            &main,
+            &FileRef {
+                workspace_id: ws_id.clone(),
+                path: rel("untracked.tex"),
+            },
+        )
+        .unwrap();
+    assert_eq!(untracked.document_id, None);
+    assert_eq!(untracked.document_version, None);
+
+    let source = svc
+        .write_file(
+            &main,
+            &WriteRequest {
+                workspace_id: ws_id.clone(),
+                path: rel("main.tex"),
+                bytes: b"old source".to_vec(),
+                expected_revision: None,
+                document_id: doc_id("doc_main"),
+                document_version: doc_ver(4),
+            },
+        )
+        .unwrap();
+    fs::write(folder.join("main.tex"), b"externally changed source").unwrap();
+
+    let changed = svc
+        .read_file(
+            &main,
+            &FileRef {
+                workspace_id: ws_id.clone(),
+                path: rel("main.tex"),
+            },
+        )
+        .unwrap();
+    assert_eq!(changed.bytes, b"externally changed source");
+    assert_ne!(changed.revision, source.revision);
+    assert_eq!(changed.document_id, Some(doc_id("doc_main")));
+    assert_eq!(changed.document_version, Some(doc_ver(5)));
+
+    let unchanged = svc
+        .read_file(
+            &main,
+            &FileRef {
+                workspace_id: ws_id.clone(),
+                path: rel("main.tex"),
+            },
+        )
+        .unwrap();
+    assert_eq!(unchanged.document_version, changed.document_version);
+
+    let pdf = svc
+        .write_file(
+            &main,
+            &WriteRequest {
+                workspace_id: ws_id.clone(),
+                path: rel("appendix.pdf"),
+                bytes: b"%PDF-old".to_vec(),
+                expected_revision: None,
+                document_id: doc_id("doc_pdf"),
+                document_version: doc_ver(8),
+            },
+        )
+        .unwrap();
+    fs::write(folder.join("appendix.pdf"), b"%PDF-external").unwrap();
+    let changed_pdf = svc
+        .read_file_pdf(
+            &main,
+            &FileRef {
+                workspace_id: ws_id.clone(),
+                path: rel("appendix.pdf"),
+            },
+        )
+        .unwrap();
+    assert_eq!(changed_pdf.bytes, b"%PDF-external");
+    assert_ne!(changed_pdf.revision, pdf.revision);
+    assert_eq!(changed_pdf.document_id, Some(doc_id("doc_pdf")));
+    assert_eq!(changed_pdf.document_version, Some(doc_ver(9)));
+
+    svc.write_file(
+        &main,
+        &WriteRequest {
+            workspace_id: ws_id.clone(),
+            path: rel("max-version.tex"),
+            bytes: b"old".to_vec(),
+            expected_revision: None,
+            document_id: doc_id("doc_max_version"),
+            document_version: DocumentVersion::new(crate::schemas::protocol::MAX_SAFE_INTEGER - 1)
+                .unwrap(),
+        },
+    )
+    .unwrap();
+    fs::write(folder.join("max-version.tex"), b"external").unwrap();
+    let max_ref = FileRef {
+        workspace_id: ws_id,
+        path: rel("max-version.tex"),
+    };
+    assert!(matches!(
+        svc.read_file(&main, &max_ref),
+        Ok(ReadReceipt {
+            document_version: Some(version),
+            ..
+        }) if version.get() == crate::schemas::protocol::MAX_SAFE_INTEGER
+    ));
+    fs::write(folder.join("max-version.tex"), b"external again").unwrap();
+    assert!(matches!(
+        svc.read_file(&main, &max_ref),
+        Err(FilesystemError::Protocol(_))
+    ));
 }
 
 #[test]

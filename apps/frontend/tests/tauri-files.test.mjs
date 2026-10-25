@@ -43,7 +43,7 @@ const workspace = { id: 'ws-1', label: 'Thesis', entryPath: 'main.tex' };
 function readerFor(bytes) {
 	const wire = transport((name) => {
 		assert.equal(name, 'frontend_read_file');
-		return { workspaceId: 'ws-1', path: 'main.tex', bytes, revision: 'rev-1' };
+		return { workspaceId: 'ws-1', path: 'main.tex', bytes, revision: 'rev-1', documentId: null, documentVersion: null };
 	});
 	return createTauriFilesAdapter(undefined, wire);
 }
@@ -59,7 +59,7 @@ test('routes DesktopPort file and recent operations through strict contract vali
 			case 'frontend_list_files':
 				return [{ path: 'main.tex', kind: 'file' }];
 			case 'frontend_read_file':
-				return { workspaceId: 'ws-1', path: 'main.tex', bytes: [0, 255], revision: 'rev-1' };
+				return { workspaceId: 'ws-1', path: 'main.tex', bytes: [0, 255], revision: 'rev-1', documentId: null, documentVersion: null };
 			case 'frontend_write_file':
 				return {
 					workspaceId: args.request.workspaceId,
@@ -180,7 +180,7 @@ test('takes PDF bytes only through the raw one-shot routes', async () => {
 	const wire = transport((name) => {
 		switch (name) {
 			case 'frontend_read_file':
-				return { workspaceId: 'ws-1', path: 'paper.pdf', revision: 'rev-1', binaryToken: 'read-token' };
+				return { workspaceId: 'ws-1', path: 'paper.pdf', revision: 'rev-1', documentId: null, documentVersion: null, binaryToken: 'read-token' };
 			case 'frontend_take_file_pdf':
 			case 'frontend_take_compile_pdf':
 				return pdf;

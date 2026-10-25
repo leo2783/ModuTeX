@@ -21,6 +21,8 @@ export interface FileEntry {
 export interface ReadReceipt extends FileRef {
 	readonly bytes: Uint8Array;
 	readonly revision: string;
+	readonly documentId: string | null;
+	readonly documentVersion: number | null;
 }
 export interface WriteRequest extends FileRef {
 	readonly bytes: Uint8Array;

@@ -551,6 +551,7 @@ pub struct WorkspaceRecoverableDeleteReceipt {
 }
 
 /// Read receipt; `bytes` is bounded by [`read_limit`] for the receipt path.
+/// Document identity is absent until the UI has saved that path in this workspace.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", try_from = "ReadReceiptWire")]
 pub struct ReadReceipt {
@@ -558,6 +559,8 @@ pub struct ReadReceipt {
     pub path: RelativePath,
     pub bytes: Vec<u8>,
     pub revision: Revision,
+    pub document_id: Option<DocumentId>,
+    pub document_version: Option<DocumentVersion>,
 }
 
 #[derive(Deserialize)]
@@ -567,6 +570,10 @@ struct ReadReceiptWire {
     path: RelativePath,
     bytes: Vec<u8>,
     revision: Revision,
+    #[serde(deserialize_with = "nullable")]
+    document_id: Option<DocumentId>,
+    #[serde(deserialize_with = "nullable")]
+    document_version: Option<DocumentVersion>,
 }
 
 impl TryFrom<ReadReceiptWire> for ReadReceipt {
@@ -576,11 +583,19 @@ impl TryFrom<ReadReceiptWire> for ReadReceipt {
         if wire.bytes.len() > read_limit(wire.path.as_str()) {
             return Err(ProtocolError::new("bytes", "byte limit exceeded"));
         }
+        if wire.document_id.is_some() != wire.document_version.is_some() {
+            return Err(ProtocolError::new(
+                "documentId",
+                "document identity must include both ID and version",
+            ));
+        }
         Ok(Self {
             workspace_id: wire.workspace_id,
             path: wire.path,
             bytes: wire.bytes,
             revision: wire.revision,
+            document_id: wire.document_id,
+            document_version: wire.document_version,
         })
     }
 }

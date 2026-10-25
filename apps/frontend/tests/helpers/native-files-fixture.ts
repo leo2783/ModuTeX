@@ -18,6 +18,7 @@ import type {
 
 interface FixtureWorkspace extends WorkspaceInfo {
 	readonly root: string;
+	readonly documents: Map<string, { documentId: string; documentVersion: number; revision: string }>;
 }
 
 export interface NativeFilesWatch {
@@ -82,11 +83,22 @@ export class NativeFilesFixture {
 	async read(file: FileRef): Promise<ReadReceipt> {
 		const workspace = this.requireCurrent(file.workspaceId);
 		const bytes = await readFile(this.filePath(workspace, file.path));
+		const fileRevision = revision(bytes);
+		const tracked = workspace.documents.get(file.path);
+		if (tracked && tracked.revision !== fileRevision) {
+			if (!Number.isSafeInteger(tracked.documentVersion + 1)) {
+				throw new Error('DOCUMENT_VERSION_EXHAUSTED');
+			}
+			tracked.documentVersion++;
+			tracked.revision = fileRevision;
+		}
 		return {
 			workspaceId: file.workspaceId,
 			path: file.path,
 			bytes: Uint8Array.from(bytes),
-			revision: revision(bytes)
+			revision: fileRevision,
+			documentId: tracked?.documentId ?? null,
+			documentVersion: tracked?.documentVersion ?? null
 		};
 	}
 
@@ -111,6 +123,11 @@ export class NativeFilesFixture {
 		await writeFile(target, request.bytes, {
 			flag: request.expectedRevision === null ? 'wx' : 'w'
 		});
+		workspace.documents.set(request.path, {
+			documentId: request.documentId,
+			documentVersion: request.documentVersion,
+			revision: revision(request.bytes)
+		});
 		return {
 			workspaceId: request.workspaceId,
 			path: request.path,
@@ -126,6 +143,11 @@ export class NativeFilesFixture {
 		await writeFile(target, bytes, { flag: 'wx' });
 		const entryPath = path.basename(target);
 		const workspace = this.activate(await realpath(path.dirname(target)), entryPath, entryPath);
+		this.current!.documents.set(entryPath, {
+			documentId: request.documentId,
+			documentVersion: request.documentVersion,
+			revision: revision(bytes)
+		});
 		return {
 			workspace,
 			write: {
@@ -243,7 +265,8 @@ export class NativeFilesFixture {
 			id: `fixture-workspace-${++this.sequence}`,
 			label,
 			entryPath,
-			root
+			root,
+			documents: new Map()
 		};
 		this.current = workspace;
 		return { id: workspace.id, label: workspace.label, entryPath: workspace.entryPath };
