@@ -28,7 +28,8 @@ pub(super) fn normalize_gzip<'a>(
     {
         return None;
     }
-    let root_text = normalize_absolute(input_root.to_str()?)?;
+    let canonical_root = fs::canonicalize(input_root).ok()?;
+    let root_text = normalize_absolute(canonical_root.to_str()?)?;
     let mut sources: HashMap<String, Option<&'a RelativePath>> = HashMap::new();
     let mut source_count = 0usize;
     for source in snapshot_paths {

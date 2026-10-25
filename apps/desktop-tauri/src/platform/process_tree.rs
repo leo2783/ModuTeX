@@ -1404,11 +1404,31 @@ mod windows_impl {
     }
 
     fn verify_paths(spec: &ProcessSpec) -> Result<VerifiedPaths, FailureCause> {
-        let executable = canonical_absolute(&spec.executable, "executable", false)?;
+        use std::os::windows::ffi::OsStringExt;
+
+        let canonical_executable = canonical_absolute(&spec.executable, "executable", false)?;
         let working_directory =
             canonical_absolute(&spec.working_directory, "working directory", true)?;
+
+        // Prefer a verified DOS path when short enough for CreateProcessW.
+        // Preserve the extended-length path for longer executables.
+        let executable = {
+            let wide: Vec<u16> = canonical_executable.as_os_str().encode_wide().collect();
+
+            normalize_working_directory_syntax(&wide)
+                .ok()
+                .filter(|path| path.len() < MAX_PATH - 1)
+                .and_then(|path| {
+                    let dos_path = PathBuf::from(OsString::from_wide(&path));
+
+                    (fs::canonicalize(&dos_path).ok()? == canonical_executable).then_some(dos_path)
+                })
+                .unwrap_or(canonical_executable)
+        };
+
         let application = wide_z(executable.as_os_str(), "executable path")?;
         let working_directory_wide = working_directory_for_create_process(&working_directory)?;
+
         Ok(VerifiedPaths {
             executable,
             application,
