@@ -632,12 +632,25 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
             await page.getByRole('button', { name: '視覺化', exact: true }).click();
             await formula.waitFor();
             const formulaIndex = Number(await formula.getAttribute('data-cell-index'));
-            const handle = page.locator('.cell-drag-handle').nth(formulaIndex);
-            const handleBox = await handle.boundingBox();
-            const titleBox = await page.locator('.notebook-cell').first().boundingBox();
-            assert(handleBox && titleBox);
-            await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + 8);
-            await page.mouse.down(); await page.mouse.move(titleBox.x + 30, titleBox.y + 1, {steps:12}); await page.mouse.up();
+			const firstParagraph = page.locator('p.notebook-cell.source-block').filter({ hasText: 'First paragraph.' });
+			await firstParagraph.scrollIntoViewIfNeeded();
+			await formula.scrollIntoViewIfNeeded();
+			const handle = page.locator('.cell-drag-handle').nth(formulaIndex);
+			await handle.hover();
+			const handleBox = await handle.boundingBox();
+			const targetBox = await firstParagraph.boundingBox();
+			assert(handleBox && targetBox);
+			await page.mouse.move(handleBox.x + handleBox.width / 2,handleBox.y + handleBox.height / 2);
+			await page.mouse.down();
+			await page.mouse.move(targetBox.x + 30,targetBox.y + Math.min(8, targetBox.height / 4),{ steps: 12 });
+
+			assert.equal(
+			await page.locator('.is-drop-target').count(),
+			1,
+			'Expected a valid drop target before releasing the cell'
+			);
+
+			await page.mouse.up();
             await page.getByRole('button', { name: '原始碼', exact: true }).click();
             const dragged = await sourceEditor.innerText();
             assert.equal(dragged.slice(0, dragged.indexOf('\\maketitle') + 10), original.slice(0, original.indexOf('\\maketitle') + 10));
