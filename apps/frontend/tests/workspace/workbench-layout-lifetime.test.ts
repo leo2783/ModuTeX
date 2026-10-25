@@ -324,6 +324,15 @@ test('wide-to-narrow relocates focused separator/sidebar controls and keeps hidd
 		assert.equal(draft.value, 'unsaved editor draft');
 
 		harness.setMode('wide');
+		const sidebarSeparator = required<HTMLElement>(harness.container, '.workbench-sidebar-separator');
+		sidebarSeparator.focus();
+		assert.strictEqual(dom.window.document.activeElement, sidebarSeparator);
+		harness.setMode('narrow');
+		assert.equal(sidebarSeparator.isConnected, false, 'the sidebar separator node is removed');
+		await harness.settle();
+		assert.strictEqual(dom.window.document.activeElement, tab(harness.container, 'document'));
+
+		harness.setMode('wide');
 		const sidebarControl = required<HTMLButtonElement>(harness.container, '#sidebar-control');
 		sidebarControl.focus();
 		assert.strictEqual(dom.window.document.activeElement, sidebarControl);

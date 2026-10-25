@@ -1029,17 +1029,19 @@
 		min-height: 0;
 	}
 	.source-view { height: 100%; display: flex; flex-direction: column; min-height: 0; }
-	.insert-bar { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-	.tool-group { display: flex; gap: 4px; }
+	.insert-bar { height: 40px; min-height: 40px; flex: none; padding: 1px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+	.insert-bar:has(.math-menu[open]) { overflow: visible; }
+	.insert-bar > * { flex: none; }
+	.tool-group { display: flex; flex: none; align-items: center; gap: 4px; white-space: nowrap; }
 	.tool-group { padding-inline-start: 8px; border-inline-start: 1px solid var(--line); }
 	.structure-menu summary { gap: 12px; padding: 5px 8px; } .structure-options button { display: flex; align-items: center; gap: 12px; min-height: 36px; } .structure-mark { color: var(--muted); width: 24px; font-size: 12px; font-weight: 600; }
 	.visual :global(.source-block[data-source-role='abstract']) { max-width: 70ch; margin-inline: auto; padding-block: 8px; }
 	.visual :global(.source-block[data-source-role='abstract']::before) { content: var(--abstract-label); display: block; text-align: center; font-weight: 600; margin-bottom: 8px; }
 	.visual :global(.source-block[data-structure='title']) { text-align: center; font-size: 28px; }
-	.icon-tool { width: 36px; height: 36px; padding: 7px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border-color: transparent; }
+	.icon-tool { width: 36px; min-width: 36px; height: 36px; min-height: 36px; padding: 7px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border-color: transparent; }
 	.table-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--line); }
 	.parser-error { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--ink); }
-	.modes { display: flex; flex-wrap: wrap; gap: 4px; }
+	.modes { display: flex; flex: none; flex-wrap: nowrap; gap: 4px; }
 	.modes [aria-pressed='true'] { background: var(--selection); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 	.editor-surfaces { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); }
 	.visual { min-height: 0; overflow: auto; padding: 24px; }

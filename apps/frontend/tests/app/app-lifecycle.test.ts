@@ -19,11 +19,12 @@ type DOMWindow = Window & typeof globalThis & {
 };
 
 type ClientModule = {
-	mount: (component: unknown, options: { target: HTMLElement }) => unknown;
+	mount: (component: unknown, options: { target: HTMLElement; props?: Record<string, unknown> }) => unknown;
 	unmount: (instance: unknown, options?: { outro?: boolean }) => Promise<void>;
 	flushSync: (fn?: () => void) => void;
 	tick: () => Promise<void>;
 	App: unknown;
+	WorkspaceFilesPanel: unknown;
 };
 
 type NativeBridge = {
@@ -59,6 +60,13 @@ interface ReadGate {
 	used: boolean;
 }
 
+interface CompileConfigGate {
+	readonly entered: Deferred<void>;
+	readonly release: Deferred<void>;
+	readonly finished: Deferred<void>;
+	used: boolean;
+}
+
 type FrontendWatchDependencies = {
 	readonly root: string;
 	readonly workspaceId: string;
@@ -81,6 +89,7 @@ const fixtureRecentId = '123e4567-e89b-42d3-a456-426614174000';
 const fixtureCompileRunId = '123e4567-e89b-42d3-a456-426614174001';
 const frontendRoot = fileURLToPath(new URL('../../', import.meta.url));
 const appPath = fileURLToPath(new URL('../../src/App.svelte', import.meta.url)).replaceAll('\\', '/');
+const workspaceFilesPanelPath = fileURLToPath(new URL('../../src/components/WorkspaceFilesPanel.svelte', import.meta.url)).replaceAll('\\', '/');
 
 function deferred<T>(): Deferred<T> {
 	let resolve!: (value: T | PromiseLike<T>) => void;
@@ -127,6 +136,7 @@ let unmount!: ClientModule['unmount'];
 let flushSync!: ClientModule['flushSync'];
 let tick!: ClientModule['tick'];
 let App!: ClientModule['App'];
+let WorkspaceFilesPanel!: ClientModule['WorkspaceFilesPanel'];
 let setupWork: Promise<void> | null = null;
 const originalConsoleError = console.error;
 const clientRuntimeErrors: unknown[][] = [];
@@ -204,7 +214,8 @@ test.before(async () => {
 		entryFile,
 		`import { mount, unmount, flushSync, tick } from 'svelte';
 import App from '${appPath}';
-export { mount, unmount, flushSync, tick, App };
+import WorkspaceFilesPanel from '${workspaceFilesPanelPath}';
+export { mount, unmount, flushSync, tick, App, WorkspaceFilesPanel };
 `
 	);
 
@@ -301,6 +312,7 @@ export { mount, unmount, flushSync, tick, App };
 	flushSync = client.flushSync;
 	tick = client.tick;
 	App = client.App;
+	WorkspaceFilesPanel = client.WorkspaceFilesPanel;
 	})();
 	await setupWork;
 }, { timeout: 180_000 });
@@ -327,8 +339,12 @@ interface HostWorkbenchDriver {
 	readonly activeWatchCount: () => number;
 	readonly compileStartCount: () => number;
 	readonly confirmCount: () => number;
+	readonly setConfirmResult: (value: boolean) => void;
 	readonly recentOpenCount: () => number;
 	readonly prepareCompile: () => CompileHarness;
+	readonly setCompileMainFile: (path: string | null) => void;
+	readonly lastWrite: (path: string) => Pick<WriteRequest, 'documentId' | 'documentVersion'> | undefined;
+	readonly gateNextCompileConfig: () => CompileConfigGate;
 	readonly goHome: () => Promise<void>;
 	readonly gateNextRead: (path: string) => ReadGate;
 	readonly flush: () => Promise<void>;
@@ -358,8 +374,12 @@ async function withHostWorkbench(
 	const trackIO = (id: string, delta: number) => pendingIO.set(id, (pendingIO.get(id) ?? 0) + delta);
 	let emittedCount = 0;
 	let compileStartCount = 0;
+	let compileMainFile: string | null = null;
+	const writtenDocuments = new Map<string, Pick<WriteRequest, 'documentId' | 'documentVersion'>>();
+	let confirmResult = true;
 	let recentOpenCount = 0;
 	let compilePlan: CompilePlan | null = null;
+	let compileConfigGate: CompileConfigGate | null = null;
 	let readGate: ReadGate | null = null;
 	const readGates: ReadGate[] = [];
 	const activeWatches = new Map<string, NativeFilesWatch>();
@@ -431,6 +451,12 @@ async function withHostWorkbench(
 				try {
 				// Forward the genuine host receipt unchanged; the barrier only delays delivery.
 				const receipt = await files!.read(ref);
+				if (receipt.documentId !== null && receipt.documentVersion !== null) {
+					writtenDocuments.set(`${ref.workspaceId}:${ref.path}`, {
+						documentId: receipt.documentId,
+						documentVersion: receipt.documentVersion
+					});
+				}
 				const gate = readGate;
 				if (gate && !gate.used && ref.path === gate.path) {
 					gate.used = true;
@@ -441,15 +467,36 @@ async function withHostWorkbench(
 				return receipt;
 				} finally { trackIO(ref.workspaceId, -1); }
 			},
-			writeFile: async (request) => files!.write(request),
+			writeFile: async (request) => {
+				const receipt = await files!.write(request);
+				writtenDocuments.set(`${request.workspaceId}:${request.path}`, {
+					documentId: request.documentId,
+					documentVersion: request.documentVersion
+				});
+				return receipt;
+			},
 			saveAs: async (request) =>
 				files!.saveAs(path.join(roots[1]!, 'saved-as.tex'), request as SaveAsRequest),
-			getCompileConfig: async (id) => ({ workspaceId: id, revision: 1, mainFile: null, profile: 'managed', engine: 'managed', outputDir: null, pdf: null, log: null, customCommand: null, canSetCommand: false }),
+			getCompileConfig: async (id) => {
+				const gate = compileConfigGate;
+				if (gate && !gate.used) {
+					gate.used = true;
+					gate.entered.resolve(undefined);
+					await gate.release.promise;
+					gate.finished.resolve(undefined);
+				}
+				return { workspaceId: id, revision: 1, mainFile: compileMainFile, profile: 'managed', engine: 'managed', outputDir: null, pdf: null, log: null, customCommand: null, canSetCommand: false };
+			},
 			startCompile: async (request) => {
+				const compileRequest = request as CompileRequest;
+				const persisted = writtenDocuments.get(`${compileRequest.workspaceId}:${compileRequest.entryPath}`);
+				if (persisted && (persisted.documentId !== compileRequest.documentId ||
+					persisted.documentVersion !== compileRequest.documentVersion)) {
+					throw new Error('DocumentIdentityMismatch: compile identity does not match the tracked entry');
+				}
 				compileStartCount++;
 				const plan = compilePlan;
 				if (!plan) throw new Error('Unexpected compile in lifecycle fixture');
-				const compileRequest = request as CompileRequest;
 				const identity: CompileIdentity = {
 					runId: fixtureCompileRunId,
 					workspaceId: compileRequest.workspaceId,
@@ -468,7 +515,9 @@ async function withHostWorkbench(
 				if (!plan?.identity || plan.identity.runId !== id) {
 					throw new Error('Unexpected compile result in lifecycle fixture');
 				}
-				return plan.result.promise;
+				const result = await plan.result.promise;
+				if (compilePlan === plan) compilePlan = null;
+				return result;
 			},
 			cancelCompile: async (id) => {
 				const plan = compilePlan;
@@ -533,7 +582,7 @@ async function withHostWorkbench(
 		Object.defineProperty(win, 'modutexFiles', { configurable: true, value: native });
 		Object.defineProperty(win, 'confirm', {
 			configurable: true,
-			value: () => { confirmCount++; return true; }
+			value: () => { confirmCount++; return confirmResult; }
 		});
 		win.location.hash = '#/workbench';
 		mounted = mount(App, { target: container });
@@ -572,8 +621,13 @@ async function withHostWorkbench(
 		const findButton = (
 			predicate: (label: string) => boolean,
 			scope: ParentNode = container
-		) => Array.from(scope.querySelectorAll<HTMLButtonElement>('button'))
-			.find((button) => predicate(button.textContent?.trim() ?? ''));
+		) => {
+			const button = Array.from(scope.querySelectorAll<HTMLButtonElement>('button'))
+				.find((candidate) => predicate(candidate.textContent?.trim() ?? ''));
+			const menu = button?.closest<HTMLDetailsElement>('details');
+			if (menu && !menu.open) menu.querySelector('summary')?.click();
+			return button;
+		};
 		const fileRow = (name: string) =>
 			Array.from(container.querySelectorAll<HTMLButtonElement>('.files button.file-row'))
 				.find((button) => button.textContent?.trim() === name);
@@ -615,9 +669,12 @@ async function withHostWorkbench(
 		};
 		const openFolder = async (fileName: string, marker: string) => {
 			const beforeReads = pathReads.get(fileName) ?? 0;
+			const fileMenu = container.querySelector<HTMLDetailsElement>('details.file-menu');
+			assert.ok(fileMenu, 'File menu must be available');
+			if (!fileMenu.open) fileMenu.querySelector('summary')?.click();
 			const openButton = await waitFor(
 				() => findButton((label) => label === 'Open folder' || label === '開啟資料夾',
-					container.querySelector('.global-actions') ?? container),
+					fileMenu),
 				10_000,
 				flush
 			);
@@ -647,8 +704,27 @@ async function withHostWorkbench(
 			activeWatchCount: () => readyWatches.size,
 			compileStartCount: () => compileStartCount,
 			confirmCount: () => confirmCount,
+			setConfirmResult: (value) => { confirmResult = value; },
 			recentOpenCount: () => recentOpenCount,
 			prepareCompile,
+			setCompileMainFile: (path) => { compileMainFile = path; },
+			lastWrite: (path) => {
+				let latest: Pick<WriteRequest, 'documentId' | 'documentVersion'> | undefined;
+				for (const [key, value] of writtenDocuments) {
+					if (key.endsWith(`:${path}`)) latest = value;
+				}
+				return latest;
+			},
+			gateNextCompileConfig: () => {
+				const gate: CompileConfigGate = {
+					entered: deferred<void>(),
+					release: deferred<void>(),
+					finished: deferred<void>(),
+					used: false
+				};
+				compileConfigGate = gate;
+				return gate;
+			},
 			goHome,
 			gateNextRead,
 			flush,
@@ -981,6 +1057,103 @@ test('real client App mount/unmount cleanly cleans up absent root attributes wit
 	assert.equal(root.getAttribute('lang'), null);
 });
 
+test('workspace new-file form keeps failed input and opens a successfully created file', { timeout: 180_000 }, async () => {
+	assert.ok(dom);
+	const win = dom.window;
+	const target = win.document.createElement('div');
+	win.document.body.append(target);
+	const dialogPrototype = win.HTMLDialogElement.prototype;
+	const oldShowModal = Object.getOwnPropertyDescriptor(dialogPrototype, 'showModal');
+	const oldClose = Object.getOwnPropertyDescriptor(dialogPrototype, 'close');
+	Object.defineProperty(dialogPrototype, 'showModal', {
+		configurable: true,
+		value(this: HTMLDialogElement) { this.setAttribute('open', ''); }
+	});
+	Object.defineProperty(dialogPrototype, 'close', {
+		configurable: true,
+		value(this: HTMLDialogElement) { this.removeAttribute('open'); }
+	});
+	let shouldFail = true;
+	let entries: { path: string; kind: 'file' | 'directory' }[] = [];
+	const openedPaths: string[] = [];
+	const files = {
+		async createFile(_workspaceId: string, filePath: string, bytes: Uint8Array) {
+			if (shouldFail) throw new Error('FILE_CONFLICT');
+			entries = [...entries, { path: filePath, kind: 'file' }];
+			return { path: filePath, kind: 'file', sizeBytes: bytes.byteLength };
+		}
+	};
+	const instance = mount(WorkspaceFilesPanel, {
+		target,
+		props: {
+			open: true,
+			workspaceId: 'workspace-1',
+			workspaceLabel: 'project',
+			scope: 1,
+			files,
+			entries,
+			selected: 'chapter.tex',
+			disabled: false,
+			sourcePath: 'chapter.tex',
+			sourceDirty: false,
+			locale: 'en',
+			initialTool: 'create-file',
+			initialPath: 'notes/new.tex',
+			openSequence: 1,
+			onOpen: () => {},
+			onCompile: () => {},
+			onCreatedFile: async (filePath: string) => { openedPaths.push(filePath); return true; },
+			onClose: () => {},
+			onRefresh: async () => entries,
+			onEntries: (listed: typeof entries) => { entries = [...listed]; },
+			onCapabilityLost: () => {},
+			onPathChanged: () => {},
+			onSourceRemoved: () => {}
+		}
+	});
+	const flush = async () => { flushSync(); await tick(); await tick(); flushSync(); };
+	try {
+		const form = await waitFor(() => target.querySelector<HTMLFormElement>('.workspace-files-form'), 10_000, flush);
+		assert.ok(form);
+		const pathInput = form.querySelector<HTMLInputElement>('input:not([type="file"])');
+		const contents = form.querySelector<HTMLTextAreaElement>('textarea');
+		assert.ok(pathInput);
+		assert.ok(contents);
+		assert.equal(pathInput.value, 'notes/new.tex');
+		contents.value = 'new TeX content';
+		contents.dispatchEvent(new win.Event('input', { bubbles: true }));
+		const createButton = Array.from(form.querySelectorAll<HTMLButtonElement>('button[type="submit"]'))[0];
+		assert.ok(createButton);
+		createButton.click();
+		await waitFor(
+			() => target.querySelector('.workspace-files-status[role="alert"]')?.textContent?.includes('file changed') ||
+				target.querySelector('.workspace-files-status[role="alert"]')?.textContent?.includes('檔案已變更') ? true : undefined,
+			10_000,
+			flush
+		);
+		assert.equal(pathInput.value, 'notes/new.tex');
+		assert.equal(contents.value, 'new TeX content');
+		assert.deepEqual(openedPaths, []);
+
+		shouldFail = false;
+		createButton.click();
+		await waitFor(
+			() => target.querySelector('.workspace-files-status[role="status"]')?.textContent?.includes('Created and opened "notes/new.tex".') ? true : undefined,
+			10_000,
+			flush
+		);
+		assert.deepEqual(openedPaths, ['notes/new.tex']);
+		assert.deepEqual(entries, [{ path: 'notes/new.tex', kind: 'file' }]);
+	} finally {
+		await unmount(instance);
+		target.remove();
+		if (oldShowModal) Object.defineProperty(dialogPrototype, 'showModal', oldShowModal);
+		else Reflect.deleteProperty(dialogPrototype, 'showModal');
+		if (oldClose) Object.defineProperty(dialogPrototype, 'close', oldClose);
+		else Reflect.deleteProperty(dialogPrototype, 'close');
+	}
+});
+
 test('real App lazily mounts the workbench once and preserves the same panes across navigation', async () => {
 	assert.ok(dom);
 	const container = dom.window.document.getElementById('app')!;
@@ -1019,6 +1192,27 @@ test('real App lazily mounts the workbench once and preserves the same panes acr
 		dom.window.location.hash = '#/';
 	}
 	assert.equal(container.querySelector('.workbench-layout'), null);
+});
+
+test('opening a folder from Home shows its workspace tree without opening a document', { timeout: 180_000 }, async () => {
+	await withHostWorkbench(async (workbench) => {
+		await workbench.goHome();
+		assert.equal(workbench.container.querySelector<HTMLElement>('main.workbench')?.hidden, true);
+
+		const openFolder = await waitFor(
+			() => workbench.findButton((label) => label === 'Open folder' || label === '開啟資料夾'),
+			10_000,
+			workbench.flush
+		);
+		openFolder.click();
+		await workbench.flush();
+
+		const row = await waitFor(() => workbench.fileRow('first.tex'), 10_000, workbench.flush);
+		assert.ok(row);
+		assert.equal(workbench.container.querySelector<HTMLElement>('main.workbench')?.hidden, false);
+		assert.equal(workbench.container.querySelector('.app')?.classList.contains('workbench-active'), true);
+		assert.equal(workbench.container.querySelector('.source-view .cm-content'), null);
+	});
 });
 
 test('same-path reopen reconciles queued watch events against the latest real disk revision', { timeout: 180_000 }, async () => {
@@ -1124,6 +1318,161 @@ test('a failed save conflict preserves the draft and prevents compilation from s
 	});
 });
 
+test('configured main compiles with its saved identity and keeps the active child selected', { timeout: 180_000 }, async () => {
+	await withHostWorkbench(async (workbench) => {
+		await workbench.openFolder('first.tex', 'BASE_FIRST');
+		const mainPath = path.join(path.dirname(workbench.firstPath), 'main.tex');
+		const mainBody = '\\documentclass{article}\n\\begin{document}\nMAIN_INITIAL\n\\end{document}\n';
+		await workbench.writeExternalAndWait(mainPath, mainBody);
+		const mainRow = await waitFor(() => workbench.fileRow('main.tex'), 10_000, workbench.flush);
+		await waitFor(() => mainRow.disabled ? undefined : true, 10_000, workbench.flush);
+		mainRow.click();
+		await workbench.waitForSource('MAIN_INITIAL');
+		workbench.pasteIntoSource('MAIN_SAVED_EDIT');
+		await workbench.waitForSource('MAIN_SAVED_EDIT');
+		const save = workbench.findButton((label) => label === 'Save' || label === '儲存');
+		assert.ok(save);
+		save.click();
+		const savedMain = await waitFor(() => workbench.lastWrite('main.tex'), 10_000, workbench.flush);
+		assert.ok(savedMain);
+
+		const childRow = workbench.fileRow('first.tex');
+		assert.ok(childRow);
+		childRow.click();
+		await workbench.waitForSource('BASE_FIRST');
+		const childContents = workbench.editorText();
+		assert.equal(childRow.getAttribute('aria-current'), 'true');
+		workbench.setCompileMainFile('main.tex');
+
+		const runControlledCompile = async (log: string) => {
+			const plan = workbench.prepareCompile();
+			const compile = await waitFor(
+				() => workbench.findButton((label) => label === 'Compile PDF' || label === '編譯 PDF'),
+				10_000,
+				workbench.flush
+			);
+			compile.click();
+			await plan.started;
+			const identity = plan.identity();
+			assert.ok(identity);
+			plan.releaseStart();
+			plan.resolveResult({ status: 'failure', identity, log, diagnostics: [] });
+			const outputTab = await waitFor(
+				() => workbench.container.querySelector<HTMLButtonElement>('#workbench-dock-tab-output'),
+				10_000,
+				workbench.flush
+			);
+			assert.ok(outputTab);
+			outputTab.click();
+			await waitFor(
+				() => workbench.container.querySelector('.compile-output')?.textContent === log ? true : undefined,
+				10_000,
+				workbench.flush
+			);
+			await waitFor(
+				() => workbench.findButton((label) => label === 'Compile PDF' || label === '編譯 PDF'),
+				10_000,
+				workbench.flush
+			);
+			const retry = workbench.findButton((label) => label === 'Compile PDF' || label === '編譯 PDF');
+			assert.ok(retry);
+			assert.equal(retry.disabled, false, 'A completed failed compile must leave retry available');
+			assert.equal(workbench.editorText(), childContents);
+			assert.equal(childRow.getAttribute('aria-current'), 'true');
+			return identity;
+		};
+
+		const savedCompile = await runControlledCompile('tracked-main-saved');
+		assert.equal(savedCompile.entryPath, 'main.tex');
+		assert.equal(savedCompile.documentId, savedMain.documentId);
+		assert.equal(savedCompile.documentVersion, savedMain.documentVersion);
+
+		const unchangedCompile = await runControlledCompile('tracked-main-unchanged');
+		assert.equal(unchangedCompile.documentId, savedMain.documentId);
+		assert.equal(unchangedCompile.documentVersion, savedMain.documentVersion);
+
+		await workbench.writeExternalAndWait(
+			mainPath,
+			'\\documentclass{article}\n\\begin{document}\nMAIN_EXTERNAL_CHANGE\n\\end{document}\n'
+		);
+		const changedCompile = await runControlledCompile('tracked-main-external-revision');
+		assert.equal(changedCompile.documentId, savedMain.documentId);
+		assert.equal(changedCompile.documentVersion, savedMain.documentVersion + 1);
+
+		const untrackedMainPath = path.join(path.dirname(workbench.firstPath), 'untracked-main.tex');
+		await workbench.writeExternalAndWait(
+			untrackedMainPath,
+			'\\documentclass{article}\n\\begin{document}\nUNTRACKED_MAIN\n\\end{document}\n'
+		);
+		workbench.setCompileMainFile('untracked-main.tex');
+		const untrackedCompile = await runControlledCompile('untracked-main');
+		assert.equal(untrackedCompile.entryPath, 'untracked-main.tex');
+		assert.notEqual(untrackedCompile.documentId, savedMain.documentId);
+	});
+});
+
+test('cancelled dirty folder selection preserves the editor and current route', { timeout: 180_000 }, async () => {
+	await withHostWorkbench(async (workbench) => {
+		await workbench.openFolder('first.tex', 'BASE_FIRST');
+		workbench.pasteIntoSource('CANCELLED_SWITCH_DRAFT');
+		const draft = await workbench.waitForSource('CANCELLED_SWITCH_DRAFT');
+		workbench.setConfirmResult(false);
+		const confirmations = workbench.confirmCount();
+		await workbench.goHome();
+		assert.equal(workbench.container.querySelector<HTMLElement>('main.workbench')?.hidden, true);
+
+		const fileMenu = workbench.container.querySelector<HTMLDetailsElement>('details.file-menu');
+		assert.ok(fileMenu);
+		if (!fileMenu.open) fileMenu.querySelector('summary')?.click();
+		const openFolder = workbench.findButton(
+			(label) => label === 'Open folder' || label === '開啟資料夾',
+			fileMenu
+		);
+		assert.ok(openFolder);
+		openFolder.click();
+		await workbench.flush();
+
+		assert.ok(workbench.confirmCount() > confirmations);
+		assert.equal(workbench.container.querySelector<HTMLElement>('main.workbench')?.hidden, true);
+		assert.equal(workbench.editorText(), draft);
+		assert.equal(workbench.editorText().includes('BASE_SECOND'), false);
+		assert.equal(workbench.activeWatchCount(), 1);
+		assert.equal(workbench.compileStartCount(), 0);
+	});
+});
+
+test('workspace replacement during compile config read rejects the stale compile request', { timeout: 180_000 }, async () => {
+	await withHostWorkbench(async (workbench) => {
+		await workbench.openFolder('first.tex', 'BASE_FIRST');
+		const gate = workbench.gateNextCompileConfig();
+		const row = workbench.fileRow('first.tex');
+		assert.ok(row);
+		row.dispatchEvent(new row.ownerDocument.defaultView!.MouseEvent('contextmenu', {
+			bubbles: true,
+			cancelable: true,
+			clientX: 20,
+			clientY: 100
+		}));
+		const menu = await waitFor(() => workbench.container.querySelector('.file-context-menu'), 10_000, workbench.flush);
+		assert.ok(menu);
+		const compile = workbench.findButton(
+			(label) => label === 'Compile PDF' || label === '編譯 PDF',
+			menu
+		);
+		assert.ok(compile);
+		compile.click();
+		await gate.entered.promise;
+
+		await workbench.openFolder('second.tex', 'BASE_SECOND');
+		gate.release.resolve(undefined);
+		await gate.finished.promise;
+		await workbench.flush();
+		assert.equal(workbench.compileStartCount(), 0);
+		assert.ok(workbench.editorText().includes('BASE_SECOND'));
+		assert.equal(workbench.editorText().includes('BASE_FIRST'), false);
+	});
+});
+
 test('an old workspace watch read cannot publish into the newly opened workspace', { timeout: 180_000 }, async () => {
 	await withHostWorkbench(async (workbench) => {
 		await workbench.openFolder('first.tex', 'BASE_FIRST');
@@ -1184,10 +1533,7 @@ test('Save commits the dirty snapshot and the updated revision accepts later dis
 		);
 		assert.equal(save.disabled, false);
 		save.click();
-		await waitFor(() => {
-			const button = workbench.findButton((label) => label === 'Save' || label === '儲存');
-			return button?.disabled ? true : undefined;
-		}, 10_000, workbench.flush);
+		await waitFor(() => workbench.lastWrite('first.tex'), 10_000, workbench.flush);
 
 		const saved = await fs.promises.readFile(workbench.firstPath, 'utf8');
 		assert.ok(saved.includes('SAVE_DRAFT'));
@@ -1318,6 +1664,18 @@ test('an included-file diagnostic navigates through DesktopPort into the real ed
 				path: 'included.tex',
 				line: 3,
 				column: 1
+			}, {
+				severity: 'error',
+				message: 'Included-file diagnostic',
+				path: 'included.tex',
+				line: 3,
+				column: 1
+			}, {
+				severity: 'error',
+				message: 'Included-file diagnostic',
+				path: 'included.tex',
+				line: 3,
+				column: 2
 			}]
 		});
 
@@ -1329,8 +1687,18 @@ test('an included-file diagnostic navigates through DesktopPort into the real ed
 			10_000,
 			workbench.flush
 		);
-		assert.ok(workbench.container.querySelector('.compile-details'));
-		assert.equal(workbench.container.querySelector('.compile-log pre')?.textContent, 'Included-file diagnostic fixture');
+		const problemsTab = workbench.container.querySelector<HTMLButtonElement>('#workbench-dock-tab-problems');
+		assert.ok(problemsTab?.textContent?.includes('(2)'), 'Only exact duplicate diagnostics should be merged');
+		const outputTab = workbench.container.querySelector<HTMLButtonElement>('#workbench-dock-tab-output');
+		assert.ok(outputTab);
+		outputTab.click();
+		await waitFor(
+			() => workbench.container.querySelector('.compile-output')?.textContent === 'Included-file diagnostic fixture' ? true : undefined,
+			10_000,
+			workbench.flush
+		);
+		problemsTab?.click();
+		await workbench.flush();
 		diagnostic.click();
 		await workbench.waitForSource('INCLUDED_SOURCE');
 		assert.equal(workbench.editorText().includes('BASE_FIRST'), false);

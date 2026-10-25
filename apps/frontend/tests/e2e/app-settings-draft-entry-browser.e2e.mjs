@@ -78,7 +78,7 @@ window.appHostTransport = {
    case 'frontend_list_recent': return [];
    case 'frontend_open_workspace': return workspace;
    case 'frontend_list_files': return Object.keys(sources).map(path => ({ path, kind: 'file' }));
-   case 'frontend_read_file': return { ...args.file, bytes: [...new TextEncoder().encode(sources[args.file.path])], revision: 'revision-1' };
+   case 'frontend_read_file': return { ...args.file, bytes: [...new TextEncoder().encode(sources[args.file.path])], revision: 'revision-1', documentId: null, documentVersion: null };
    case 'frontend_write_file': {
     const request = args.request;
     if (writeEdit !== null) {

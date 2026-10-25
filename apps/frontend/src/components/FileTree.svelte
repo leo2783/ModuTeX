@@ -3,7 +3,7 @@
 	import { tick } from 'svelte';
 	import type { WorkspaceFileAction } from '../features/files/workspace-files.ts';
 	import { text, type Language } from '../i18n/text.ts';
-	let { entries, selected, disabled, onOpen, onCompile, onWorkspaceAction, locale = 'zh-Hant' }: { entries: readonly FileEntry[]; selected: string; disabled: boolean; onOpen: (path: string) => void | Promise<void>; onCompile?: (path: string) => void | Promise<void>; onWorkspaceAction?: (action: WorkspaceFileAction, path: string) => void | Promise<void>; locale?: Language } = $props();
+	let { entries, selected, disabled, onOpen, onCompile, onWorkspaceAction, onNewWorkspaceFile, locale = 'zh-Hant' }: { entries: readonly FileEntry[]; selected: string; disabled: boolean; onOpen: (path: string) => void | Promise<void>; onCompile?: (path: string) => void | Promise<void>; onWorkspaceAction?: (action: WorkspaceFileAction, path: string) => void | Promise<void>; onNewWorkspaceFile?: (parentPath?: string) => void; locale?: Language } = $props();
 	const t = (zh: string, en: string) => text(locale, zh, en);
 	let menu = $state<{ path: string; kind: 'file' | 'directory'; x: number; y: number; target: HTMLElement } | null>(null);
 	let menuElement = $state<HTMLDivElement>();
@@ -14,7 +14,7 @@
 		const rect = target.getBoundingClientRect();
 		const pointer = event instanceof MouseEvent;
 		const width = onWorkspaceAction ? 240 : 220;
-		const height = Math.min(window.innerHeight * 0.8, onWorkspaceAction ? 420 : 132);
+		const height = Math.min(window.innerHeight * 0.8, onWorkspaceAction ? 468 : 156);
 		menu = {
 			path,
 			kind,
@@ -38,6 +38,11 @@
 		if (!path || !onWorkspaceAction) return;
 		try { await onWorkspaceAction(action, path); }
 		catch { notice = t('檔案操作失敗', 'Workspace file operation failed'); }
+	}
+	function createFileInFolder() {
+		const path = menu?.path;
+		closeMenu(true);
+		if (path && onNewWorkspaceFile && !disabled) onNewWorkspaceFile(path);
 	}
 	function isContextMenuKey(event: KeyboardEvent): boolean {
 		return event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey);
@@ -101,9 +106,12 @@
 		{#if menu.kind === 'file'}
 			<button {disabled} onclick={() => act('open')}>{t('開啟', 'Open')}</button>
 			{#if onCompile && /\.tex$/i.test(menu.path)}<button {disabled} onclick={() => act('compile')}>{t('編譯 PDF', 'Compile PDF')}</button>{/if}
-		{:else if onWorkspaceAction}
+		{:else}
+			{#if onNewWorkspaceFile}<button {disabled} onclick={createFileInFolder}>{t('在此資料夾新增檔案', 'Create file in this folder')}</button>{/if}
+			{#if onWorkspaceAction}
 			<button {disabled} onclick={() => workspaceAct('scan')}>{t('掃描資料夾…', 'Scan folder…')}</button>
 			<button {disabled} onclick={() => workspaceAct('search')}>{t('搜尋此資料夾…', 'Search this folder…')}</button>
+			{/if}
 		{/if}
 		<button onclick={() => act('copy')}>{t('複製相對路徑', 'Copy relative path')}</button>
 		{#if onWorkspaceAction}

@@ -103,7 +103,7 @@ export interface WorkbenchRuntimeHost {
 	compiling: boolean;
 	compileHandle: CompileHandle | null;
 	compileLog: string;
-	showCompileDetails: boolean;
+	openCompileTab(tab: 'problems' | 'output'): void;
 	compileTicket: number;
 	compileCancellationRequestedFor: number | null;
 	compileCancellationFailedFor: number | null;
@@ -144,6 +144,7 @@ export interface WorkbenchRuntimeHost {
 	saveSource(): Promise<void>;
 	abandonCompile(): void;
 	acceptDiskSource(document: SourceDocument, path: string, nextRevision: string): void;
+	onSourceReplaced?(): void;
 	selectWorkspace(owner: WorkspaceInfo | null): void;
 	readDesktopFile(path: string, owner: WorkspaceInfo, manageBusy?: boolean): Promise<void>;
 	refreshWorkspaceEntries(owner: WorkspaceInfo, generation: number): Promise<readonly FileEntry[] | null>;
@@ -342,10 +343,14 @@ export function canNavigateDiagnosticState(
 }
 
 export function compileErrorDescriptor(value: unknown): [string, string] {
-	const code = value instanceof Error ? value.message : '';
+	const code = value instanceof Error ? value.message : typeof value === 'string' ? value : '';
+	if (
+		code.startsWith('Managed engine unavailable:') ||
+		code.startsWith('System engine unavailable:')
+	) {
+		return messages.ENGINE_UNAVAILABLE!;
+	}
 	switch (code) {
-		case 'ENGINE_UNAVAILABLE':
-			return messages.ENGINE_UNAVAILABLE!;
 		case 'BUSY':
 			return ['操作未結束，請稍後編譯。', 'Busy. Retry.'];
 		case 'FILE_CONFLICT':
@@ -370,6 +375,22 @@ export function compileErrorDescriptor(value: unknown): [string, string] {
 		default:
 			return ['無法啟動或完成編譯。請查看編譯詳細資料。', 'Compilation could not start or finish. Review the compilation details.'];
 	}
+}
+
+function uniqueDiagnostics(diagnostics: readonly Diagnostic[]): readonly Diagnostic[] {
+	const seen = new Set<string>();
+	return diagnostics.filter((diagnostic) => {
+		const key = JSON.stringify([
+			diagnostic.path,
+			diagnostic.line,
+			diagnostic.column,
+			diagnostic.severity,
+			diagnostic.message
+		]);
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
 }
 
 export function windowErrorNotice(value: unknown): NoticeDescriptor {
@@ -437,15 +458,20 @@ export async function runCompileWorkspaceFile(
 	path: string,
 	owner: WorkspaceInfo
 ): Promise<void> {
-	if (!host.desktop || host.opening || host.saving || host.compiling || host.workspace !== owner) return;
+	const port = host.desktop;
+	const generation = host.workspaceGeneration;
+	if (!port || host.opening || host.saving || host.compiling || host.workspace !== owner) return;
+	const scopeIsCurrent = () => !host.lifetime.signal.aborted && host.desktop === port &&
+		host.workspace === owner && host.workspaceGeneration === generation;
 	let config;
 	try {
-		config = await host.desktop.getCompileConfig(owner.id);
-	} catch {
-		config = null;
+		config = await port.getCompileConfig(owner.id);
+	} catch (value) {
+		if (scopeIsCurrent()) host.errorState = fileErrorDescriptor(value);
+		return;
 	}
-	if (host.workspace !== owner) return;
-	const mainPath = config?.mainFile ?? null;
+	if (!scopeIsCurrent() || host.opening || host.saving || host.compiling) return;
+	const mainPath = config.mainFile ?? null;
 	if (mainPath && mainPath === path) {
 		await runCompileSource(host);
 		return;
@@ -453,7 +479,7 @@ export async function runCompileWorkspaceFile(
 	if (host.sourceName !== path) {
 		await runReadDesktopFile(host, path, owner);
 	}
-	if (host.workspace === owner && host.sourceName === path) {
+	if (scopeIsCurrent() && host.sourceName === path) {
 		await runCompileSource(host);
 	}
 }
@@ -485,7 +511,10 @@ export async function runReadDesktopFile(
 			pdf ? null : import('../files/read.ts')
 		]);
 		if (host.workspace !== owner || ticket !== (pdf ? host.pdfTicket : host.sourceTicket)) return;
-		installDesktopReadReceipt(host, path, receipt, reader?.readSourceBytes(receipt.bytes) ?? null);
+		installDesktopReadReceipt(host, path, receipt, reader?.readSourceBytes(receipt.bytes,
+			receipt.documentId !== null && receipt.documentVersion !== null
+				? { documentId: receipt.documentId, version: receipt.documentVersion }
+				: undefined) ?? null);
 	} catch (value) {
 		if (host.workspace === owner && ticket === (pdf ? host.pdfTicket : host.sourceTicket)) {
 			host.errorState = fileErrorDescriptor(value);
@@ -522,6 +551,7 @@ function installDesktopReadReceipt(
 		host.resetDraftSelection();
 		if (!document) throw new Error('FILE_TYPE');
 		host.source = document;
+		host.onSourceReplaced?.();
 		host.outlineFailed = false;
 		host.sourceName = path;
 		host.revision = receipt.revision;
@@ -544,21 +574,28 @@ export async function runChooseSource(
 	if (host.opening || host.saving || host.confirming) return;
 	const previous = host.source;
 	const owner = host.workspace;
+	const generation = host.workspaceGeneration;
 	const previousVersion = previous?.version;
 	const previousRevision = host.revision;
 	if (!await host.allowReplacement()) return;
 	if (host.lifetime.signal.aborted || host.opening || host.saving ||
-		host.source !== previous || host.workspace !== owner ||
+		host.source !== previous || host.workspace !== owner || host.workspaceGeneration !== generation ||
 		host.source?.version !== previousVersion || host.revision !== previousRevision) return;
-	if (!host.desktop) {
+	const desktop = host.desktop;
+	if (!desktop) {
 		host.clickSourceInput();
 		return;
 	}
 	host.opening = true;
 	host.errorState = null;
 	try {
-		const selected = recentId ? await host.desktop.openRecent(recentId) : await host.desktop.openWorkspace(kind);
+		const selected = recentId ? await desktop.openRecent(recentId) : await desktop.openWorkspace(kind);
 		if (!selected) return;
+		if (host.lifetime.signal.aborted || host.desktop !== desktop ||
+			host.workspace !== owner || host.workspaceGeneration !== generation ||
+			host.source !== previous || host.source?.version !== previousVersion || host.revision !== previousRevision) return;
+		host.route = 'workbench';
+		window.location.hash = '#/workbench';
 		host.draftPanelOpen = false;
 		host.stopWorkspaceWatch();
 		host.workspaceWatchIssue = null;
@@ -794,7 +831,10 @@ async function reconcileSourceFromDisk(
 	}
 	try {
 		const { readSourceBytes } = await import('../files/read.ts');
-		const reloaded = readSourceBytes(receipt.bytes);
+		const reloaded = readSourceBytes(receipt.bytes,
+			receipt.documentId !== null && receipt.documentVersion !== null
+				? { documentId: receipt.documentId, version: receipt.documentVersion }
+				: undefined);
 		if (!host.workspaceWatchIsCurrent(watch) || host.source !== snapshot ||
 			host.source?.documentId !== documentId || host.source.version !== snapshotVersion ||
 			host.sourceName !== path || host.dirty || host.revision !== revisionAtRead) {
@@ -1024,7 +1064,10 @@ async function openIncludedSynctex(
 			(host.source?.version ?? null) !== versionBefore ||
 			host.revision !== revisionBefore || host.dirty !== dirtyBefore) return;
 		const { readSourceBytes } = await import('../files/read.ts');
-		const reloaded = readSourceBytes(receipt.bytes);
+		const reloaded = readSourceBytes(receipt.bytes,
+			receipt.documentId !== null && receipt.documentVersion !== null
+				? { documentId: receipt.documentId, version: receipt.documentVersion }
+				: undefined);
 		if (host.lifetime.signal.aborted || ticket !== host.sourceTicket || host.workspace !== owner) return;
 		host.acceptDiskSource(reloaded, targetPath, receipt.revision);
 		host.diagnosticNavigation = {
@@ -1076,14 +1119,23 @@ export async function runCompileSource(host: WorkbenchRuntimeHost): Promise<void
 		host.errorState = ['請先開啟已儲存的工作區文件。', 'Open a saved workspace document first.'];
 		return;
 	}
+	const generation = host.workspaceGeneration;
+	const intentSource = host.source;
+	const intentPath = host.sourceName;
+	const intentVersion = intentSource.version;
+	const intentRevision = host.revision;
+	const scopeIsCurrent = () => !host.lifetime.signal.aborted && host.desktop === port &&
+		host.workspace === owner && host.workspaceGeneration === generation;
+	const intentIsCurrent = () => host.source === intentSource && host.sourceName === intentPath &&
+		intentSource.version === intentVersion && host.revision === intentRevision;
 	let config;
 	try {
 		config = await port.getCompileConfig(owner.id);
 	} catch (value) {
-		if (!host.lifetime.signal.aborted) host.errorState = fileErrorDescriptor(value);
+		if (scopeIsCurrent()) host.errorState = fileErrorDescriptor(value);
 		return;
 	}
-	if (host.lifetime.signal.aborted || host.desktop !== port || host.workspace !== owner) return;
+	if (!scopeIsCurrent() || !intentIsCurrent()) return;
 	const path = config.mainFile ?? (
 		host.sourceName?.toLowerCase().endsWith('.tex') ? host.sourceName : null
 	);
@@ -1091,32 +1143,46 @@ export async function runCompileSource(host: WorkbenchRuntimeHost): Promise<void
 		host.errorState = ['請開啟 TeX 文件或在編譯設定中選擇主文件。', 'Open a TeX file or choose a main file in Compile settings.'];
 		return;
 	}
-	if (!host.revision || host.dirty) await host.saveSource();
-	if (host.desktop !== port || host.lifetime.signal.aborted || !host.workspace || host.saving || host.opening || host.compiling) return;
-	if (host.workspace !== owner) return;
-	if (!host.source || !host.sourceName || !host.revision || host.dirty || host.sourceMissingOnDisk() ||
-		host.saving || host.opening || host.compiling) return;
 	if (config.profile === 'custom' && !config.canSetCommand) {
 		host.errorState = ['自訂編譯命令權限已停用。', 'Custom compile command permission is disabled.'];
 		return;
 	}
+	if (!host.revision || host.dirty) {
+		const pendingSource = host.source;
+		const pendingPath = host.sourceName;
+		const pendingVersion = pendingSource.version;
+		await host.saveSource();
+		if (!scopeIsCurrent()) return;
+		if (host.source !== pendingSource || host.sourceName !== pendingPath ||
+			pendingSource.version !== pendingVersion || host.savedVersion !== pendingVersion ||
+			host.saving || host.opening || host.compiling || host.dirty || !host.revision ||
+			host.sourceMissingOnDisk()) return;
+	}
+	if (!scopeIsCurrent()) return;
+	if (!host.source || !host.sourceName || !host.revision || host.dirty || host.sourceMissingOnDisk() ||
+		host.saving || host.opening || host.compiling) return;
 	const snapshot = host.source;
 	const editorPath = host.sourceName;
 	const editorRevision = host.revision;
-	let compileRevision: string;
+	let compileReceipt: ReadReceipt;
 	try {
-		compileRevision = (await port.readFile({ workspaceId: owner.id, path })).revision;
+		compileReceipt = await port.readFile({ workspaceId: owner.id, path });
 	} catch (value) {
-		if (!host.lifetime.signal.aborted && host.workspace === owner && host.desktop === port) {
+		if (scopeIsCurrent() && host.source === snapshot && host.sourceName === editorPath) {
 			host.errorState = fileErrorDescriptor(value);
 		}
 		return;
 	}
-	if (host.lifetime.signal.aborted || host.desktop !== port || host.workspace !== owner) return;
+	if (!scopeIsCurrent() || host.source !== snapshot || host.sourceName !== editorPath ||
+		host.revision !== editorRevision) return;
+	const compileRevision = compileReceipt.revision;
+	if (path === editorPath && compileReceipt.documentId !== null &&
+		(compileReceipt.documentId !== snapshot.documentId || compileReceipt.documentVersion !== snapshot.version)) {
+		host.compileNoticeState = ['文件快照身分已變更，請重新載入後再編譯。', 'The document snapshot identity changed. Reload it before compiling.'];
+		return;
+	}
 	const editorSnapshotIsCurrent = () =>
-		!host.lifetime.signal.aborted &&
-		host.desktop === port &&
-		host.workspace === owner &&
+		scopeIsCurrent() &&
 		host.source === snapshot &&
 		host.sourceName === editorPath &&
 		host.revision === editorRevision &&
@@ -1149,7 +1215,6 @@ export async function runCompileSource(host: WorkbenchRuntimeHost): Promise<void
 	host.errorState = null;
 	host.compileNoticeState = null;
 	host.compileLog = '';
-	host.showCompileDetails = false;
 	host.diagnostics = [];
 	host.diagnosticIdentity = null;
 	let handleReturned = false;
@@ -1157,13 +1222,13 @@ export async function runCompileSource(host: WorkbenchRuntimeHost): Promise<void
 		const handle = await port.compile({
 			workspaceId: owner.id,
 			entryPath: path,
-			documentId: snapshot.documentId,
-			documentVersion: snapshot.version,
+		documentId: compileReceipt.documentId ?? snapshot.documentId,
+		documentVersion: compileReceipt.documentVersion ?? snapshot.version,
 			savedRevision: compileRevision,
 			engine: config.engine
 		});
 		handleReturned = true;
-		if (own !== host.compileTicket || host.workspace !== owner || host.desktop !== port) {
+		if (own !== host.compileTicket || !scopeIsCurrent()) {
 			await handle.cancel();
 			return;
 		}
@@ -1172,9 +1237,9 @@ export async function runCompileSource(host: WorkbenchRuntimeHost): Promise<void
 			try { await handle.cancel(); }
 			catch { noteCompileCancellationFailure(host, own); }
 		}
-		if (own !== host.compileTicket || host.workspace !== owner || host.desktop !== port) return;
+		if (own !== host.compileTicket || !scopeIsCurrent()) return;
 		const result = await handle.finished;
-		if (own !== host.compileTicket || host.workspace !== owner || host.desktop !== port) return;
+		if (own !== host.compileTicket || !scopeIsCurrent()) return;
 		if (host.compileCancellationRequestedFor === own) {
 			if (host.compileCancellationFailedFor !== own) {
 				host.compileNoticeState = result.status === 'cancelled'
@@ -1184,7 +1249,7 @@ export async function runCompileSource(host: WorkbenchRuntimeHost): Promise<void
 			return;
 		}
 		const inputsCurrent = await compileInputsAreCurrent();
-		if (own !== host.compileTicket || host.workspace !== owner || host.desktop !== port || host.lifetime.signal.aborted) return;
+		if (own !== host.compileTicket || !scopeIsCurrent()) return;
 		if (host.compileCancellationRequestedFor === own) {
 			if (host.compileCancellationFailedFor !== own) {
 				host.compileNoticeState = result.status === 'cancelled'
@@ -1198,19 +1263,18 @@ export async function runCompileSource(host: WorkbenchRuntimeHost): Promise<void
 			return;
 		}
 		host.compileLog = result.log;
-		host.diagnostics = result.diagnostics;
+		host.diagnostics = uniqueDiagnostics(result.diagnostics);
 		host.diagnosticIdentity = result.identity;
 		if (result.status === 'cancelled') {
 			host.compileNoticeState = ['編譯已取消', 'Compilation cancelled'];
 			return;
 		}
 		if (result.status === 'failure') {
-			host.showCompileDetails = true;
+			host.openCompileTab(host.diagnostics.length ? 'problems' : 'output');
 			if (!host.compileLog && !host.diagnostics.length) {
-				host.compileLog = host.t('編譯器回報失敗，但未提供記錄。請重試；若仍失敗，請檢查編譯引擎。', 'The compiler reported failure without a log. Retry; if it fails again, check the compile engine.');
+				host.compileLog = host.t('編譯器回報失敗，但沒有記錄。請檢查編譯引擎後重試。', 'The compiler reported failure without a log. Check the compile engine and try again.');
 			}
-			const diag = result.diagnostics[0]?.message;
-			host.errorState = diag ? { raw: diag } : compileErrorDescriptor(new Error('COMPILE_FAILED'));
+			host.errorState = null;
 			host.compileNoticeState = ['編譯失敗。請檢查編譯問題或 TeX 記錄，修正後重新編譯。', 'Compilation failed. Review the problems or TeX log, then compile again.'];
 			host.workbenchPane = 'document';
 			return;
@@ -1229,12 +1293,12 @@ export async function runCompileSource(host: WorkbenchRuntimeHost): Promise<void
 		host.workbenchPane = 'pdf';
 
 		let newSynctex: BoundSynctexIndex | null = null;
-		if (host.desktop?.takeCompileSynctex) {
+		if (port.takeCompileSynctex) {
 			try {
 				const { BoundSynctexIndex } = await import('./synctex.ts');
-				const bytes = await host.desktop.takeCompileSynctex(result.identity);
+				const bytes = await port.takeCompileSynctex(result.identity);
 				if (bytes) {
-					if (own === host.compileTicket && host.workspace === owner && host.desktop === port && !host.lifetime.signal.aborted) {
+					if (own === host.compileTicket && scopeIsCurrent()) {
 						newSynctex = new BoundSynctexIndex(result.identity, bytes);
 					} else {
 						bytes.fill(0);
@@ -1242,26 +1306,26 @@ export async function runCompileSource(host: WorkbenchRuntimeHost): Promise<void
 				}
 			} catch {
 				newSynctex = null;
-				if (own === host.compileTicket && host.workspace === owner && host.desktop === port && !host.lifetime.signal.aborted) {
+				if (own === host.compileTicket && scopeIsCurrent()) {
 					host.compileNoticeState = ['PDF 已顯示，但無法建立 SyncTeX 對應。', 'The PDF is shown, but SyncTeX mappings could not be loaded.'];
 				}
 			}
 		}
-		if (own !== host.compileTicket || host.workspace !== owner || host.desktop !== port || host.lifetime.signal.aborted) {
+		if (own !== host.compileTicket || !scopeIsCurrent()) {
 			newSynctex?.dispose();
 			return;
 		}
 		host.synctexIndex?.dispose();
 		host.synctexIndex = newSynctex;
 	} catch (value) {
-		if (own === host.compileTicket && host.workspace === owner && host.desktop === port) {
+		if (own === host.compileTicket && scopeIsCurrent()) {
 			if (handleReturned && host.compileCancellationRequestedFor === own) {
 				if (host.compileCancellationFailedFor !== own) {
 					host.compileNoticeState = ['本次編譯結果未載入。請重新編譯。', 'The compilation result was not loaded. Please compile again.'];
 				}
 			} else {
 				const inputsCurrent = await compileInputsAreCurrent();
-				if (own !== host.compileTicket || host.workspace !== owner || host.desktop !== port || host.lifetime.signal.aborted) return;
+				if (own !== host.compileTicket || !scopeIsCurrent()) return;
 				if (handleReturned && host.compileCancellationRequestedFor === own) {
 					if (host.compileCancellationFailedFor !== own) {
 						host.compileNoticeState = ['本次編譯結果未載入。請重新編譯。', 'The compilation result was not loaded. Please compile again.'];
@@ -1270,11 +1334,11 @@ export async function runCompileSource(host: WorkbenchRuntimeHost): Promise<void
 					host.compileNoticeState = ['文件已變更，本次編譯結果未載入。請重新編譯。', 'The document changed, so this compile result was not loaded. Please compile again.'];
 				} else {
 					const desc = compileErrorDescriptor(value);
-					host.errorState = desc;
+					host.errorState = null;
 					const reason = value instanceof Error ? value.message : typeof value === 'string' ? value : host.t('未取得失敗詳細資料。', 'No failure details were returned.');
 					host.compileLog = [handleReturned ? host.t('編譯執行失敗', 'Compilation execution failed') : host.t('編譯啟動前檢查失敗', 'Compilation preflight failed'), path, host.t(...desc), reason].join('\n').slice(0, 256 * 1024);
-					host.showCompileDetails = true;
-					host.compileNoticeState = ['編譯失敗，請查看錯誤訊息。', 'Compilation failed. Review the error message.'];
+					host.openCompileTab('output');
+					host.compileNoticeState = desc;
 				}
 			}
 		}
@@ -1348,7 +1412,10 @@ async function openIncludedDiagnostic(
 		const receipt = await port.readFile({ workspaceId: context.owner.id, path });
 		if (!diagnosticContextIsCurrent(host, context, ticket)) return;
 		const { readSourceBytes } = await import('../files/read.ts');
-		const reloaded = readSourceBytes(receipt.bytes);
+		const reloaded = readSourceBytes(receipt.bytes,
+			receipt.documentId !== null && receipt.documentVersion !== null
+				? { documentId: receipt.documentId, version: receipt.documentVersion }
+				: undefined);
 		if (!diagnosticContextIsCurrent(host, context, ticket)) return;
 		host.acceptDiskSource(reloaded, path, receipt.revision);
 		host.diagnosticNavigation = {

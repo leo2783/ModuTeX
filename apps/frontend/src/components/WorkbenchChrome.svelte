@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { isTauri } from '@tauri-apps/api/core';
-	import type { CompileIdentity, FileEntry, WorkspaceInfo } from '@modutex/frontend-contracts';
+import type { CompileIdentity, Diagnostic, FileEntry, WorkspaceInfo } from '@modutex/frontend-contracts';
 	import type { SourceDocument, SourceProjection, SourceSpan } from '../features/document-core/core.ts';
 	import { projectionIsCurrent } from '../features/document-core/projection-state.ts';
 	import type { OutlineEntry } from '../features/source-editor/outline.ts';
@@ -16,9 +16,13 @@
 	import type { WorkspaceFilesPort } from '../features/files/workspace-files.ts';
 	import { text, type Language } from '../i18n/text.ts';
 	import WorkbenchLayout from './WorkbenchLayout.svelte';
+	import DragSeparator from './splitter/DragSeparator.svelte';
+	import { clampSplitterValue, splitterBounds } from './splitter/resize-logic.ts';
 	import GitPanel from '../features/git/GitPanel.svelte';
-	import TerminalPanel from '../features/terminal/TerminalPanel.svelte';
 	import DraftPanel from '../features/draft/DraftPanel.svelte';
+import WorkbenchDock from './WorkbenchDock.svelte';
+
+type WorkbenchDockTab = 'problems' | 'output' | 'terminal' | null;
 
 	let {
 		locale,
@@ -31,6 +35,11 @@
 		pageCount = $bindable(0),
 		pdfRendered = $bindable(false),
 		pdfDisplayFailed = $bindable(false),
+		activeDockTab = $bindable<WorkbenchDockTab>(null),
+		diagnostics = [],
+		compileLog = '',
+		canNavigateDiagnostic = () => false,
+		navigateToDiagnostic = () => {},
 		desktop,
 		workspace,
 		workspaceFiles,
@@ -59,6 +68,7 @@
 		draftSelectionSnapshot = $bindable<DraftSelectionSnapshot | null>(null),
 		draftSelectionWarning = $bindable<[string, string] | null>(null),
 		onOpenWorkspaceFiles,
+		onNewWorkspaceFile,
 		onChooseSource,
 		onReadDesktopFile,
 		onCompileWorkspaceFile,
@@ -80,6 +90,11 @@
 		pageCount: number;
 		pdfRendered: boolean;
 		pdfDisplayFailed: boolean;
+		activeDockTab: WorkbenchDockTab;
+		diagnostics: readonly Diagnostic[];
+		compileLog: string;
+		canNavigateDiagnostic: (diagnostic: Diagnostic) => boolean;
+		navigateToDiagnostic: (diagnostic: Diagnostic) => void;
 		desktop: boolean;
 		workspace: WorkspaceInfo | null;
 		workspaceFiles: WorkspaceFilesPort | null;
@@ -108,6 +123,7 @@
 		draftSelectionSnapshot: DraftSelectionSnapshot | null;
 		draftSelectionWarning: [string, string] | null;
 		onOpenWorkspaceFiles: () => void;
+		onNewWorkspaceFile: (parentPath?: string) => void;
 		onChooseSource: (kind?: 'file' | 'folder') => void;
 		onReadDesktopFile: (path: string, owner: WorkspaceInfo) => Promise<void>;
 		onCompileWorkspaceFile: (path: string, owner: WorkspaceInfo) => Promise<void>;
@@ -121,6 +137,33 @@
 	} = $props();
 
 	const t = (zh: string, en: string) => text(locale, zh, en);
+
+	let sidebarPrimaryElement: HTMLElement | null = $state(null);
+	let explorerHeight = $state(280);
+
+	function getExplorerBounds() {
+		if (!sidebarPrimaryElement) return { min: 120, max: 400 };
+		const rect = sidebarPrimaryElement.getBoundingClientRect();
+		if (rect.height <= 0) return { min: 120, max: 400 };
+		return splitterBounds(rect.height, 120, 96, 8);
+	}
+
+	$effect(() => {
+		const container = sidebarPrimaryElement;
+		if (!container) return;
+		const resize = () => {
+			if (container.clientHeight <= 0) return;
+			explorerHeight = clampSplitterValue(explorerHeight, getExplorerBounds());
+		};
+		const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
+		observer?.observe(container);
+		window.addEventListener('resize', resize);
+		resize();
+		return () => {
+			observer?.disconnect();
+			window.removeEventListener('resize', resize);
+		};
+	});
 
 	let draftPanelSelection = $derived.by(() => {
 		const selected = draftSelectionSnapshot;
@@ -179,40 +222,54 @@
 >
 	{#snippet sidebarContent()}
 		<aside class="files" aria-label={t('文件與大綱', 'Files and outline')}>
-			<section class="explorer-section" aria-label={t('檔案總管', 'Explorer')}>
-				<div class="sidebar-heading">
-					<span>{t('檔案總管', 'Explorer')}</span>
-					<div>
-						{#if workspace && workspaceFiles && workspaceFilesAvailability === 'available'}
-							<button class="text-button" bind:this={workspaceFilesButton} title={t('工作區檔案操作', 'Workspace file operations')} onclick={onOpenWorkspaceFiles} disabled={opening || saving || compiling}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
-						{/if}
-						<button class="text-button" title={t('開啟資料夾', 'Open folder')} onclick={() => onChooseSource('folder')} disabled={!desktop || opening || saving}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h6l2 2h10v12H3ZM12 11v6m-3-3h6" /></svg></button>
+			<div class="sidebar-primary" bind:this={sidebarPrimaryElement} style:grid-template-rows={`minmax(120px, ${explorerHeight}px) 8px minmax(96px, 1fr)`}>
+				<section class="explorer-section" aria-label={t('檔案總管', 'Explorer')}>
+					<div class="sidebar-heading">
+						<span>{t('檔案總管', 'Explorer')}</span>
+						<div class="sidebar-heading-actions">
+							{#if workspace && workspaceFiles && workspaceFilesAvailability === 'available'}
+								<button class="text-button" bind:this={workspaceFilesButton} aria-label={t('工作區檔案操作', 'Workspace file operations')} title={t('工作區檔案操作', 'Workspace file operations')} onclick={onOpenWorkspaceFiles} disabled={opening || saving || compiling}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
+								<button class="text-button" aria-label={t('新增 TeX 檔案', 'New TeX file')} title={t('新增 TeX 檔案', 'New TeX file')} onclick={() => onNewWorkspaceFile()} disabled={opening || saving || compiling}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v5h5M12 12v6m-3-3h6" /></svg></button>
+							{/if}
+							<button class="text-button" aria-label={t('開啟資料夾', 'Open folder')} title={t('開啟資料夾', 'Open folder')} onclick={() => onChooseSource('folder')} disabled={!desktop || opening || saving}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 6h7l2 2h9v12H3z" /></svg></button>
+						</div>
 					</div>
-				</div>
-				<div class="sidebar-scroll">
-					{#await import('./FileTree.svelte') then { default: FileTree }}
-					{#if workspace}
-						{@const sidebarOwner = workspace}
-						<div class="workspace-name" title={sidebarOwner.label}>{sidebarOwner.label}</div>
-						<FileTree {entries} {locale} selected={sourceName} disabled={opening || saving || compiling} onOpen={async (path) => { await onReadDesktopFile(path, sidebarOwner); }} onCompile={async (path) => { await onCompileWorkspaceFile(path, sidebarOwner); }} />
-					{:else if source}
-						<FileTree entries={[{ path: sourceName, kind: 'file' }]} selected={sourceName} disabled={true} onOpen={() => {}} />
-					{:else}<p class="sidebar-empty">{t('尚未開啟文件', 'No document open')}</p>{/if}
-					{/await}
-				</div>
-			</section>
-			<section class="outline-section" aria-label={t('大綱', 'Outline')}>
-				<div class="sidebar-heading">{t('大綱', 'Outline')}</div>
-				<div class="sidebar-scroll">
-				{#if source && outlineOwner === source.documentId && outline.length}
-					{#each outline as heading (heading.span.from)}
-						<button class="outline-row" style:padding-left={`${16 + heading.level * 12}px`}
-							disabled={saving || opening || !projection || !projectionIsCurrent(source, projection)}
-							onclick={() => onNavigateHeading(heading.span)}>{heading.label}</button>
-					{/each}
-				{:else}<p class="sidebar-empty">{!source ? t('開啟文件後顯示章節', 'Open a document to view sections') : outlineFailed ? t('大綱暫停更新', 'Outline updates paused') : !projection ? t('正在更新大綱…', 'Updating outline…') : t('此文件沒有章節', 'This document has no sections')}</p>{/if}
-				</div>
-			</section>
+					<div class="sidebar-scroll">
+						{#await import('./FileTree.svelte') then { default: FileTree }}
+						{#if workspace}
+							{@const sidebarOwner = workspace}
+							<div class="workspace-name" title={sidebarOwner.label}>{sidebarOwner.label}</div>
+							<FileTree {entries} {locale} selected={sourceName} disabled={opening || saving || compiling} onOpen={async (path) => { await onReadDesktopFile(path, sidebarOwner); }} onCompile={async (path) => { await onCompileWorkspaceFile(path, sidebarOwner); }} onNewWorkspaceFile={onNewWorkspaceFile} />
+						{:else if source}
+							<FileTree entries={[{ path: sourceName, kind: 'file' }]} selected={sourceName} disabled={true} onOpen={() => {}} />
+						{:else}<p class="sidebar-empty">{t('尚未開啟文件', 'No document open')}</p>{/if}
+						{/await}
+					</div>
+				</section>
+				<DragSeparator
+					class="sidebar-outline-separator"
+					value={explorerHeight}
+					min={getExplorerBounds().min}
+					max={getExplorerBounds().max}
+					axis="horizontal"
+					controls="workbench-outline-section"
+					label={t('調整檔案與大綱高度', 'Resize explorer and outline height')}
+					container={sidebarPrimaryElement}
+					onChange={(value) => (explorerHeight = value)}
+				/>
+				<section id="workbench-outline-section" class="outline-section" aria-label={t('大綱', 'Outline')}>
+					<div class="sidebar-heading">{t('大綱', 'Outline')}</div>
+					<div class="sidebar-scroll">
+					{#if source && outlineOwner === source.documentId && outline.length}
+						{#each outline as heading (heading.span.from)}
+							<button class="outline-row" style:padding-left={`${16 + heading.level * 12}px`}
+								disabled={saving || opening || !projection || !projectionIsCurrent(source, projection)}
+								onclick={() => onNavigateHeading(heading.span)}>{heading.label}</button>
+						{/each}
+					{:else}<p class="sidebar-empty">{!source ? t('開啟文件後顯示章節', 'Open a document to view sections') : outlineFailed ? t('大綱暫停更新', 'Outline updates paused') : !projection ? t('正在更新大綱…', 'Updating outline…') : t('此文件沒有章節', 'This document has no sections')}</p>{/if}
+					</div>
+				</section>
+			</div>
 			<GitPanel workspaceId={workspace?.id ?? null} {locale} />
 		</aside>
 	{/snippet}
@@ -340,6 +397,12 @@
 		</section>
 	{/snippet}
 </WorkbenchLayout>
-{#if desktop && workspace}
-	<TerminalPanel workspaceId={workspace.id} {locale} />
-{/if}
+<WorkbenchDock
+	{locale}
+	bind:activeTab={activeDockTab}
+	workspaceId={desktop ? workspace?.id ?? null : null}
+	{diagnostics}
+	{compileLog}
+	{canNavigateDiagnostic}
+	{navigateToDiagnostic}
+/>

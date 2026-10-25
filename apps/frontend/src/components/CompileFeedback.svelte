@@ -1,15 +1,16 @@
 <script lang="ts">
 	import type { Diagnostic } from '@modutex/frontend-contracts';
 	import { text, type Language } from '../i18n/text.ts';
-	let { locale, diagnostics, compileLog, expanded = false, canNavigateDiagnostic, navigateToDiagnostic }: {
+	let { locale, panel = 'problems', diagnostics, compileLog, canNavigateDiagnostic, navigateToDiagnostic }: {
 		locale: Language; diagnostics: readonly Diagnostic[]; compileLog: string;
-		expanded?: boolean;
+		panel?: 'problems' | 'output';
 		canNavigateDiagnostic: (diagnostic: Diagnostic) => boolean;
 		navigateToDiagnostic: (diagnostic: Diagnostic) => void;
 	} = $props();
 	const t = (zh: string, en: string) => text(locale, zh, en);
 </script>
-	{#if diagnostics.length}
+	{#if panel === 'problems'}
+		{#if diagnostics.length}
 		<section class="compile-problems" aria-label={t('編譯問題', 'Compilation problems')}>
 			<h2>{t('編譯問題', 'Compilation problems')} ({diagnostics.length})</h2>
 			<ul>
@@ -28,15 +29,22 @@
 				{/each}
 			</ul>
 		</section>
-	{/if}
-	{#if compileLog}
-		<details class="compile-log" open={expanded || diagnostics.some((d) => d.severity === 'error')}>
-			<summary>{t('TeX 編譯記錄', 'TeX compilation log')}</summary>
-			<pre>{compileLog}</pre>
-		</details>
+		{:else}
+			<p class="compile-empty">{t('目前沒有編譯問題。', 'No compilation problems.')}</p>
+		{/if}
+	{:else if compileLog}
+		<pre class="compile-output" aria-label={t('TeX 編譯記錄', 'TeX compilation log')}>{compileLog}</pre>
+	{:else}
+		<p class="compile-empty">{t('目前沒有編譯輸出。', 'No compilation output.')}</p>
 	{/if}
 
 <style>
+	.compile-empty { margin: 0; padding: 12px 16px; color: var(--muted); }
+	.compile-output { margin: 0; padding: 10px 12px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.45 Consolas, monospace; }
+	.compile-problems { padding: 10px 12px; }
+	.compile-problems h2 { margin: 0 0 6px; font-size: 14px; }
+	.compile-problems ul { margin: 0; padding-inline-start: 20px; }
+	.compile-problems li { overflow-wrap: anywhere; line-height: 1.45; }
 	.diagnostic-row {
 		display: flex;
 		align-items: baseline;

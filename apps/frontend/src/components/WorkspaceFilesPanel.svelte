@@ -38,8 +38,12 @@
 		sourcePath,
 		sourceDirty,
 		locale = 'zh-Hant',
+		initialTool = null,
+		initialPath = '',
+		openSequence = 0,
 		onOpen,
 		onCompile,
+		onCreatedFile = async () => false,
 		onClose,
 		onRefresh,
 		onEntries,
@@ -58,8 +62,12 @@
 		sourcePath: string;
 		sourceDirty: boolean;
 		locale?: Language;
+		initialTool?: 'create-file' | 'create-directory' | null;
+		initialPath?: string;
+		openSequence?: number;
 		onOpen: (path: string) => void | Promise<void>;
 		onCompile?: (path: string) => void | Promise<void>;
+		onCreatedFile?: (path: string) => boolean | Promise<boolean>;
 		onClose: () => void;
 		onRefresh: () => Promise<readonly FileEntry[] | null>;
 		onEntries: (entries: readonly FileEntry[]) => void;
@@ -102,6 +110,7 @@
 	let disposed = false;
 	let sequence = 0;
 	let binaryReadTicket = 0;
+	let observedOpenSequence = -1;
 
 	const operationLocked = $derived(disabled || busyAction.length > 0);
 	const visibleEntries = $derived(scanEntries ?? entries);
@@ -172,6 +181,25 @@
 		wasOpen = shouldOpen;
 	});
 
+	$effect(() => {
+		const requestedSequence = openSequence;
+		const requestedTool = initialTool;
+		const requestedPath = initialPath;
+		if (requestedSequence === observedOpenSequence || busyAction) return;
+		observedOpenSequence = requestedSequence;
+		untrack(() => {
+			tool = requestedTool;
+			createFilePath = requestedPath;
+			createFileContents = '';
+			binaryFileBytes = null;
+			binaryFileLabel = '';
+			if (binaryInput) binaryInput.value = '';
+			confirmation = null;
+			fileStat = null;
+			setStatus('');
+		});
+	});
+
 	function isCurrent(ticket: number): boolean {
 		return !disposed && ticket === sequence;
 	}
@@ -223,7 +251,7 @@
 			case 'FILE_CONFLICT':
 			case 'FILE_CHANGED':
 				setStatus(
-					t('檔案已變更或目的地已存在；操作未覆寫原有內容。請重新整理後再試。', 'The file changed or the destination already exists. Existing content was not overwritten; refresh and try again.'),
+					t('檔案已變更或目的地已存在。原有內容未遭覆寫。請重新整理後再試。', 'The file changed or the destination already exists. Existing content was not overwritten. Refresh and try again.'),
 					true
 				);
 				return;
@@ -314,17 +342,19 @@
 		}
 	}
 
-	async function refreshEntries(ticket: number) {
+	async function refreshEntries(ticket: number): Promise<boolean> {
 		scanEntries = null;
 		searchResult = null;
 		const refreshed = await onRefresh();
-		if (!isCurrent(ticket)) return;
+		if (!isCurrent(ticket)) return false;
 		if (!refreshed) {
 			setStatus(
 				t('操作已完成，但無法重新整理檔案清單。', 'The operation completed, but the file list could not be refreshed.'),
 				true
 			);
+			return false;
 		}
+		return true;
 	}
 
 	async function cancelActiveTask() {
@@ -522,14 +552,37 @@
 			'create-file',
 			() => files.createFile(workspaceId, createFilePath, payload),
 			async (result, ticket) => {
+				const createdPath = result.path;
 				createFilePath = '';
 				createFileContents = '';
 				binaryFileBytes = null;
 				binaryFileLabel = '';
 				if (binaryInput) binaryInput.value = '';
 				tool = null;
-				setStatus(t(`已建立「${result.path}」。`, `Created "${result.path}".`));
-				await refreshEntries(ticket);
+				setStatus(t(`已建立「${createdPath}」，正在開啟…`, `Created "${createdPath}". Opening…`));
+				const refreshed = await refreshEntries(ticket);
+				if (!isCurrent(ticket)) return;
+				let opened = false;
+				try {
+					opened = await onCreatedFile(createdPath);
+				} catch {
+					opened = false;
+				}
+				if (!isCurrent(ticket)) return;
+				if (opened) {
+					setStatus(t(`已建立並開啟「${createdPath}」。`, `Created and opened "${createdPath}".`));
+				} else {
+							setStatus(
+								t(`已建立「${createdPath}」，但未開啟，目前文件仍保留。`, `Created "${createdPath}", but did not open it. The current document is preserved.`),
+						true
+					);
+				}
+				if (!refreshed && !opened) {
+					setStatus(
+								t(`已建立「${createdPath}」，但未開啟，檔案清單更新失敗，目前文件仍保留。`, `Created "${createdPath}", but did not open it. The file list could not be refreshed. The current document is preserved.`),
+						true
+					);
+				}
 			}
 		);
 	}
@@ -689,7 +742,7 @@
 					<h2 id="workspace-files-title">{t('工作區檔案操作', 'Workspace file operations')}</h2>
 					<p title={workspaceLabel}>{workspaceLabel}</p>
 				</div>
-				<button class="workspace-files-close" type="button" aria-label={t('關閉檔案操作', 'Close workspace file operations')} onclick={requestClose}>
+				<button class="workspace-files-close" type="button" aria-label={t('關閉檔案操作', 'Close workspace file operations')} onclick={requestClose} disabled={operationLocked}>
 					<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 4 12 12M16 4 4 16" /></svg>
 				</button>
 			</header>
@@ -742,7 +795,7 @@
 									{/each}
 								</ol>
 							{/if}
-							{#if searchResult.truncated}<p class="workspace-files-muted">{t('結果已截斷；請縮小搜尋範圍或使用更具體的文字。', 'Results were truncated. Narrow the folder or use a more specific query.')}</p>{/if}
+							{#if searchResult.truncated}<p class="workspace-files-muted">{t('結果已截斷。請縮小搜尋範圍或使用更具體的文字。', 'Results were truncated. Narrow the folder or use a more specific query.')}</p>{/if}
 						</section>
 					{/if}
 
@@ -863,7 +916,7 @@
 					{/if}
 
 					{#if !tool && !fileStat && !confirmation}
-						<p class="workspace-files-hint">{t('在檔案樹按右鍵可開啟檔案操作；搜尋、掃描與建立工具位於上方。', 'Right-click a file or folder for operations. Search, scan, and create tools are above.')}</p>
+						<p class="workspace-files-hint">{t('在檔案樹按右鍵可開啟檔案操作。搜尋、掃描與建立工具位於上方。', 'Right-click a file or folder for operations. Search, scan, and create tools are above.')}</p>
 					{/if}
 
 					{#if status}

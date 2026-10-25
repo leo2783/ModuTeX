@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
-	import { createTerminalSession, createTerminalView } from './terminal-runtime.mjs';
+import { createTerminalSession, createTerminalView } from './terminal-runtime.mjs';
 	import type {
 		TerminalAvailability,
 		TerminalCallbacks,
@@ -25,6 +25,8 @@
 	type PanelProps = {
 		workspaceId?: string | null;
 		enabled?: boolean;
+		active?: boolean;
+		panelHeight?: number;
 		locale?: Language;
 		sessionFactory?: typeof createTerminalSession;
 		viewFactory?: typeof createTerminalView;
@@ -33,18 +35,20 @@
 	let {
 		workspaceId = null,
 		enabled = true,
+	active = false,
+	panelHeight = 320,
 		locale = 'en',
 		sessionFactory = createTerminalSession,
 		viewFactory = createTerminalView
 	}: PanelProps = $props();
 
 	let isOpen = $state(false);
+	let manuallyStopped = $state(false);
 	let phase = $state<Phase>('closed');
 	let statusText = $state('');
 	let viewReady = $state(false);
 	let terminalHost = $state<HTMLDivElement | null>(null);
-	let toggleButton = $state<HTMLButtonElement | null>(null);
-	let statusElement = $state<HTMLSpanElement | null>(null);
+	let terminalControlButton = $state<HTMLButtonElement | null>(null);
 
 	let activeController: TerminalController | null = null;
 	let activeView: TerminalView | null = null;
@@ -60,6 +64,26 @@
 	function currentPanel(token: number, owner: string): boolean {
 		return !disposed && panelEpoch === token && isOpen && enabled && workspaceId === owner;
 	}
+
+	async function fitVisiblePanel(): Promise<void> {
+		await tick();
+		if (!active || !isOpen || !activeView) return;
+		activeView.fit();
+		if ((phase === 'running' || phase === 'starting') && activeController) {
+			const size = activeView.size();
+			activeController.resize(size.cols, size.rows);
+		}
+	}
+
+	$effect(() => {
+		const currentPanelHeight = panelHeight;
+		if (!active || !enabled || !workspaceId || currentPanelHeight <= 0) return;
+		if (!isOpen) {
+			if (!manuallyStopped) void openPanel();
+			return;
+		}
+		void fitVisiblePanel();
+	});
 
 	function describeError(value: unknown): string {
 		const candidate = value as {
@@ -193,6 +217,7 @@
 
 	async function openPanel(): Promise<void> {
 		if (!enabled || !workspaceId || disposed) return;
+		manuallyStopped = false;
 		isOpen = true;
 		phase = 'checking';
 		statusText = t('正在檢查終端機…', 'Checking terminal availability…');
@@ -315,8 +340,9 @@
 			isOpen = false;
 			phase = 'closed';
 			statusText = '';
+			manuallyStopped = true;
 			await tick();
-			toggleButton?.focus();
+			terminalControlButton?.focus();
 		} catch (error) {
 			if (token !== panelEpoch || disposed) return;
 			activeController = controller;
@@ -341,6 +367,7 @@
 		activeView = null;
 		viewReady = false;
 		isOpen = false;
+		manuallyStopped = false;
 		phase = 'closed';
 		statusText = '';
 		if (controller) void controller.close().catch(() => {});
@@ -375,105 +402,88 @@
 </script>
 
 {#if enabled && workspaceId}
-	<section class="terminal-dock" aria-label={t('終端機', 'Terminal')}>
+	<section
+		class="terminal-panel-content"
+		aria-label={t('互動式終端機', 'Interactive terminal')}
+		hidden={!active}
+		inert={!active}
+	>
 		<div class="terminal-toolbar">
-			<button
-				bind:this={toggleButton}
-				type="button"
-				class="terminal-toggle"
-				data-terminal-action="toggle"
-				aria-expanded={isOpen}
-				aria-controls="workbench-terminal-panel"
-				onclick={() => isOpen ? void closePanel() : void openPanel()}
-			>
-				{t('終端機', 'Terminal')}
-			</button>
-			{#if isOpen}
-				{#if phase === 'ready'}
-					<button type="button" data-terminal-action="start" onclick={startShell}>
-						{t('啟動終端機', 'Start terminal')}
-					</button>
-				{:else if phase === 'exited'}
-					<button type="button" data-terminal-action="restart" onclick={startShell}>
-						{t('重新啟動', 'Restart terminal')}
-					</button>
-				{:else if phase === 'error'}
-					<button type="button" data-terminal-action="retry" onclick={startShell}>
-						{t('重試終端機', 'Retry terminal')}
-					</button>
-				{:else if phase === 'unavailable'}
-					<button type="button" data-terminal-action="retry-availability" onclick={retryAvailability}>
-						{t('重新檢查', 'Check again')}
-					</button>
-				{:else if phase === 'cleanup-error'}
-					<button type="button" data-terminal-action="retry-cleanup" onclick={closePanel}>
-						{t('重試清理', 'Retry cleanup')}
-					</button>
-				{/if}
-				<span
-					bind:this={statusElement}
-					class="terminal-status"
-					role={phase === 'error' || phase === 'unavailable' || phase === 'cleanup-error' ? 'alert' : 'status'}
-					tabindex="-1"
-				>{statusText}</span>
-				<button type="button" data-terminal-action="close" onclick={closePanel}>
-					{t('關閉終端機', 'Close terminal')}
+			{#if phase === 'ready' || phase === 'closed'}
+				<button bind:this={terminalControlButton} type="button" data-terminal-action="start" onclick={() => phase === 'closed' ? void openPanel() : startShell()}>
+					{phase === 'closed' ? t('啟動終端機', 'Start terminal') : t('啟動終端機', 'Start terminal')}
+				</button>
+			{:else if phase === 'exited'}
+				<button bind:this={terminalControlButton} type="button" data-terminal-action="restart" onclick={startShell}>
+					{t('重新啟動', 'Restart terminal')}
+				</button>
+			{:else if phase === 'error'}
+				<button bind:this={terminalControlButton} type="button" data-terminal-action="retry" onclick={startShell}>
+					{t('重試終端機', 'Retry terminal')}
+				</button>
+			{:else if phase === 'unavailable'}
+				<button bind:this={terminalControlButton} type="button" data-terminal-action="retry-availability" onclick={retryAvailability}>
+					{t('重新檢查', 'Check again')}
+				</button>
+			{:else if phase === 'cleanup-error'}
+				<button bind:this={terminalControlButton} type="button" data-terminal-action="retry-cleanup" onclick={closePanel}>
+					{t('重試清理', 'Retry cleanup')}
+				</button>
+			{/if}
+			<span class="terminal-status" role={phase === 'error' || phase === 'unavailable' || phase === 'cleanup-error' ? 'alert' : 'status'}>{statusText}</span>
+			{#if phase === 'running' || phase === 'starting'}
+				<button type="button" data-terminal-action="close" title={t('停止終端機', 'Stop terminal')} aria-label={t('停止終端機', 'Stop terminal')} onclick={closePanel}>
+					{t('停止', 'Stop')}
 				</button>
 			{/if}
 		</div>
-		<div
-			id="workbench-terminal-panel"
-			class="terminal-panel"
-			hidden={!isOpen}
-			aria-label={t('互動式終端機', 'Interactive terminal')}
-		>
-			{#if isOpen}
-				{#if viewReady}
-					<div
-						bind:this={terminalHost}
-						class="terminal-host"
-						aria-label={t('終端機輸入與輸出', 'Terminal input and output')}
-					></div>
-				{:else}
-					<p
-						class="terminal-message"
-						role={phase === 'error' || phase === 'unavailable' || phase === 'cleanup-error' ? 'alert' : 'status'}
-					>{statusText}</p>
-				{/if}
+		<div id="workbench-terminal-panel" class="terminal-panel" aria-label={t('終端機輸入與輸出', 'Terminal input and output')}>
+			{#if viewReady && isOpen}
+				<div bind:this={terminalHost} class="terminal-host" aria-label={t('終端機輸入與輸出', 'Terminal input and output')}></div>
+			{:else}
+				<p class="terminal-message" role={phase === 'error' || phase === 'unavailable' || phase === 'cleanup-error' ? 'alert' : 'status'}>{statusText}</p>
 			{/if}
 		</div>
 	</section>
 {/if}
 
 <style>
-	.terminal-dock {
-		flex: 0 0 auto;
+	.terminal-panel-content {
+		width: 100%;
+		height: 100%;
+		min-height: 0;
 		min-width: 0;
-		border-top: 1px solid var(--line);
 		background: var(--surface);
+		display: flex;
+		flex-direction: column;
 	}
 	.terminal-toolbar {
-		min-height: 40px;
+		min-height: 36px;
+		flex: none;
 		display: flex;
 		align-items: center;
+		flex-wrap: nowrap;
 		gap: 8px;
-		padding: 4px 12px;
+		padding: 4px 8px;
 		background: var(--canvas);
+		overflow-x: auto;
+		white-space: nowrap;
 	}
 	.terminal-toolbar button {
 		min-height: 28px;
 		padding: 4px 10px;
-	}
-	.terminal-toggle[aria-expanded='true'] {
-		color: var(--accent);
-		background: var(--selection);
+		flex: none;
+		white-space: nowrap;
 	}
 	.terminal-status {
-		flex: 1;
-		min-width: 0;
+		flex: 1 1 auto;
+		min-width: 48px;
+		max-width: 100%;
 		color: var(--muted);
 		font-size: 12px;
-		overflow-wrap: anywhere;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.terminal-status[role='alert'],
 	.terminal-message[role='alert'] {
@@ -481,10 +491,10 @@
 	}
 	.terminal-panel {
 		display: flex;
+		flex: 1;
 		min-width: 0;
-		min-height: 120px;
-		height: min(32dvh, 320px);
-		padding: 8px 12px;
+		min-height: 0;
+		padding: 4px 8px;
 		background: var(--surface);
 	}
 	.terminal-host {
@@ -499,17 +509,5 @@
 		padding: 8px 4px;
 		color: var(--muted);
 		overflow-wrap: anywhere;
-	}
-	@media (max-width: 620px) {
-		.terminal-toolbar {
-			flex-wrap: wrap;
-		}
-		.terminal-status {
-			flex-basis: 100%;
-			order: 3;
-		}
-		.terminal-panel {
-			height: min(38dvh, 280px);
-		}
 	}
 </style>

@@ -4,6 +4,7 @@
 	import type { OutlineEntry } from './features/source-editor/outline.ts';
 	import { onDestroy, onMount, tick } from 'svelte';
 	import CloseDialog from './components/CloseDialog.svelte';
+	import AppMenu from './components/AppMenu.svelte';
 	import { text } from './i18n/text.ts';
 	import { documentCommand } from './features/shortcuts/keyboard.ts';
 	import { helpTopic, type HelpTopic } from './features/help/route.ts';
@@ -62,7 +63,7 @@
 	let compiling = $state(false);
 	let compileHandle = $state.raw<CompileHandle | null>(null);
 	let compileLog = $state('');
-	let showCompileDetails = $state(false);
+	let activeDockTab = $state<null | 'problems' | 'output' | 'terminal'>(null);
 	let compileTicket = $state(0);
 	let compileCancellationRequestedFor = $state<number | null>(null);
 	let compileCancellationFailedFor: number | null = null;
@@ -344,6 +345,9 @@
 	let workspaceFilesAvailability = $state<'checking' | 'available' | 'unavailable'>('unavailable');
 	let workspaceFilesOpen = $state(false);
 	let workspaceFilesPanelVisited = $state(false);
+	let workspaceFilesInitialTool = $state<'create-file' | 'create-directory' | null>(null);
+	let workspaceFilesInitialPath = $state('');
+	let workspaceFilesOpenSequence = $state(0);
 	let workspaceFilesButton: HTMLButtonElement | null = $state(null);
 	let workspaceGeneration = $state(0);
 	let sourceViewInstance = $state.raw<SourceViewHandle | null>(null);
@@ -436,16 +440,41 @@
 		if (!isWorkspaceScopeCurrent(owner, generation)) return;
 		workspaceFilesAvailability = 'unavailable';
 		workspaceFilesOpen = false;
-		errorState = [
-			'此桌面版本未提供完整的原生工作區檔案操作；一般檔案瀏覽與編輯仍可使用。',
+			errorState = [
+			'此桌面版本未提供完整的原生工作區檔案操作，一般檔案瀏覽與編輯仍可使用。',
 			'This host does not provide the native workspace file operations. Regular file browsing and editing remain available.'
 		];
 		void refreshWorkspaceEntries(owner, generation);
 	}
-	function openWorkspaceFiles() {
+	function openWorkspaceFilesWithTool(
+		tool: 'create-file' | 'create-directory' | null = null,
+		initialPath = ''
+	) {
 		if (!workspace || !workspaceFiles || workspaceFilesAvailability !== 'available') return;
 		workspaceFilesPanelVisited = true;
 		workspaceFilesOpen = true;
+		workspaceFilesInitialTool = tool;
+		workspaceFilesInitialPath = initialPath;
+		workspaceFilesOpenSequence++;
+	}
+	function openWorkspaceFiles() {
+		openWorkspaceFilesWithTool();
+	}
+	function openWorkspaceFileCreate(parentPath?: string) {
+		if (!workspace) {
+			void newDocument('blank');
+			return;
+		}
+		if (!workspaceFiles || workspaceFilesAvailability !== 'available') {
+			errorState = [
+				'工作區檔案操作目前無法使用，無法在工作區新增文件。',
+				'Workspace file operations are unavailable. A document cannot be created in this workspace.'
+			];
+			return;
+		}
+		if (route !== 'workbench') window.location.hash = '#/workbench';
+		const parent = parentPath?.replace(/\\+$/, '').replace(/\/+$/, '') ?? '';
+		openWorkspaceFilesWithTool('create-file', parent ? `${parent}/untitled.tex` : 'untitled.tex');
 	}
 	function closeWorkspaceFiles() {
 		workspaceFilesOpen = false;
@@ -686,6 +715,7 @@
 	function acceptDiskSource(document: SourceDocument, path: string, nextRevision: string) {
 		abandonCompile();
 		resetDraftSelection();
+		editorLoadKey++;
 		source = document;
 		sourceName = path;
 		revision = nextRevision;
@@ -1155,8 +1185,7 @@
 		set compileHandle(value) { compileHandle = value; },
 		get compileLog() { return compileLog; },
 		set compileLog(value) { compileLog = value; },
-		get showCompileDetails() { return showCompileDetails; },
-		set showCompileDetails(value) { showCompileDetails = value; },
+		openCompileTab: (tab) => { activeDockTab = tab; },
 		get compileTicket() { return compileTicket; },
 		set compileTicket(value) { compileTicket = value; },
 		get compileCancellationRequestedFor() { return compileCancellationRequestedFor; },
@@ -1221,6 +1250,7 @@
 		saveSource,
 		abandonCompile,
 		acceptDiskSource,
+		onSourceReplaced: () => { editorLoadKey++; },
 		selectWorkspace,
 		readDesktopFile,
 		refreshWorkspaceEntries,
@@ -1245,31 +1275,55 @@
 <svelte:window onkeydown={shortcuts} />
 <input class="file-input" bind:this={sourceInput} type="file" accept=".tex" aria-label={t('開啟 TeX 文件', 'Open TeX document')} onchange={openSource} />
 <input class="file-input" bind:this={pdfInput} type="file" accept=".pdf" aria-label={t('開啟 PDF 文件', 'Open PDF')} onchange={openPdf} />
-<div class="app" lang={preferences.language} style:--source-font-size={`${preferences.sourceFontSize}px`}>
+<div class="app" class:workbench-active={route === 'workbench'} lang={preferences.language} style:--source-font-size={`${preferences.sourceFontSize}px`}>
 	<header class="global-bar">
-		<a class="brand" href="#/">ModuTeX</a>
-		<nav aria-label={t('導覽', 'Main navigation')}>
-			<a href="#/" aria-current={route === 'home' ? 'page' : undefined}>{t('首頁', 'Home')}</a>
-			<a href="#/workbench" aria-current={route === 'workbench' ? 'page' : undefined}>{t('工作台', 'Workbench')}</a>
-			<a href="#/settings" aria-current={route === 'settings' ? 'page' : undefined}>{t('設定', 'Settings')}</a>
-			<a href="#/release-notes" aria-current={route === 'release-notes' ? 'page' : undefined}>{t('版本紀錄', 'Release notes')}</a>
-			<a href="#/help" aria-current={route === 'help' ? 'page' : undefined}>{t('說明', 'Help')}</a>
-			<a href="#/compile-settings" aria-current={route === 'compile-settings' ? 'page' : undefined}>{t('編譯設定', 'Compile settings')}</a>
-			{#if isTauri()}
-				<button type="button" class="text-button" onclick={openNewWindow} disabled={openingWindow}>{t('新增視窗', 'New window')}</button>
+		<nav class="global-navigation" aria-label={t('導覽', 'Main navigation')}>
+			<a class="brand" href="#/">ModuTeX</a>
+			<a class="secondary-navigation" href="#/" aria-current={route === 'home' ? 'page' : undefined}>{t('首頁', 'Home')}</a>
+			<a class="secondary-navigation" href="#/workbench" aria-current={route === 'workbench' ? 'page' : undefined}>{t('工作台', 'Workbench')}</a>
+			<AppMenu label={t('檔案', 'File')} menuClass="secondary-navigation file-menu">
+				<button type="button" onclick={() => newDocument('blank')} disabled={opening || saving || compiling || confirming}>{t('新增文件', 'New document')}</button>
+				<button type="button" onclick={() => openWorkspaceFileCreate()} disabled={opening || saving || compiling || confirming}>{t('新增工作區檔案', 'New workspace file')}</button>
+				<button type="button" onclick={() => void chooseSource()} disabled={opening || saving}>{t('開啟文件', 'Open document')}</button>
+				{#if desktop}<button type="button" onclick={() => void chooseSource('folder')} disabled={opening || saving}>{t('開啟資料夾', 'Open folder')}</button>{/if}
+				<hr />
+				{#if desktop && source}
+					<button type="button" onclick={saveSource} disabled={opening || saving || compiling || confirming || !dirty || sourceMissingOnDisk()}>{saving ? t('儲存中…', 'Saving…') : t('儲存', 'Save')}</button>
+					<button type="button" onclick={saveSourceAs} disabled={opening || saving || compiling || confirming}>{t('另存新檔', 'Save as')}</button>
+				{/if}
+			</AppMenu>
+			{#if route === 'workbench' && desktop && source && !sourceMissingOnDisk()}
+				<div class="global-compile-primary" inert={desktopLoading}>
+					{#if compiling}
+						<button type="button" class="primary" onclick={cancelCompile} disabled={compileCancellationRequestedFor === compileTicket}>{compileCancellationRequestedFor === compileTicket ? t('正在取消…', 'Cancelling…') : t('取消編譯', 'Cancel compilation')}</button>
+					{:else}
+						<button type="button" class="primary" onclick={compileSource} disabled={opening || saving || confirming}>{t('編譯 PDF', 'Compile PDF')}</button>
+					{/if}
+				</div>
 			{/if}
-			{#await import('./components/LanguageMenu.svelte') then { default: LanguageMenu }}<LanguageMenu locale={preferences.language} onChange={language => changePreference('language', language)} />{/await}
+			<a class="secondary-navigation" href="#/compile-settings" aria-current={route === 'compile-settings' ? 'page' : undefined}>{t('編譯設定', 'Compile settings')}</a>
+			<AppMenu label={t('更多', 'More')} menuClass="more-menu">
+				<div class="compact-menu-group">
+					<a href="#/" aria-current={route === 'home' ? 'page' : undefined}>{t('首頁', 'Home')}</a>
+					<a href="#/workbench" aria-current={route === 'workbench' ? 'page' : undefined}>{t('工作台', 'Workbench')}</a>
+					<button type="button" onclick={() => newDocument('blank')} disabled={opening || saving || compiling || confirming}>{t('新增文件', 'New document')}</button>
+					<button type="button" onclick={() => openWorkspaceFileCreate()} disabled={opening || saving || compiling || confirming}>{t('新增工作區檔案', 'New workspace file')}</button>
+					<button type="button" onclick={() => void chooseSource()} disabled={opening || saving}>{t('開啟文件', 'Open document')}</button>
+					{#if desktop}<button type="button" onclick={() => void chooseSource('folder')} disabled={opening || saving}>{t('開啟資料夾', 'Open folder')}</button>{/if}
+					{#if desktop && source}
+						<button type="button" onclick={saveSource} disabled={opening || saving || compiling || confirming || !dirty || sourceMissingOnDisk()}>{t('儲存', 'Save')}</button>
+						<button type="button" onclick={saveSourceAs} disabled={opening || saving || compiling || confirming}>{t('另存新檔', 'Save as')}</button>
+					{/if}
+					<a href="#/compile-settings">{t('編譯設定', 'Compile settings')}</a>
+				</div>
+				<hr />
+				<a href="#/settings" aria-current={route === 'settings' ? 'page' : undefined}>{t('設定', 'Settings')}</a>
+				<a href="#/help" aria-current={route === 'help' ? 'page' : undefined}>{t('說明', 'Help')}</a>
+				<a href="#/release-notes" aria-current={route === 'release-notes' ? 'page' : undefined}>{t('版本紀錄', 'Release notes')}</a>
+				{#if isTauri()}<button type="button" onclick={openNewWindow} disabled={openingWindow}>{t('新增視窗', 'New window')}</button>{/if}
+				{#await import('./components/LanguageMenu.svelte') then { default: LanguageMenu }}<LanguageMenu locale={preferences.language} onChange={language => changePreference('language', language)} />{/await}
+			</AppMenu>
 		</nav>
-		<div class="global-actions" hidden={route !== 'workbench'} inert={desktopLoading}>
-			{#if route === 'workbench'}
-				{#await import('./components/WorkbenchActions.svelte') then { default: WorkbenchActions }}
-					<WorkbenchActions locale={preferences.language} desktop={!!desktop} hasSource={!!source} {opening} {saving} {compiling} {dirty}
-						missing={sourceMissingOnDisk()} cancellationPending={compileCancellationRequestedFor === compileTicket}
-						onFolder={() => chooseSource('folder')} onOpen={() => chooseSource()} onNew={() => newDocument('blank')}
-						onSave={saveSource} onSaveAs={saveSourceAs} onCompile={compileSource} onCancel={cancelCompile} />
-				{/await}
-			{/if}
-		</div>
 	</header>
 	{#if isTauri() && rootStateReady}
 		{#await import('./features/updates/UpdateNotice.svelte') then { default: UpdateNotice }}
@@ -1286,7 +1340,11 @@
 	{#if route === 'workbench' && (compiling || compileNotice)}
 		<div class="compile-status" role="status" aria-live="polite">
 			{compiling ? t('編譯中…', 'Compiling…') : compileNotice}
-			{#if compileLog || diagnostics.length}<button class="text-button" onclick={() => showCompileDetails = !showCompileDetails}>{showCompileDetails ? t('隱藏詳細資料', 'Hide details') : t('查看編譯記錄', 'View compilation log')}</button>{/if}
+			{#if !compiling && (compileLog || diagnostics.length)}
+				<button class="text-button" type="button" onclick={() => activeDockTab = diagnostics.length ? 'problems' : 'output'}>
+					{diagnostics.length ? t('查看問題', 'View problems') : t('查看輸出', 'View output')}
+				</button>
+			{/if}
 			{#if !compiling && compileNoticeState?.[1] === 'Compilation completed'}
 				 · {pdfDisplayFailed ? t('PDF 無法顯示，請查看錯誤訊息。', 'PDF could not be displayed. Review the error message.') : pdfRendered ? t('PDF 已更新', 'PDF updated') : t('正在顯示 PDF…', 'Displaying PDF…')}
 			{/if}
@@ -1296,6 +1354,8 @@
 			{/if}
 		</div>
 	{/if}
+	{#if route !== 'workbench'}
+	<div class="app-page-content">
 	{#if route === 'home'}{#key homeLoadKey}{#await import('./pages/Home.svelte')}<main class="empty-state" role="status"><p>{t('正在開啟首頁…', 'Loading home…')}</p></main>{:then { default: Home }}<Home locale={preferences.language} desktop={!!desktop} busy={opening || saving || compiling || desktopLoading} currentName={sourceName} {dirty} {recent} {recentNotice} onRecent={openRecent} onRemoveRecent={removeRecent} onOpen={openFromHome} onCreate={newDocument} />{:catch}<main class="empty-state" role="alert"><p>{t('無法載入首頁，文件內容已保留。', 'Home could not be loaded. Your document is preserved.')}</p><button onclick={() => homeLoadKey++}>{t('重試', 'Retry')}</button></main>{/await}{/key}{/if}
 	{#if route === 'compile-settings'}
 		{#key settingsLoadKey}
@@ -1327,6 +1387,8 @@
 	{/if}
 	{#if route === 'release-notes'}{#key releaseLoadKey}{#await import('./pages/ReleaseNotes.svelte')}<main class="empty-state" role="status"><p>{t('正在開啟版本紀錄…', 'Loading release notes…')}</p></main>{:then { default: ReleaseNotes }}<ReleaseNotes locale={preferences.language} {showLimitations} />{:catch}<main class="empty-state" role="alert"><p>{t('無法載入版本紀錄，文件內容已保留。', 'Release notes could not be loaded. Your document is preserved.')}</p><button onclick={() => releaseLoadKey++}>{t('重試', 'Retry')}</button></main>{/await}{/key}{/if}
 	{#if route === 'help'}{#key helpLoadKey}{#await import('./pages/Help.svelte')}<main class="empty-state" role="status"><p>{t('正在開啟說明…', 'Loading help…')}</p></main>{:then { default: Help }}<Help locale={preferences.language} topic={selectedHelp} />{:catch}<main class="empty-state" role="alert"><p>{t('無法載入說明，文件內容已保留。', 'Help could not be loaded. Your document is preserved.')}</p><button onclick={() => helpLoadKey++}>{t('重試', 'Retry')}</button></main>{/await}{/key}{/if}
+	</div>
+	{/if}
 	<main class="workbench" hidden={route !== 'workbench'} inert={route !== 'workbench'}>
 		{#if externalFileNotice && source && externalFileNotice.documentId === source.documentId && externalFileNotice.path === sourceName}
 			<section class="error-strip file-change-notice" data-kind={externalFileNotice.kind}
@@ -1334,12 +1396,12 @@
 				<span>
 					{#if externalFileNotice.kind === 'missing'}
 						{externalFileNotice.acknowledged
-							? t('磁碟上的文件已刪除。草稿已保留，請另存新檔儲存。', 'The disk file was deleted. Your draft is kept; use Save as to save it.')
+							? t('磁碟上的文件已刪除。草稿已保留。請使用另存新檔儲存。', 'The disk file was deleted. Your draft is kept. Use Save as to preserve it.')
 							: t('「' + externalFileNotice.path + '」已被刪除。', 'The disk file "' + externalFileNotice.path + '" was deleted. Your draft is preserved and cannot be saved to that path.')}
 					{:else}
 						{externalFileNotice.acknowledged
-							? t('磁碟文件已變更。草稿已保留；如要載入磁碟版本，請重新載入。', 'The disk file changed. Your draft is kept; reload to use the disk version.')
-							: t('磁碟上的「' + externalFileNotice.path + '」已變更。草稿仍保留；重新載入會取代草稿。', 'The disk file "' + externalFileNotice.path + '" changed. Your draft is preserved; reloading will replace it.')}
+							? t('磁碟文件已變更。草稿已保留。如要載入磁碟版本，請重新載入。', 'The disk file changed. Your draft is kept. Reload to use the disk version.')
+							: t('磁碟上的「' + externalFileNotice.path + '」已變更。草稿仍保留。重新載入會取代草稿。', 'The disk file "' + externalFileNotice.path + '" changed. Your draft is preserved. Reloading will replace it.')}
 					{/if}
 				</span>
 				{#if externalFileNotice.kind === 'missing'}
@@ -1356,7 +1418,7 @@
 			<section class="error-strip watch-recovery-notice" role="status" aria-live="polite">
 				<span>{workspaceWatchIssue === 'reconcile'
 					? t('檔案變更尚未完全同步。請重新同步後再繼續。', 'File changes could not be fully synchronized. Reconcile before continuing.')
-					: t('無法監看資料夾變更。文件仍可編輯；請重新連線以同步檔案。', 'Folder changes cannot be monitored. You can keep editing; reconnect to sync files.')}</span>
+					: t('無法監看資料夾變更。文件仍可編輯。請重新連線以同步檔案。', 'Folder changes cannot be monitored. You can keep editing. Reconnect to sync files.')}</span>
 				<button class="text-button" onclick={recoverWorkspaceWatch} disabled={opening || saving}>
 					{workspaceWatchIssue === 'reconcile' ? t('重新同步', 'Reconcile now') : t('重新連線', 'Reconnect')}
 				</button>
@@ -1380,6 +1442,7 @@
 			bind:pdfDisplayFailed
 			bind:draftSelectionSnapshot
 			bind:draftSelectionWarning
+			bind:activeDockTab
 			desktop={!!desktop}
 			{workspace}
 			{workspaceFiles}
@@ -1392,6 +1455,10 @@
 			{opening}
 			{saving}
 			{compiling}
+			{diagnostics}
+			{compileLog}
+			canNavigateDiagnostic={(diagnostic) => workbenchRuntime?.canNavigateDiagnosticState(runtimeHost, diagnostic) ?? false}
+			navigateToDiagnostic={(diagnostic) => workbenchRuntime?.runNavigateToDiagnostic(runtimeHost, diagnostic)}
 			{confirming}
 			missingOnDisk={sourceMissingOnDisk()}
 			aborted={lifetime.signal.aborted}
@@ -1406,6 +1473,7 @@
 			{synctexIndex}
 			{sourceViewInstance}
 			onOpenWorkspaceFiles={openWorkspaceFiles}
+			onNewWorkspaceFile={openWorkspaceFileCreate}
 			onChooseSource={chooseSource}
 			onReadDesktopFile={(path, owner) => readDesktopFile(path, owner)}
 			onCompileWorkspaceFile={compileWorkspaceFile}
@@ -1456,15 +1524,6 @@
 		{/if}
 	</main>
 	{#if error}<div class="error-strip" role="alert">{error}<button class="text-button" onclick={() => (errorState = null)}>{t('關閉', 'Close')}</button></div>{/if}
-	{#if route === 'workbench' && showCompileDetails && (diagnostics.length || compileLog)}
-		<section class="compile-details" aria-label={t('編譯詳細資料', 'Compilation details')}>
-		{#await Promise.all([import('./components/CompileFeedback.svelte'), loadWorkbenchRuntime()]) then [{ default: CompileFeedback }, { canNavigateDiagnosticState, runNavigateToDiagnostic }]}
-			<CompileFeedback locale={preferences.language} {diagnostics} {compileLog} expanded={true}
-				canNavigateDiagnostic={(diagnostic) => canNavigateDiagnosticState(runtimeHost, diagnostic)}
-				navigateToDiagnostic={(diagnostic) => runNavigateToDiagnostic(runtimeHost, diagnostic)} />
-		{/await}
-		</section>
-	{/if}
 	<footer class="status-bar" aria-live="polite">
 		<span>{opening ? t('讀取中…', 'Reading…') : source ? sourceName + (dirty ? t(' · 未儲存', ' · Unsaved') : '') : t('尚未開啟文件', 'No document open')}</span>
 		<span>{compiling
@@ -1492,8 +1551,18 @@
 				sourcePath={sourceName}
 				sourceDirty={dirty}
 				locale={preferences.language}
+				initialTool={workspaceFilesInitialTool}
+				initialPath={workspaceFilesInitialPath}
+				openSequence={workspaceFilesOpenSequence}
 				onOpen={async (path) => { await readDesktopFile(path, panelOwner); }}
 				onCompile={async (path) => { await compileWorkspaceFile(path, panelOwner); }}
+				onCreatedFile={async (path) => {
+					if (workspace !== panelOwner || !isWorkspaceScopeCurrent(panelOwner, panelGeneration)) return false;
+					const previousSource = source;
+					await readDesktopFile(path, panelOwner);
+					return workspace === panelOwner && isWorkspaceScopeCurrent(panelOwner, panelGeneration) &&
+						!!source && source !== previousSource && sourceName === path && revision !== null && !dirty;
+				}}
 				onClose={closeWorkspaceFiles}
 				onRefresh={() => refreshWorkspaceEntries(panelOwner, panelGeneration)}
 				onEntries={(listed) => setWorkspaceEntriesIfCurrent(panelOwner, panelGeneration, listed)}

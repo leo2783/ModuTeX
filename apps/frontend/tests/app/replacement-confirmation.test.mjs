@@ -129,13 +129,17 @@ window.__unmountApp = () => unmount(appInstance);
 						workspaceId,
 						path: filePath,
 						revision: entry.revision,
+						documentId: entry.documentId ?? null,
+						documentVersion: entry.documentVersion ?? null,
 						bytes: new Uint8Array(entry.bytes)
 					};
 				},
 				writeFile: async (req) => ({
 					workspaceId: req.workspaceId,
 					path: req.path,
-					revision: 'rev-' + (++revCounter)
+					revision: 'rev-' + (++revCounter),
+					documentId: req.documentId,
+					documentVersion: req.documentVersion
 				}),
 				saveAs: async () => null,
 				startCompile: async () => { throw new Error('NOT_IMPLEMENTED'); },
