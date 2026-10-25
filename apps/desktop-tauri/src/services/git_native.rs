@@ -141,6 +141,23 @@ impl GitNativeRuntime {
     }
 }
 
+/// Strips the `\\?\` verbatim prefix produced by `fs::canonicalize` on Windows
+/// for standard drive-letter paths (e.g. `\\?\C:\Program Files\...` -> `C:\Program Files\...`)
+/// so MinGW/MSYS2-based `git.exe` builds can reliably resolve relative `libexec/git-core` paths.
+fn normalize_windows_verbatim_path(path: PathBuf) -> PathBuf {
+    let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    // Prefix `\\?\` is [92, 92, 63, 92], followed by `<Drive>:\` e.g. `C:\`
+    if wide.len() >= 7
+        && wide[0..4] == [b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16]
+        && wide[5] == b':' as u16
+        && wide[6] == b'\\' as u16
+    {
+        use std::os::windows::ffi::OsStringExt;
+        return PathBuf::from(OsString::from_wide(&wide[4..]));
+    }
+    path
+}
+
 fn inspect_executable(path: &Path) -> Result<TrustedGitExecutable, GitUnavailableReason> {
     if !path.is_absolute() {
         return Err(GitUnavailableReason::UnsafeExecutable);
@@ -170,7 +187,9 @@ fn inspect_executable(path: &Path) -> Result<TrustedGitExecutable, GitUnavailabl
     let original_identity =
         file_identity(&original).map_err(|_| GitUnavailableReason::UnsafeExecutable)?;
 
-    let canonical = fs::canonicalize(path).map_err(|_| GitUnavailableReason::UnsafeExecutable)?;
+    let raw_canonical =
+        fs::canonicalize(path).map_err(|_| GitUnavailableReason::UnsafeExecutable)?;
+    let canonical = normalize_windows_verbatim_path(raw_canonical);
     if !canonical.is_absolute() {
         return Err(GitUnavailableReason::UnsafeExecutable);
     }
@@ -250,7 +269,8 @@ fn pin_one_directory(path: &Path, pins: &mut Vec<Arc<File>>) -> Result<(), GitUn
 const HOST_GIT_ENVIRONMENT_OVERRIDES: [(&str, &str); 3] = [
     ("GIT_TERMINAL_PROMPT", "0"),
     ("GIT_CONFIG_NOSYSTEM", "1"),
-    ("GIT_PAGER", "cat"),
+    // Empty string disables pager cleanly on Windows without requiring `cat.exe` in PATH.
+    ("GIT_PAGER", ""),
 ];
 
 fn is_unsafe_git_env_key(key: &OsStr) -> bool {
@@ -336,14 +356,17 @@ impl NativeGitRunner {
         }
 
         let git_dir = root.join(".git");
-        let hooks = git_dir.join("hooks");
+        // Disable untrusted repository hook execution and dangerous local protocol/fsmonitor
+        // helpers by overriding config parameters at the CLI level (highest precedence).
         let mut global_arguments = vec![
             path_argument("--git-dir=", &git_dir),
             path_argument("--work-tree=", root),
             OsString::from("-c"),
-            path_argument("core.hooksPath=", &hooks),
+            OsString::from("core.hooksPath=NUL"),
             OsString::from("-c"),
             OsString::from("core.fsmonitor=false"),
+            OsString::from("-c"),
+            OsString::from("protocol.file.allow=never"),
         ];
         arguments.splice(2..2, global_arguments.drain(..));
         Ok(arguments)
@@ -361,14 +384,14 @@ impl NativeGitRunner {
         let stdout_limit = invocation.stdout_limit_bytes();
         let stderr_limit = invocation.stderr_limit_bytes();
         let stream_limit = stdout_limit.max(stderr_limit);
-        if stream_limit == 0 || stream_limit > PROCESS_TREE_STREAM_LIMIT {
+        if stdout_limit == 0 || stderr_limit == 0 || stream_limit > PROCESS_TREE_STREAM_LIMIT {
             return Err(GitRunnerError::OutputLimitExceeded);
         }
         let mut environment: Vec<(OsString, OsString)> = HOST_GIT_ENVIRONMENT_OVERRIDES
             .iter()
             .map(|(key, value)| (OsString::from(*key), OsString::from(*value)))
             .collect();
-        environment.push((OsString::from("PAGER"), OsString::from("cat")));
+        environment.push((OsString::from("PAGER"), OsString::from("")));
         let spec = ProcessSpec::new(
             executable.path.clone(),
             root.to_path_buf(),
@@ -601,27 +624,48 @@ fn open_metadata_component(
 
 fn verify_hook_entries(hooks: &Path) -> Result<(), GitRunnerError> {
     let mut count = 0usize;
-    for entry in fs::read_dir(hooks).map_err(|_| GitRunnerError::UnsafeWorkspace)? {
-        let entry = entry.map_err(|_| GitRunnerError::UnsafeWorkspace)?;
-        count = count
-            .checked_add(1)
-            .ok_or(GitRunnerError::UnsafeWorkspace)?;
-        if count > MAX_HOOK_FILES {
-            return Err(GitRunnerError::UnsafeWorkspace);
+    let mut stack = vec![hooks.to_path_buf()];
+
+    while let Some(current_dir) = stack.pop() {
+        for entry in fs::read_dir(&current_dir).map_err(|_| GitRunnerError::UnsafeWorkspace)? {
+            let entry = entry.map_err(|_| GitRunnerError::UnsafeWorkspace)?;
+            count = count
+                .checked_add(1)
+                .ok_or(GitRunnerError::UnsafeWorkspace)?;
+            if count > MAX_HOOK_FILES {
+                return Err(GitRunnerError::UnsafeWorkspace);
+            }
+            let path = entry.path();
+            let metadata =
+                fs::symlink_metadata(&path).map_err(|_| GitRunnerError::UnsafeWorkspace)?;
+            if is_symlink_or_reparse(&metadata) {
+                return Err(GitRunnerError::UnsafeWorkspace);
+            }
+            if metadata.is_dir() {
+                let dir =
+                    open_directory_no_follow(&path).map_err(|_| GitRunnerError::UnsafeWorkspace)?;
+                let opened = dir
+                    .metadata()
+                    .map_err(|_| GitRunnerError::UnsafeWorkspace)?;
+                if is_symlink_or_reparse(&opened) || !opened.is_dir() {
+                    return Err(GitRunnerError::UnsafeWorkspace);
+                }
+                file_identity(&dir).map_err(|_| GitRunnerError::UnsafeWorkspace)?;
+                stack.push(path);
+            } else if metadata.is_file() {
+                let file =
+                    open_file_no_follow(&path).map_err(|_| GitRunnerError::UnsafeWorkspace)?;
+                let opened = file
+                    .metadata()
+                    .map_err(|_| GitRunnerError::UnsafeWorkspace)?;
+                if is_symlink_or_reparse(&opened) || !opened.is_file() {
+                    return Err(GitRunnerError::UnsafeWorkspace);
+                }
+                file_identity(&file).map_err(|_| GitRunnerError::UnsafeWorkspace)?;
+            } else {
+                return Err(GitRunnerError::UnsafeWorkspace);
+            }
         }
-        let path = entry.path();
-        let metadata = fs::symlink_metadata(&path).map_err(|_| GitRunnerError::UnsafeWorkspace)?;
-        if is_symlink_or_reparse(&metadata) || !metadata.is_file() {
-            return Err(GitRunnerError::UnsafeWorkspace);
-        }
-        let file = open_file_no_follow(&path).map_err(|_| GitRunnerError::UnsafeWorkspace)?;
-        let opened = file
-            .metadata()
-            .map_err(|_| GitRunnerError::UnsafeWorkspace)?;
-        if is_symlink_or_reparse(&opened) || !opened.is_file() {
-            return Err(GitRunnerError::UnsafeWorkspace);
-        }
-        file_identity(&file).map_err(|_| GitRunnerError::UnsafeWorkspace)?;
     }
     Ok(())
 }
@@ -730,7 +774,7 @@ impl GitRunner for NativeGitRunner {
                         cancel_handle.cancel();
                         return;
                     }
-                    thread::sleep(CANCELLATION_POLL);
+                    thread::park_timeout(CANCELLATION_POLL);
                 }
             })
             .map_err(|_| GitRunnerError::ProcessTreeFailed)?;
@@ -744,21 +788,20 @@ impl GitRunner for NativeGitRunner {
             invocation,
         );
         bridge_finished.store(true, Ordering::Release);
+        bridge.thread().unpark();
         if bridge.join().is_err() {
             return Err(GitRunnerError::ProcessTreeFailed);
         }
 
-        // The supervisor owns cleanup and the workspace-task callback now.
-        // Do not mask that state with a post-run workspace check.
-        if matches!(&result, Err(GitRunnerError::CleanupUnproven)) {
-            return result;
-        }
+        // Only enforce post-run workspace/metadata checks on successful outputs;
+        // otherwise errors like `Cancelled` or `TimedOut` get masked by workspace closure.
+        let output = result?;
 
         // Recheck workspace and metadata after native execution as well as
         // before it. A stale workspace never yields a successful Git result.
         let _post_metadata_guard = verify_git_metadata(root)?;
         workspace.check_current().map_err(workspace_runner_error)?;
-        result
+        Ok(output)
     }
 }
 

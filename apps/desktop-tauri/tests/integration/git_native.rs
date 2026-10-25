@@ -44,6 +44,24 @@ fn command_line_budget_counts_windows_quoting_and_unicode_units() {
     assert_eq!(units("\u{10000}"), 2);
 }
 
+#[test]
+fn normalize_windows_verbatim_path_strips_extended_drive_prefix_only() {
+    assert_eq!(
+        super::normalize_windows_verbatim_path(PathBuf::from(
+            r"\\?\C:\Program Files\Git\cmd\git.exe"
+        )),
+        PathBuf::from(r"C:\Program Files\Git\cmd\git.exe")
+    );
+    assert_eq!(
+        super::normalize_windows_verbatim_path(PathBuf::from(r"C:\Program Files\Git\cmd\git.exe")),
+        PathBuf::from(r"C:\Program Files\Git\cmd\git.exe")
+    );
+    assert_eq!(
+        super::normalize_windows_verbatim_path(PathBuf::from(r"\\?\UNC\server\share\git.exe")),
+        PathBuf::from(r"\\?\UNC\server\share\git.exe")
+    );
+}
+
 impl TestTree {
     fn new() -> Self {
         let path =
@@ -377,6 +395,55 @@ fn native_repository_lifecycle_preserves_git_operations_and_binary_output() {
     filesystem
         .close_workspace(&owner, &workspace_id)
         .expect("close native Git test workspace");
+}
+
+#[test]
+fn commit_does_not_execute_untrusted_repository_hooks_and_allows_nested_hook_dirs() {
+    let (tree, filesystem, owner, workspace_id, root) = open_test_workspace();
+    let runtime = Arc::new(GitNativeRuntime::discover());
+    assert_eq!(runtime.availability(), GitAvailability::Available);
+    let runner = NativeGitRunner::new(runtime);
+    let git = GitService::new(&runner);
+    let lease = filesystem.start_git_task(&owner, &workspace_id).unwrap();
+
+    git.init(&lease).expect("initialize repository");
+    let config_path = root.join(".git").join("config");
+    let mut config = fs::read_to_string(&config_path).unwrap();
+    config.push_str("\n[user]\n\tname = Hook Guard Test\n\temail = hook-guard@example.invalid\n");
+    fs::write(&config_path, config).unwrap();
+
+    // Plant both shell and batch pre-commit payloads plus a nested helper directory
+    // (common in Husky/LFS setups) to verify hooks are neutralized without false-positive rejection.
+    let hooks_dir = root.join(".git").join("hooks");
+    let nested_dir = hooks_dir.join("nested");
+    fs::create_dir_all(&nested_dir).unwrap();
+    fs::write(nested_dir.join("helper.txt"), b"benign nested file\n").unwrap();
+
+    let marker = tree.0.join("hook-executed-sentinel.txt");
+    let sh_payload = format!(
+        "#!/bin/sh\necho pwned > \"{}\"\nexit 1\n",
+        marker.to_string_lossy().replace('\\', "/")
+    );
+    fs::write(hooks_dir.join("pre-commit"), sh_payload).unwrap();
+    let bat_payload = format!(
+        "@echo off\r\necho pwned > \"{}\"\r\nexit /b 1\r\n",
+        marker.display()
+    );
+    fs::write(hooks_dir.join("pre-commit.bat"), bat_payload).unwrap();
+
+    let entry = RelativePath::parse("safe.tex").unwrap();
+    fs::write(root.join("safe.tex"), b"content\n").unwrap();
+    git.stage(&lease, std::slice::from_ref(&entry)).unwrap();
+    git.commit(&lease, "commit must bypass untrusted hooks")
+        .expect("commit must succeed without running failing pre-commit hook");
+
+    assert!(
+        !marker.exists(),
+        "untrusted repository pre-commit hook was executed!"
+    );
+
+    lease.finish().unwrap();
+    filesystem.close_workspace(&owner, &workspace_id).unwrap();
 }
 
 #[test]
