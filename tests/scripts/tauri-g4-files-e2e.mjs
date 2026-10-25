@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join, basename } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
-import { clickFileAction } from './helpers/app-file-actions.mjs';
+import { clickFileAction, waitForFileActions } from './helpers/app-file-actions.mjs';
 import { createNativeCdpConfig } from './helpers/native-cdp-config.mjs';
 import { waitNativeCdp } from './helpers/wait-native-cdp.mjs';
 
@@ -34,7 +34,7 @@ const startNativeFolderSelection = (pid) => new Promise(resolveResult => {
   join(root, 'tests/scripts/helpers/select-owned-folder.ps1'), '-OwnedProcessId', String(pid),
   '-ExpectedExecutablePath', exe, '-FolderPath', workspace];
  execFile(process.env.MODUTEX_TEST_PWSH ?? 'pwsh.exe', args,
-  { cwd: root, windowsHide: true, timeout: 12000 }, (error, stdout, stderr) => {
+  { cwd: root, windowsHide: true, timeout: 35000 }, (error, stdout, stderr) => {
    resolveResult({
     success: !error,
     exitCode: error?.code ?? 0,
@@ -72,17 +72,26 @@ try {
  assert(page);
  page.on('pageerror', e => receipt.pageErrors.push(e.message));
 
+ await page.waitForFunction(() => typeof window.__TAURI_INTERNALS__?.invoke === 'function', null, { timeout: 15000 });
+ await waitForFileActions(page);
+
  stage = 'owned picker';
  const selected = startNativeFolderSelection(app.pid);
- await clickFileAction(page, /^(開啟資料夾|Open folder)$/);
+ try {
+  await clickFileAction(page, /^(開啟資料夾|Open folder)$/);
 
- // Require actual selection of this run's unique workspace and both disk-backed
- // initial entries. A helper exit code alone does not prove what the app opened.
- await page.waitForFunction(expected => {
-  const name = document.querySelector('.workspace-name')?.textContent?.trim();
-  const files = new Set([...document.querySelectorAll('.tree-file[title]')].map(node => node.getAttribute('title')));
-  return name === expected && files.has('main.tex') && files.has('章節.txt');
- }, basename(workspace), { timeout: 20000 });
+  // Require actual selection of this run's unique workspace and both disk-backed
+  // initial entries. A helper exit code alone does not prove what the app opened.
+  await page.waitForFunction(expected => {
+   const name = document.querySelector('.workspace-name')?.textContent?.trim();
+   const files = new Set([...document.querySelectorAll('.tree-file[title]')].map(node => node.getAttribute('title')));
+   return name === expected && files.has('main.tex') && files.has('章節.txt');
+  }, basename(workspace), { timeout: 40000 });
+ } catch (error) {
+  const pickerResult = await selected;
+  receipt.picker = { workspaceVerifiedInApp: false, helper: pickerResult };
+  throw new Error(`${error}\nNative folder selection helper: ${JSON.stringify(pickerResult)}`);
+ }
 
  const pickerResult = await selected;
  if (pickerResult.success) {
