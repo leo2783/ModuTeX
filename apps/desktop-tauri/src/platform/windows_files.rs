@@ -31,6 +31,7 @@ use windows_sys::{
             STATUS_ACCESS_DENIED, STATUS_FILE_IS_A_DIRECTORY, STATUS_NOT_A_DIRECTORY,
             STATUS_OBJECT_NAME_COLLISION, STATUS_OBJECT_NAME_NOT_FOUND,
             STATUS_OBJECT_PATH_NOT_FOUND, STATUS_SHARING_VIOLATION, STATUS_SUCCESS, UNICODE_STRING,
+            STATUS_DELETE_PENDING,
         },
         Storage::FileSystem::{
             CreateFileW, FileDispositionInfo, FileIdBothDirectoryInfo,
@@ -519,10 +520,11 @@ fn is_artifact_for_leaf(name: &str, leaf: &str) -> bool {
         .is_some_and(|rest| rest.ends_with(&suffix))
 }
 
+
 fn map_ntstatus(status: NTSTATUS) -> FsError {
     match status {
         STATUS_OBJECT_NAME_NOT_FOUND | STATUS_OBJECT_PATH_NOT_FOUND => FsError::NotFound,
-        STATUS_ACCESS_DENIED => FsError::AccessDenied,
+        STATUS_ACCESS_DENIED | STATUS_DELETE_PENDING => FsError::AccessDenied,
         STATUS_SHARING_VIOLATION => FsError::SharingViolation,
         STATUS_OBJECT_NAME_COLLISION => FsError::RevisionConflict {
             expected: None,
@@ -533,6 +535,7 @@ fn map_ntstatus(status: NTSTATUS) -> FsError {
         other => FsError::Io(other as u32),
     }
 }
+
 
 fn map_win32_error(err: u32) -> FsError {
     match err {

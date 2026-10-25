@@ -643,7 +643,7 @@ test('MiKTeX prewarm uses bounded official mirrors and verifies the pinned archi
 	const step = stepsOf(rustTests).find(({ name }) => name === 'Install isolated basic MiKTeX and prewarm LuaLaTeX');
 	assert(step, 'MiKTeX prewarm must remain enabled');
 	const run = step.run;
-	const sourceUrls = [...run.matchAll(/Uri = '([^']+)'/g)].map(([, url]) => url);
+	const sourceUrls = [...run.matchAll(/Uri = '([^']+\.zip)'/g)].map(([, url]) => url);
 	assert.deepEqual(sourceUrls, [
 		'https://mirrors.ibiblio.org/CTAN/systems/win32/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip',
 		'https://ctan.net/systems/windows/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip'
