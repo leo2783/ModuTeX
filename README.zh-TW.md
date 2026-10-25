@@ -41,7 +41,7 @@ ModuTeX 0.3.0 適用於 **Windows x64**。
 ### 環境需求
 
 - Windows x64
-- Node.js `24.19.0` 與 npm `11.17.0`
+- Node.js `24.22.1` 與 npm `11.19.1`
 - Rust（穩定版 MSVC 工具鏈）與 `wasm32-unknown-unknown` 目標（`rustup target add wasm32-unknown-unknown`）
 
 ### 建置與執行

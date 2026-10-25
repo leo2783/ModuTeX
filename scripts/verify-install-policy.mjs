@@ -4,8 +4,8 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const REQUIRED_NODE = 'v24.19.0';
-const REQUIRED_NPM = '11.17.0';
+const REQUIRED_NODE = 'v24.22.1';
+const REQUIRED_NPM = '11.19.1';
 const REGISTRY = 'https://registry.npmjs.org/';
 const LOCKFILE_NAMES = new Set(['package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb']);
 const LIFECYCLE_NAMES = ['preinstall', 'install', 'postinstall', 'prepare'];

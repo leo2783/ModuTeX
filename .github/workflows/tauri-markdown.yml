@@ -26,15 +26,15 @@ jobs:
           ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Setup Node.js 24.19.0
+      - name: Setup Node.js 24.22.1
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: 24.19.0
+          node-version: 24.22.1
           package-manager-cache: false
       - name: Verify Node and npm runtime versions
         run: |
-          test "$(node --version)" = 'v24.19.0'
-          test "$(npm --version)" = '11.17.0'
+          test "$(node --version)" = 'v24.22.1'
+          test "$(npm --version)" = '11.19.1'
       - name: Install pinned project tools
         run: npm ci --ignore-scripts
       - name: Check maintained project Markdown with pinned Prettier

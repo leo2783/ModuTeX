@@ -6,10 +6,10 @@
 	"author": "ModuTeX contributors",
 	"license": "Apache-2.0",
 	"homepage": "https://github.com/leo2783/ModuTeX",
-	"packageManager": "npm@11.17.0",
+	"packageManager": "npm@11.19.1",
 	"engines": {
-		"node": "24.19.0",
-		"npm": "11.17.0"
+		"node": "24.22.1",
+		"npm": "11.19.1"
 	},
 	"workspaces": [
 		"apps/frontend",
@@ -20,7 +20,7 @@
 		"build": "npm run tauri:build",
 		"sync": "npm run sync --workspaces --if-present",
 		"verify:vendor": "node scripts/verify-vendor.mjs",
-		"test:tauri-ci-policy": "node --test tests/scripts/tauri-ci-policy.test.mjs",
+		"test:tauri-ci-policy": "node --test tests/scripts/tauri-ci-policy.test.mjs tests/scripts/native-cdp-config.test.mjs",
 		"test:dependency-security": "node --test tests/scripts/dependency-security-runtime.test.mjs",
 		"verify:install-policy": "node scripts/verify-install-policy.mjs",
 		"test:install-policy": "node --test tests/scripts/verify-install-policy.test.mjs",

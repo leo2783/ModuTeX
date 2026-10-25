@@ -4,12 +4,12 @@ import assert from 'node:assert/strict';
 import {spawn, execFile} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {mkdtemp, mkdir, readFile, writeFile, rm} from 'node:fs/promises';
-import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {resolve, join, dirname, basename, sep} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
 import {waitNativeCdp} from './helpers/wait-native-cdp.mjs';
+import {createNativeCdpConfig} from './helpers/native-cdp-config.mjs';
 import {realPdf} from '../../apps/frontend/tests/helpers/pdf-fixture.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -24,10 +24,7 @@ const sourceGitCommit = await git(['rev-parse', 'HEAD']);
 assert(/^[a-f0-9]{40}$/.test(sourceGitCommit));
 const workingTreeDirty = (await git(['status', '--porcelain', '--untracked-files=no'])).length > 0;
 await mkdir(evidence, {recursive: true});
-const socket = createServer();
-await new Promise((ok, fail) => socket.once('error', fail).listen(0, '127.0.0.1', ok));
-const port = socket.address().port;
-await new Promise(ok => socket.close(ok));
+const nativeCdp = await createNativeCdpConfig(join(sandbox, 'webview'));
 const firstFile=join(sandbox,basename(sandbox)+'-first.tex');
 const secondFile=join(sandbox,basename(sandbox)+'-second.tex');
 const pdfFile=join(sandbox,basename(sandbox)+'-preview.pdf');
@@ -44,8 +41,7 @@ const app = spawn(exe, [firstFile], {
     cwd: root,
     windowsHide: true,
     stdio: ['ignore', 'ignore', 'pipe'],
-    env: {...process.env, WEBVIEW2_USER_DATA_FOLDER: join(sandbox, 'webview'),
-        WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`}
+    env: {...process.env, ...nativeCdp.env}
 });
 let browser, page, launchError, stderr = '', stage = 'launch';
 app.once('error', error => { launchError = error; });
@@ -59,8 +55,8 @@ const watchdog = setTimeout(() => {
         {windowsHide: true, timeout: 10000}, () => process.exit(1));
 }, 120000);
 try {
-    await waitNativeCdp({app, port, evidence, lane: 'os-open', stderr: () => stderr, launchError: () => launchError});
-    browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:10000});
+    await waitNativeCdp({app, port:nativeCdp.port, evidence, lane: 'os-open', stderr: () => stderr, launchError: () => launchError});
+    browser=await chromium.connectOverCDP('http://127.0.0.1:'+nativeCdp.port,{timeout:10000});
     page=browser.contexts().flatMap(context=>context.pages())[0];
     assert(page);
     const pageErrors=[];receipt.pageErrors=pageErrors;
@@ -122,9 +118,29 @@ try {
     receipt.status = 'failed';
     receipt.stage = stage;
     receipt.error = String(error);
-    await page?.screenshot({path: join(evidence, 'native-os-open-e2e.png'), timeout: 3000}).catch(() => {});
+    receipt.failureScreenshot = null;
+    if (page) {
+        const screenshot = join(evidence, `native-os-open-${basename(sandbox)}.png`);
+        await page.screenshot({path: screenshot, timeout: 3000})
+            .then(() => { receipt.failureScreenshot = screenshot; }).catch(() => {});
+    }
     if (page) receipt.visibleState = await Promise.race([
-        page.evaluate(() => ({url: location.href, text: document.body.innerText.slice(-12000)})).catch(() => null),
+        page.evaluate(() => {
+            const sourceButton = document.querySelector('button[aria-label="原始碼"], button[aria-label="Source"]');
+            const sourceAncestors = [];
+            for (let element = sourceButton; element && sourceAncestors.length < 8; element = element.parentElement) {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                sourceAncestors.push({
+                    tag: element.tagName, className: element.className,
+                    x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+                    display: style.display, visibility: style.visibility, overflow: style.overflow,
+                    opacity: style.opacity, position: style.position, transform: style.transform,
+                    hidden: element.hidden, inert: element.inert
+                });
+            }
+            return {url: location.href, text: document.body.innerText.slice(-12000), sourceAncestors};
+        }).catch(() => null),
         delay(3000).then(() => ({inspectionTimedOut: true}))
     ]);
     process.exitCode = 1;

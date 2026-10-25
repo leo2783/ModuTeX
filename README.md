@@ -41,7 +41,7 @@ Downloads are published on [GitHub Releases](https://github.com/leo2783/ModuTeX/
 ### Prerequisites
 
 - Windows x64
-- Node.js `24.19.0` and npm `11.17.0`
+- Node.js `24.22.1` and npm `11.19.1`
 - Rust (stable MSVC) with `wasm32-unknown-unknown` target (`rustup target add wasm32-unknown-unknown`)
 
 ### Build and Run

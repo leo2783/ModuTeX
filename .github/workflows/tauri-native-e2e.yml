@@ -53,6 +53,8 @@ jobs:
     name: Native Windows WebView E2E (${{ matrix.lane }})
     runs-on: windows-2025
     timeout-minutes: 30
+    env:
+      MODUTEX_TEST_CDP_PORT: '9222'
     strategy:
       fail-fast: false
       matrix:
@@ -80,15 +82,15 @@ jobs:
           ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Setup Node.js 24.19.0
+      - name: Setup Node.js 24.22.1
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: 24.19.0
+          node-version: 24.22.1
           package-manager-cache: false
       - name: Verify Node and npm runtime versions
         run: |
-          if ((node --version) -ne 'v24.19.0') { throw 'Node.js 24.19.0 required' }
-          if ((npm --version) -ne '11.17.0') { throw 'npm 11.17.0 required' }
+          if ((node --version) -ne 'v24.22.1') { throw 'Node.js 24.22.1 required' }
+          if ((npm --version) -ne '11.19.1') { throw 'npm 11.19.1 required' }
       # Tauri needs the Evergreen Runtime to create its real WebView; the lane
       # still launches the accepted executable and checks its actual CDP endpoint.
       - name: Provision and verify Microsoft Edge WebView2 Runtime
@@ -285,12 +287,18 @@ jobs:
           if (-not (Test-Path -LiteralPath $evidence -PathType Container)) {
             throw 'Could not create native E2E evidence directory'
           }
+      - name: Configure app-scoped WebView2 CDP policy
+        id: webview2-cdp-policy
+        run: pwsh -NoProfile -File tests/scripts/helpers/webview2-cdp-policy.ps1 -Action Configure
       - name: Run native E2E lane (${{ matrix.lane }})
         env:
           MODUTEX_TEST_PERIODIC_WATCH: ${{ matrix.lane == 'compile-config' && '1' || '0' }}
         run: |
           node ${{ matrix.script }}
           if ($LASTEXITCODE -ne 0) { throw "Native ${{ matrix.lane }} E2E failed with exit code $LASTEXITCODE" }
+      - name: Remove temporary WebView2 CDP policy and profile
+        if: always() && steps.webview2-cdp-policy.outcome != 'skipped'
+        run: pwsh -NoProfile -File tests/scripts/helpers/webview2-cdp-policy.ps1 -Action Cleanup
       - name: Upload native E2E evidence and diagnostics
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f

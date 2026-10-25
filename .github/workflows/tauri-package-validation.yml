@@ -69,15 +69,15 @@ jobs:
           ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Setup Node.js 24.19.0
+      - name: Setup Node.js 24.22.1
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: 24.19.0
+          node-version: 24.22.1
           package-manager-cache: false
       - name: Verify Node and npm runtime versions
         run: |
-          if ((node --version) -ne 'v24.19.0') { throw 'Node.js 24.19.0 required' }
-          if ((npm --version) -ne '11.17.0') { throw 'npm 11.17.0 required' }
+          if ((node --version) -ne 'v24.22.1') { throw 'Node.js 24.22.1 required' }
+          if ((npm --version) -ne '11.19.1') { throw 'npm 11.19.1 required' }
       - name: Install locked packaging dependencies
         run: npm ci --ignore-scripts
       - name: Prepare clean package artifact destinations

@@ -28,8 +28,8 @@ function rootPackage() {
 		name: 'policy-fixture',
 		version: '1.0.0',
 		private: true,
-		packageManager: 'npm@11.17.0',
-		engines: { node: '24.19.0', npm: '11.17.0' },
+		packageManager: 'npm@11.19.1',
+		engines: { node: '24.22.1', npm: '11.19.1' },
 		workspaces: ['packages/*'],
 		dependencies: { 'fixture-workspace': '1.0.0' },
 		devDependencies: { esbuild: '0.28.1' },
@@ -166,21 +166,29 @@ test('requires the pinned Node and npm runtime', async () => {
 	await withFixture(async (root) => {
 		const npmRoot = join(root, 'runtime', 'node_modules', 'npm');
 		await mkdir(join(npmRoot, 'bin'), { recursive: true });
-		await writeFile(join(npmRoot, 'package.json'), json({ version: '11.17.0' }), 'utf8');
+		await writeFile(join(npmRoot, 'package.json'), json({ version: '11.19.1' }), 'utf8');
 		await writeFile(join(npmRoot, 'bin', 'npm-cli.js'), '', 'utf8');
 		const valid = await verify(root, {
 			checkRuntime: true,
-			nodeVersion: 'v24.19.0',
+			nodeVersion: 'v24.22.1',
 			env: { npm_execpath: join(npmRoot, 'bin', 'npm-cli.js') }
 		});
 		assert.equal(valid.ok, true, valid.errors.join('\n'));
 
 		const invalid = await verify(root, {
 			checkRuntime: true,
-			nodeVersion: 'v24.18.0',
+			nodeVersion: 'v24.22.0',
 			env: { npm_execpath: join(npmRoot, 'bin', 'npm-cli.js') }
 		});
-		assertFails(invalid, /Node\.js v24\.19\.0 required/);
+		assertFails(invalid, /Node\.js v24\.22\.1 required/);
+
+		await writeFile(join(npmRoot, 'package.json'), json({ version: '11.19.0' }), 'utf8');
+		const invalidNpm = await verify(root, {
+			checkRuntime: true,
+			nodeVersion: 'v24.22.1',
+			env: { npm_execpath: join(npmRoot, 'bin', 'npm-cli.js') }
+		});
+		assertFails(invalidNpm, /npm 11\.19\.1 required; running 11\.19\.0/);
 	});
 });
 

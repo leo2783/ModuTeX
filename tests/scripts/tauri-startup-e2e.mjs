@@ -8,6 +8,7 @@ import {tmpdir} from 'node:os';
 import {dirname,join,resolve} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
+import { clickFileAction, waitForFileActions } from './helpers/app-file-actions.mjs';
 import {assertNoUiEmoji} from './helpers/assert-no-ui-emoji.mjs';
 const root=resolve(import.meta.dirname,'../..');
 const npmCli=process.env.MODUTEX_TEST_NPM_CLI ?? process.env.npm_execpath ?? join(dirname(process.execPath),'node_modules/npm/bin/npm-cli.js');
@@ -29,10 +30,10 @@ try{
  browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`,{timeout:10000});let page;
  for(const until=Date.now()+10000;Date.now()<until;){page=browser.contexts().flatMap(context=>context.pages())[0];if(page)break;await delay(50)}
  assert(page,'native app must create its page after the DevTools endpoint starts');
- await page.getByRole('button',{name:/^(新文件|New document)$/}).waitFor({state:'visible',timeout:15000});
+ await waitForFileActions(page);
  receipt.homeReadyMs=Math.round(performance.now()-started);assert(!/vite build|cargo (run|build)|Compiling/.test(output),'npm start must launch the app directly');
  await assertNoUiEmoji(page);
- await page.getByRole('button',{name:/^(新文件|New document)$/}).click();
+ await clickFileAction(page, /^(新增文件|New document)$/);
  await page.locator('.insert-bar').getByRole('button',{name:/^(表格|Table)$/}).click();
  const handle=page.locator('.column-boundary').first();await handle.waitFor({state:'visible'});
  assert.equal(await handle.locator('svg path').count(),1);

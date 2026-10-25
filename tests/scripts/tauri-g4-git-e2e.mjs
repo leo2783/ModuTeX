@@ -4,11 +4,12 @@ import assert from 'node:assert/strict';
 import { spawn, execFile } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { resolve, join, basename } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
+import { clickFileAction } from './helpers/app-file-actions.mjs';
+import { createNativeCdpConfig } from './helpers/native-cdp-config.mjs';
 import { waitNativeCdp } from './helpers/wait-native-cdp.mjs';
 const root = resolve(import.meta.dirname, '../..');
 const evidence = join(root, '.verification-artifacts/tauri');
@@ -21,13 +22,9 @@ await writeFile(join(workspace, '章節.txt'), 'first Unicode revision\n');
 const exec = (file, args, cwd = root) => new Promise((ok, fail) => execFile(file, args,
  { cwd, windowsHide: true, timeout: 30000 }, (error, stdout, stderr) => error ? fail(Error(`${error}: ${stderr}`)) : ok(stdout.trim())));
 const git = args => exec('git.exe', args, workspace);
-const socket = createServer();
-await new Promise((ok, fail) => socket.once('error', fail).listen(0, '127.0.0.1', ok));
-const port = socket.address().port;
-await new Promise(ok => socket.close(ok));
+const nativeCdp = await createNativeCdpConfig(join(scratch, 'webview'));
 const app = spawn(exe, [], { cwd: root, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'], env: {
- ...process.env, WEBVIEW2_USER_DATA_FOLDER: join(scratch, 'webview'),
- WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`
+ ...process.env, ...nativeCdp.env
 } });
 let browser, page, launchError, stage = 'launch', stderr = '';
 app.once('error', e => launchError = e);
@@ -40,8 +37,8 @@ const watchdog = setTimeout(() => {
  if (app.pid) execFile('taskkill.exe', ['/PID', String(app.pid), '/T', '/F'], { windowsHide: true }, () => process.exit(1));
 }, 150000);
 try {
- await waitNativeCdp({ app, port, evidence, lane: 'g4-git', stderr: () => stderr, launchError: () => launchError });
- browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 10000 });
+ await waitNativeCdp({ app, port: nativeCdp.port, evidence, lane: 'g4-git', stderr: () => stderr, launchError: () => launchError });
+ browser = await chromium.connectOverCDP(`http://127.0.0.1:${nativeCdp.port}`, { timeout: 10000 });
  page = browser.contexts().flatMap(context => context.pages())[0];
  assert(page);
  page.on('pageerror', e => receipt.pageErrors.push(e.message));
@@ -50,7 +47,7 @@ try {
   join(root, 'tests/scripts/helpers/select-owned-folder.ps1'), '-OwnedProcessId', String(app.pid),
   '-ExpectedExecutablePath', exe, '-FolderPath', workspace]);
  void selected.catch(() => {});
- await page.getByRole('button', { name: /^(開啟資料夾|Open folder)$/ }).click();
+ await clickFileAction(page, /^(開啟資料夾|Open folder)$/);
  await selected;
  const panel = page.locator('.git-panel');
  const button = name => panel.getByRole('button', { name });

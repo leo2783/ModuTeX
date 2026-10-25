@@ -26,15 +26,15 @@ jobs:
           ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Setup Node.js 24.19.0
+      - name: Setup Node.js 24.22.1
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: 24.19.0
+          node-version: 24.22.1
           package-manager-cache: false
       - name: Verify Node and npm runtime versions
         run: |
-          test "$(node --version)" = 'v24.19.0'
-          test "$(npm --version)" = '11.17.0'
+          test "$(node --version)" = 'v24.22.1'
+          test "$(npm --version)" = '11.19.1'
       - name: Install document-core test dependencies
         run: npm ci --ignore-scripts
       - name: Set up pinned document-core WASM toolchain
@@ -264,14 +264,36 @@ jobs:
           Invoke-CiBoundedProcess -FilePath $mpmPath -Arguments @('--pick-repository-url') -LogPath (Join-Path $logDirectory 'mpm-repository.log') -PortableRoot $installDirectory -TimeoutSeconds 60
           Write-Host '[MiKTeX] Updating online package catalog'
           Invoke-CiBoundedProcess -FilePath $mpmPath -Arguments @('--update-db') -LogPath (Join-Path $logDirectory 'mpm-update-db.log') -PortableRoot $installDirectory -TimeoutSeconds 120
-          Write-Host '[MiKTeX] Installing required LuaLaTeX and fontspec packages'
+          $initexmfExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'initexmf.exe' -File -Recurse)
+          if ($initexmfExecutables.Count -ne 1) {
+            throw "Expected exactly one installed initexmf.exe, found $($initexmfExecutables.Count)"
+          }
+          $initexmfPath = $initexmfExecutables[0].FullName
+          Write-Host '[MiKTeX] Disabling automatic package installation for all TeX subprocesses'
+          Invoke-CiBoundedProcess -FilePath $initexmfPath -Arguments @('--set-config-value=[MPM]AutoInstall=f') -LogPath (Join-Path $logDirectory 'initexmf-disable-installer.log') -PortableRoot $installDirectory -TimeoutSeconds 30
+          $installerStateOutput = Invoke-CiBoundedProcess -FilePath $initexmfPath -Arguments @('--show-config-value=[MPM]AutoInstall') -LogPath (Join-Path $logDirectory 'initexmf-verify-installer.log') -PortableRoot $installDirectory -TimeoutSeconds 30
+          $installerState = (($installerStateOutput | Select-Object -Last 1) -as [string]).Trim()
+          if ($installerState -notmatch '^(?i:false|f|0)$') {
+            throw "MiKTeX automatic package installation must be disabled, got '$installerState'"
+          }
+
+          Write-Host '[MiKTeX] Installing LuaLaTeX, fontspec, declared fontspec dependencies, and packages missing from the CI catalog'
+          # Include fontspec dependencies and packages reported missing by the prior portable MiKTeX catalog run.
           foreach ($package in @(
             'ltxbase',
             'miktex-luatex',
             'miktex-luatex-bin-x64-2.9',
+            'tex-ini-files',
+            'hyph-utf8',
             'luaotfload',
             'fontspec',
-            'lm'
+            'l3kernel',
+            'l3packages',
+            'lm',
+            'ms',
+            'showframe',
+            'thailatex',
+            'luxi'
           )) {
             Write-Host "[MiKTeX] Installing package: $package"
             Invoke-CiBoundedProcess -FilePath $mpmPath -Arguments @("--install=$package") -LogPath (Join-Path $logDirectory "mpm-install-$package.log") -PortableRoot $installDirectory -TimeoutSeconds 120
@@ -282,6 +304,27 @@ jobs:
             throw "Expected exactly one installed lualatex.exe, found $($lualatexExecutables.Count)"
           }
           $lualatexPath = $lualatexExecutables[0].FullName
+
+          $miktexExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'miktex.exe' -File -Recurse)
+          if ($miktexExecutables.Count -ne 1) {
+            throw "Expected exactly one installed miktex.exe, found $($miktexExecutables.Count)"
+          }
+          $miktexPath = $miktexExecutables[0].FullName
+          Write-Host '[MiKTeX] Explicitly building lualatex.fmt with automatic installation disabled'
+          Invoke-CiBoundedProcess -FilePath $miktexPath -Arguments @('--disable-installer', 'formats', 'build', '--engine=luahbtex', 'lualatex') -LogPath (Join-Path $logDirectory 'miktex-format-build-lualatex.log') -PortableRoot $installDirectory -TimeoutSeconds 180
+
+          $findtexmfExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'findtexmf.exe' -File -Recurse)
+          if ($findtexmfExecutables.Count -ne 1) {
+            throw "Expected exactly one installed findtexmf.exe, found $($findtexmfExecutables.Count)"
+          }
+          $findtexmfPath = $findtexmfExecutables[0].FullName
+          Write-Host '[MiKTeX] Verifying the LuaHBTeX lualatex.fmt exists before PDF prewarm'
+          $formatLookupOutput = Invoke-CiBoundedProcess -FilePath $findtexmfPath -Arguments @('--the-name-of-the-game=luahbtex', '--file-type=fmt', 'lualatex.fmt') -LogPath (Join-Path $logDirectory 'findtexmf-lualatex-format.log') -PortableRoot $installDirectory -TimeoutSeconds 30
+          $formatPath = @($formatLookupOutput | ForEach-Object { ($_ -as [string]).Trim().Trim('"') } | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1)
+          if ($formatPath.Count -ne 1 -or (Get-Item -LiteralPath $formatPath[0]).Length -eq 0) {
+            throw "MiKTeX did not create a non-empty LuaHBTeX lualatex.fmt: $($formatLookupOutput -join ' ')"
+          }
+
           Write-Host '[MiKTeX] Verifying LuaLaTeX version with automatic installation disabled'
           $versionOutput = Invoke-CiBoundedProcess -FilePath $lualatexPath -Arguments @('--disable-installer', '--version') -LogPath (Join-Path $logDirectory 'lualatex-version.log') -PortableRoot $installDirectory -TimeoutSeconds 30
           $versionText = $versionOutput | Out-String

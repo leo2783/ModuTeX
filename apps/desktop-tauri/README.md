@@ -17,7 +17,7 @@ Windows x64；Rust／Tauri 2 後端，前端使用 WebView2。自有程式碼採
 
 ## 啟動
 
-在儲存庫根目錄執行，使用專案指定的 Node.js 24.19.0／npm 11.17.0：
+在儲存庫根目錄執行，使用專案指定的 Node.js 24.22.1／npm 11.19.1：
 
 ```powershell
 npm run tauri

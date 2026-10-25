@@ -4,11 +4,12 @@ import assert from 'node:assert/strict';
 import { spawn, execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
+import { clickFileAction } from './helpers/app-file-actions.mjs';
+import { createNativeCdpConfig } from './helpers/native-cdp-config.mjs';
 import { waitNativeCdp } from './helpers/wait-native-cdp.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -19,15 +20,13 @@ const workspace = join(scratch, `工作區 \ud840\udc00 ${basename(scratch)}`);
 await mkdir(workspace);
 await writeFile(join(workspace, 'main.tex'), '\\documentclass{article}\n\\begin{document}Terminal E2E\\end{document}\n');
 const exec = (file, args) => new Promise((ok, fail) => execFile(file, args,
-    { cwd: root, windowsHide: true, timeout: 30000 }, (error, out, err) => error ? fail(Error(`${error}: ${err}`)) : ok(out.trim())));
+    { cwd: root, windowsHide: true, timeout: 35000 }, (error, out, err) => error
+      ? fail(Error(`${error}: ${err}; stdout=${out}; killed=${error.killed}; signal=${error.signal}`))
+      : ok(out.trim())));
 const sourceGitCommit = await exec('git', ['rev-parse', 'HEAD']);
-const socket = createServer();
-await new Promise((ok, fail) => socket.once('error', fail).listen(0, '127.0.0.1', ok));
-const port = socket.address().port;
-await new Promise(ok => socket.close(ok));
+const nativeCdp = await createNativeCdpConfig(join(scratch, 'webview'));
 const app = spawn(exe, [], { cwd: root, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'],
-    env: { ...process.env, WEBVIEW2_USER_DATA_FOLDER: join(scratch, 'webview'),
-        WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` } });
+    env: { ...process.env, ...nativeCdp.env } });
 let browser, page, launchError, stderr = '', stage = 'launch';
 app.once('error', error => { launchError = error; });
 app.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-8192); });
@@ -40,8 +39,8 @@ const watchdog = setTimeout(() => {
         { windowsHide: true, timeout: 10000 }, () => process.exit(1));
 }, 120000);
 try {
-    await waitNativeCdp({ app, port, evidence, lane: 'g4-terminal', stderr: () => stderr, launchError: () => launchError });
-    browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 10000 });
+    await waitNativeCdp({ app, port: nativeCdp.port, evidence, lane: 'g4-terminal', stderr: () => stderr, launchError: () => launchError });
+    browser = await chromium.connectOverCDP(`http://127.0.0.1:${nativeCdp.port}`, { timeout: 10000 });
     page = browser.contexts()[0].pages()[0];
     assert(page);
     page.on('pageerror', error => receipt.pageErrors.push(String(error)));
@@ -50,7 +49,7 @@ try {
     const selected = exec(process.env.MODUTEX_TEST_PWSH ?? 'pwsh.exe', ['-NoProfile', '-File',
         join(root, 'tests/scripts/helpers/select-owned-folder.ps1'), '-OwnedProcessId', String(app.pid), '-ExpectedExecutablePath', exe, '-FolderPath', workspace]);
     void selected.catch(() => {});
-    await page.getByRole('button', { name: /^(開啟資料夾|Open folder)$/ }).click();
+    await clickFileAction(page, /^(開啟資料夾|Open folder)$/);
     receipt.picker = JSON.parse(await selected);
     await page.waitForFunction(() => document.body.innerText.includes('main.tex'));
     receipt.checks.push('native folder picker opened Unicode workspace');
@@ -78,10 +77,10 @@ try {
         receipt.nativeWatchContract = await probe;
     }
     stage = 'terminal start';
-    await page.locator('[data-terminal-action="toggle"]').click();
+    await page.getByRole('tab', { name: /^(終端機|Terminal)$/ }).click();
     await page.locator('[data-terminal-action="start"]').click();
-    await page.locator('.terminal-dock .xterm-helper-textarea').waitFor();
-    const input = page.locator('.terminal-dock .xterm-helper-textarea');
+    await page.locator('#workbench-terminal-panel .xterm-helper-textarea').waitFor();
+    const input = page.locator('#workbench-terminal-panel .xterm-helper-textarea');
     const marker = `native-terminal-${Date.now()}`;
     await input.focus();
     await page.keyboard.insertText(`echo ${marker}>terminal-proof.txt`);
@@ -104,7 +103,9 @@ try {
     await page.locator('[data-terminal-action="restart"]').click();
     await page.waitForFunction(() => /終端機已連線|Terminal connected/.test(document.querySelector('.terminal-status')?.textContent ?? ''));
     await page.locator('[data-terminal-action="close"]').click();
-    await page.waitForFunction(() => document.querySelector('[data-terminal-action="toggle"]')?.getAttribute('aria-expanded') === 'false');
+    await page.locator('[data-terminal-action="start"]').waitFor();
+    await page.getByRole('button', { name: /^(關閉面板|Close panel)$/ }).click();
+    await page.locator('.workbench-dock-body').waitFor({ state: 'hidden' });
     receipt.checks.push('real shell exited, restarted and panel closed after cleanup');
     stage = 'native file watch';
     await writeFile(join(workspace, 'watch-proof.tex'), '% external file watcher proof\n');

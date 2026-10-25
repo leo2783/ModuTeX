@@ -1,6 +1,6 @@
 # 開發與打包
 
-在儲存庫根目錄執行。使用 Node.js 24.19.0、npm 11.17.0、Rust 1.97.1 MSVC 與 wasm-bindgen-cli 0.2.126。
+在儲存庫根目錄執行。使用 Node.js 24.22.1、npm 11.19.1、Rust 1.97.1 MSVC 與 wasm-bindgen-cli 0.2.126。
 
 ```powershell
 rustup target add wasm32-unknown-unknown

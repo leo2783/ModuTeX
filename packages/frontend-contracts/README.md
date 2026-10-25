@@ -12,7 +12,7 @@ Schema types and runtime validators live in `src/schemas/`; tests stay in `tests
 
 ## Development
 
-Run from the repository root with Node.js 24.19.0 and npm 11.17.0:
+Run from the repository root with Node.js 24.22.1 and npm 11.19.1:
 
 ```sh
 npm run build --workspace=@modutex/frontend-contracts

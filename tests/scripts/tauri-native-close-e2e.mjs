@@ -4,11 +4,12 @@ import assert from 'node:assert/strict';
 import {spawn, execFile} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {mkdtemp, mkdir, readFile, writeFile, rm} from 'node:fs/promises';
-import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {resolve, join, dirname, basename, sep} from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {chromium} from 'playwright';
+import { clickFileAction, waitForFileActions } from './helpers/app-file-actions.mjs';
+import { createNativeCdpConfig } from './helpers/native-cdp-config.mjs';
 import { waitNativeCdp } from './helpers/wait-native-cdp.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -23,17 +24,13 @@ const sourceGitCommit = await git(['rev-parse', 'HEAD']);
 assert(/^[a-f0-9]{40}$/.test(sourceGitCommit));
 const workingTreeDirty = (await git(['status', '--porcelain', '--untracked-files=no'])).length > 0;
 await mkdir(evidence, {recursive: true});
-const socket = createServer();
-await new Promise((ok, fail) => socket.once('error', fail).listen(0, '127.0.0.1', ok));
-const port = socket.address().port;
-await new Promise(ok => socket.close(ok));
+const nativeCdp = await createNativeCdpConfig(join(sandbox, 'webview'));
 const spawnedAt = performance.now();
 const app = spawn(exe, [], {
     cwd: root,
     windowsHide: true,
     stdio: ['ignore', 'ignore', 'pipe'],
-    env: {...process.env, WEBVIEW2_USER_DATA_FOLDER: join(sandbox, 'webview'),
-        WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`}
+    env: {...process.env, ...nativeCdp.env}
 });
 let browser, page, launchError, stderr = '', stage = 'launch';
 app.once('error', error => { launchError = error; });
@@ -47,8 +44,8 @@ const watchdog = setTimeout(() => {
         {windowsHide: true, timeout: 10000}, () => process.exit(1));
 }, 120000);
 try {
-    await waitNativeCdp({ app, port, evidence, lane: 'native-close', stderr: () => stderr, launchError: () => launchError });
-    browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, {timeout: 10000});
+    await waitNativeCdp({ app, port: nativeCdp.port, evidence, lane: 'native-close', stderr: () => stderr, launchError: () => launchError });
+    browser = await chromium.connectOverCDP(`http://127.0.0.1:${nativeCdp.port}`, {timeout: 10000});
     page = browser.contexts()[0].pages()[0];
     assert(page, 'actual app page');
     const pageErrors = [], confirmations = [];
@@ -60,11 +57,11 @@ try {
         await dialog.dismiss();
     });
     await page.waitForFunction(() => !!globalThis.__TAURI_INTERNALS__?.invoke);
-    await page.getByRole('button', {name: /^(新文件|New document)$/}).waitFor({state: 'visible'});
+    await waitForFileActions(page);
     receipt.timings = {homeReadyObservedMs: Math.round(performance.now() - spawnedAt)};
     stage = 'new document';
     const documentStartedAt = performance.now();
-    await page.getByRole('button', {name: /^(新文件|New document)$/}).click();
+    await clickFileAction(page, /^(新增文件|New document)$/);
     await page.getByRole('button', {name: /^(原始碼|Source)$/}).click();
     const editor = page.locator('.cm-content[contenteditable="true"]').first();
     await editor.waitFor({state: 'visible'});

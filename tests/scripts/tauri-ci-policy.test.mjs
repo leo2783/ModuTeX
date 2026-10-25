@@ -422,6 +422,86 @@ test('expanded CI reusable-workflow graph preserves required checks and exact bu
 	validateTauriCiContract(await workflow());
 });
 
+test('every CI Node job matches the package runtime and verifies bundled npm', async () => {
+	const wf = await workflow();
+	const nodes = workflowNodes(wf);
+	nodes.push(await workflowNode(resolve(ROOT, '.github/workflows/tauri-release.yml'), ROOT));
+	const manifest = JSON.parse(await readFile(resolve(ROOT, 'package.json'), 'utf8'));
+	let runtimeJobCount = 0;
+
+	for (const node of nodes) {
+		for (const [jobId, job] of Object.entries(node.workflow.jobs)) {
+			const steps = stepsOf(job);
+			for (const [index, step] of steps.entries()) {
+				if (!step.uses?.startsWith('actions/setup-node@')) continue;
+				runtimeJobCount += 1;
+				assert.equal(
+					step.with?.['node-version'],
+					manifest.engines.node,
+					`${node.path}/${jobId} must use package.json engines.node`
+				);
+				const verification = steps
+					.slice(index + 1)
+					.find((candidate) => candidate.run?.includes('node --version') && candidate.run?.includes('npm --version'));
+				assert(verification, `${node.path}/${jobId} must verify Node and npm versions`);
+				assert(
+					verification.run.includes(`v${manifest.engines.node}`),
+					`${node.path}/${jobId} must verify Node.js ${manifest.engines.node}`
+				);
+				assert(
+					verification.run.includes(manifest.engines.npm),
+					`${node.path}/${jobId} must verify npm ${manifest.engines.npm}`
+				);
+			}
+		}
+	}
+	assert(runtimeJobCount > 0, 'CI must pin at least one Node runtime');
+});
+
+test('supply-chain gates audit complete npm and Cargo lockfiles and preserve failures', async () => {
+	const wf = await workflow();
+	assert(rootAncestors(wf.workflow, 'package-validation').has('supply-chain'), 'package validation must wait for supply-chain audits');
+	const npmJob = expandedJob(wf, 'supply-chain/supply-chain').job;
+	const npmWorkflow = wf.children['supply-chain'];
+	const npmSteps = stepsOf(npmJob);
+	const npmrc = await readFile(resolve(ROOT, '.npmrc'), 'utf8');
+	assert.equal(wf.workflow.env?.NODE_ENV, undefined, 'root workflow cannot set production-only npm auditing');
+	assert.equal(npmWorkflow.workflow.env?.NODE_ENV, undefined, 'supply-chain workflow cannot set production-only npm auditing');
+	assert.equal(npmJob.env?.NODE_ENV, undefined, 'supply-chain job cannot set production-only npm auditing');
+	assert.doesNotMatch(npmrc, /^\s*(?:omit|production)\s*=/im, 'npm config must not omit dev dependencies from audits');
+	const signature = npmSteps.find((step) => step.id === 'registry-signatures');
+	const npmAudit = npmSteps.find((step) => step.id === 'high-audit');
+	assert(signature, 'npm registry signature verification is required');
+	assert.match(signature.run, /npm audit signatures --json/);
+	assert.match(signature.run, /\$LASTEXITCODE/);
+	assert.match(signature.run, /exit \$signatureExitCode/);
+	assert(npmAudit, 'high-severity npm audit is required');
+	assert.match(npmAudit.run, /npm audit --audit-level=high --json/);
+	assert.doesNotMatch(npmAudit.run, /--omit(?:=|\s)|--production/);
+	assert.match(npmAudit.run, /\$LASTEXITCODE/);
+	assert.match(npmAudit.run, /exit \$auditExitCode/);
+	assert.match(npmAudit.if, /always\(\)/);
+	const npmReports = npmSteps.find((step) => step.uses?.startsWith('actions/upload-artifact@') && /audit-report\.json/.test(step.with?.path ?? ''));
+	assert(npmReports, 'npm registry and audit reports must be uploaded');
+	assert.match(npmReports.if, /always\(\)/);
+
+	const rustJob = expandedJob(wf, 'supply-chain/rustsec-audit').job;
+	const rustSteps = stepsOf(rustJob);
+	const install = rustSteps.find((step) => step.id === 'install-cargo-audit');
+	assert.match(install?.run ?? '', /cargo install cargo-audit --version 0\.22\.2 --locked/);
+	assert.match(install.run, /cargo-audit 0\\\.22\\\.2/);
+	for (const lockfile of ['apps/desktop-tauri/Cargo.lock', 'crates/document-core/Cargo.lock']) {
+		const audit = rustSteps.find((step) => step.run?.includes(`cargo audit --file ${lockfile} --json`));
+		assert(audit, `RustSec audit must inspect ${lockfile}`);
+		assert.match(audit.run, /\$LASTEXITCODE/);
+		assert.match(audit.run, /exit \$auditExitCode/);
+		assert.doesNotMatch(audit.run, /--ignore/);
+	}
+	const rustReports = rustSteps.find((step) => step.uses?.startsWith('actions/upload-artifact@') && /rustsec-report\.json/.test(step.with?.path ?? ''));
+	assert(rustReports, 'RustSec reports must be uploaded');
+	assert.match(rustReports.if, /always\(\)/);
+});
+
 test('CI rejects unreviewed actions, signing secrets and writable pull request permissions', async () => {
 	const original = await workflow();
 	const first = Object.keys(original.workflow.jobs)[0];

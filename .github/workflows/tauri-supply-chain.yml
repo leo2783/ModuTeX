@@ -23,15 +23,15 @@ jobs:
           ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
           fetch-depth: 1
-      - name: Setup Node.js 24.19.0
+      - name: Setup Node.js 24.22.1
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: 24.19.0
+          node-version: 24.22.1
           package-manager-cache: false
       - name: Verify Node and npm runtime versions
         run: |
-          if ((node --version) -ne 'v24.19.0') { throw 'Node.js 24.19.0 required' }
-          if ((npm --version) -ne '11.17.0') { throw 'npm 11.17.0 required' }
+          if ((node --version) -ne 'v24.22.1') { throw 'Node.js 24.22.1 required' }
+          if ((npm --version) -ne '11.19.1') { throw 'npm 11.19.1 required' }
       - run: npm ci --ignore-scripts
       - run: npm run verify:install-policy
       - run: npm ci
@@ -61,3 +61,50 @@ jobs:
             signature-report.json
             audit-report.json
           if-no-files-found: error
+  rustsec-audit:
+    name: RustSec dependency audit
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install Rust toolchain 1.97.1
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain installation failed with exit code $LASTEXITCODE" }
+          rustup default 1.97.1-x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain selection failed with exit code $LASTEXITCODE" }
+      - name: Install cargo-audit 0.22.2
+        id: install-cargo-audit
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          if ($LASTEXITCODE -ne 0) { throw "cargo-audit installation failed with exit code $LASTEXITCODE" }
+          $auditVersion = cargo audit --version
+          if ($LASTEXITCODE -ne 0 -or $auditVersion -notmatch '^cargo-audit 0\.22\.2') {
+            throw "cargo-audit 0.22.2 required, got $auditVersion"
+          }
+      - name: Audit Tauri dependencies against RustSec advisories
+        id: tauri-rustsec-audit
+        run: |
+          cargo audit --file apps/desktop-tauri/Cargo.lock --json > rustsec-report.json
+          $auditExitCode = $LASTEXITCODE
+          exit $auditExitCode
+      - name: Audit document-core dependencies against RustSec advisories
+        id: document-core-rustsec-audit
+        if: always() && steps.install-cargo-audit.outcome == 'success'
+        run: |
+          cargo audit --file crates/document-core/Cargo.lock --json > document-core-rustsec-report.json
+          $auditExitCode = $LASTEXITCODE
+          exit $auditExitCode
+      - name: Upload RustSec report
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Tauri-RustSec-Report
+          path: |
+            rustsec-report.json
+            document-core-rustsec-report.json
+          if-no-files-found: ignore
