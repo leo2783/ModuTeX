@@ -782,6 +782,50 @@ mod native {
     }
 
     #[test]
+    fn pending_cleanup_keeps_scratch_until_drain_for_retry_and_supervised_drop() {
+        for supervised in [false, true] {
+            let directory = TestDirectory::new();
+            let scratch = directory.path().join("scratch");
+            std::fs::create_dir(&scratch).unwrap();
+            std::fs::write(scratch.join("input.tex"), b"retained input").unwrap();
+            let spec = helper_spec(&directory, "sleep", &[], Duration::from_secs(10), 64 * 1024);
+            let mut error = windows_impl::test_hooks::spawn_unproven_cleanup_error(&spec)
+                .expect("spawn real child with unresolved cleanup ownership");
+            let mut ticket = error.take_pending_cleanup().expect("live cleanup ticket");
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let owned_scratch = scratch.clone();
+            ticket.on_drained(move || {
+                let result = std::fs::remove_dir_all(owned_scratch);
+                let _ = sender.send(result);
+            });
+            assert!(!ticket.is_drained());
+            assert!(scratch.join("input.tex").exists());
+            assert!(matches!(
+                receiver.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            ));
+            if supervised {
+                drop(ticket);
+            } else {
+                ticket
+                    .retry(Duration::from_secs(5))
+                    .expect("terminate and drain child");
+                assert!(ticket.is_drained());
+                drop(ticket);
+            }
+            receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("drained callback must run after either cleanup path")
+                .expect("scratch cleanup succeeds");
+            assert!(!scratch.exists());
+            assert!(matches!(
+                receiver.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Disconnected)
+            ));
+        }
+    }
+
+    #[test]
     fn explicit_environment_is_propagated_to_child() {
         let executable = std::env::current_exe().expect("current test executable");
         let key = OsString::from("MODUTEX_PROCESS_TREE_PROPAGATION_TEST");
