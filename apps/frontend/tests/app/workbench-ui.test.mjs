@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
+import { clickFileAction } from '../../../../tests/scripts/helpers/app-file-actions.mjs';
 
 const frontendRoot = fileURLToPath(new URL('../../', import.meta.url));
 const screenshotRoot = fileURLToPath(new URL('../../../../.verification-artifacts/', import.meta.url));
@@ -23,8 +24,12 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 		page.on('pageerror', (error) => errors.push(error.message));
 		page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
 		await page.goto(`http://127.0.0.1:${address.port}/`);
-		await page.getByRole('button', { name: '新文件', exact: true }).click();
+		await clickFileAction(page, /^(新增文件|New document)$/);
 		const sourceEditor = page.locator('.source-view .source .cm-content');
+		async function openMoreMenu() {
+			const menu = page.locator('details.more-menu');
+			if (!await menu.evaluate(element => element.open)) await menu.locator(':scope > summary').click();
+		}
 		assert.equal(await page.getByRole('button', { name: '視覺化', exact: true }).getAttribute('aria-pressed'), 'true');
 		assert.equal(await page.locator('.editor-pane > .editor-bar').count(), 0);
 		await page.getByRole('button', { name: '原始碼', exact: true }).click();
@@ -518,7 +523,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.waitForFunction(() => document.querySelectorAll('.visual-image').length === 2);
 			await page.locator('.source-block').filter({ hasText: 'Image document' }).click(); await page.keyboard.press('Control+z');
 			await page.waitForFunction(() => document.querySelectorAll('.visual-image').length === 1);
-			page.once('dialog', dialog => dialog.accept()); await page.reload(); await page.getByRole('button', { name: '新文件', exact: true }).click();
+			page.once('dialog', dialog => dialog.accept()); await page.reload(); await clickFileAction(page, /^(新增文件|New document)$/);
 			await page.getByRole('button', { name: '原始碼', exact: true }).click(); await sourceEditor.click(); await page.keyboard.press('Control+A'); await page.keyboard.insertText(source);
 			await page.getByRole('button', { name: '視覺化', exact: true }).click();
 			await page.waitForFunction(() => document.querySelectorAll('.visual-image img').length === 2 && [...document.querySelectorAll('.visual-image img')].every(image => image.naturalWidth === 120));
@@ -572,9 +577,9 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 		});
 		await t.test('visible language switch updates editor tools and settings and persists across reload', async () => {
 			const original = await sourceEditor.innerText();
-			const language = page.locator('summary[aria-label="語言"]'); await language.waitFor({ state: 'visible' }); assert.equal(await language.locator('svg').count(), 1); assert.equal(await language.textContent(), '');
+			await openMoreMenu(); const language = page.locator('summary[aria-label="語言"]'); await language.waitFor({ state: 'visible' }); assert.equal(await language.locator('svg').count(), 1); assert.equal(await language.textContent(), '');
 			await language.click(); assert.equal(await page.locator('.app').getAttribute('lang'), 'zh-Hant'); assert.equal(await page.getByRole('button', { name: '繁體中文', exact: true }).getAttribute('aria-pressed'), 'true');
-			await page.keyboard.press('Escape'); assert.equal(await page.locator('.language-menu').evaluate(menu => menu.open), false); await language.click();
+			await page.keyboard.press('Escape'); assert.equal(await page.locator('.language-menu').evaluate(menu => menu.open), false); await openMoreMenu(); await language.click();
 			await page.screenshot({ path: screenshotRoot + 'language-globe-menu.png' });
 			await page.getByRole('button', { name: 'English', exact: true }).click(); assert.equal(await page.locator('.language-menu').evaluate(menu => menu.open), false);
 			assert.equal(await page.locator('.app').getAttribute('lang'), 'en');
@@ -583,15 +588,15 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.locator('.insert-bar').getByRole('button', { name: 'Table', exact: true }).click();
 			await page.getByRole('button', { name: 'All borders', exact: true }).waitFor({ state: 'visible' }); await page.locator('.table-panel').getByRole('button', { name: 'Cancel', exact: true }).click();
 			assert.equal(await sourceEditor.innerText(), original, 'locale and canceled English tools preserve source');
-			await page.getByRole('link', { name: 'Settings', exact: true }).click(); await page.locator('#language-value').selectOption('zh-Hant');
+			await openMoreMenu(); await page.getByRole('link', { name: 'Settings', exact: true }).click(); await page.locator('#language-value').selectOption('zh-Hant');
 			assert.equal(await page.locator('.app').getAttribute('lang'), 'zh-Hant');
-			await page.locator('summary[aria-label="語言"]').click(); await page.getByRole('button', { name: 'English', exact: true }).click();
+			await openMoreMenu(); await page.locator('summary[aria-label="語言"]').click(); await page.getByRole('button', { name: 'English', exact: true }).click();
 			page.once('dialog', dialog => dialog.accept()); await page.reload();
-			await page.locator('summary[aria-label="Language"]').waitFor({ state: 'visible' }); await page.locator('summary[aria-label="Language"]').click(); assert.equal(await page.locator('.app').getAttribute('lang'), 'en');
+			await openMoreMenu(); await page.locator('summary[aria-label="Language"]').waitFor({ state: 'visible' }); await page.locator('summary[aria-label="Language"]').click(); assert.equal(await page.locator('.app').getAttribute('lang'), 'en');
 			await page.getByRole('button', { name: '繁體中文', exact: true }).click(); assert.equal(await page.locator('.app').getAttribute('lang'), 'zh-Hant');
 		});
 		await t.test('help topics are readable in both themes at desktop widths', async () => {
-			await page.getByRole('link', { name: '說明', exact: true }).click();
+			await openMoreMenu(); await page.getByRole('link', { name: '說明', exact: true }).click();
 			const topics = page.getByRole('navigation', { name: '說明分類' });
 			await topics.waitFor({ state: 'visible' });
 			for (const colorScheme of ['dark', 'light']) {

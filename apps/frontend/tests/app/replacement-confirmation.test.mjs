@@ -6,6 +6,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { chromium } from 'playwright';
+import { clickFileAction } from '../../../../tests/scripts/helpers/app-file-actions.mjs';
 
 const frontendRoot = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -156,6 +157,7 @@ window.__unmountApp = () => unmount(appInstance);
 		const cmContent = page.locator('.cm-content');
 
 		async function ensureSourceMode() {
+			await page.locator('.cm-content:visible, button[aria-label="原始碼"]:visible, button[aria-label="Source"]:visible').first().waitFor({ state: 'visible' });
 			if (!(await cmContent.isVisible())) {
 				const sourceBtn = page.getByRole('button', { name: /^(原始碼|Source)$/ });
 				await sourceBtn.waitFor({ state: 'visible' });
@@ -170,10 +172,7 @@ window.__unmountApp = () => unmount(appInstance);
 				if (window.__resetMockFiles) window.__resetMockFiles();
 				window.confirm = window.__nativeConfirm;
 			});
-			const openFolderButton = page.locator('header .global-actions button', {
-				hasText: /開啟資料夾|Open folder/
-			});
-			await openFolderButton.click();
+			await clickFileAction(page, /^(開啟資料夾|Open folder)$/);
 			const mainFileRow = page.locator('aside.files button.file-row', { hasText: 'main.tex' });
 			await mainFileRow.waitFor({ state: 'visible' });
 			await mainFileRow.click();
@@ -264,10 +263,7 @@ window.__unmountApp = () => unmount(appInstance);
 				};
 			});
 
-			const newDocButton = page.locator('header .global-actions button', {
-				hasText: /新文件|New document/
-			});
-			await newDocButton.click();
+			await clickFileAction(page, /^(新增文件|New document)$/);
 
 			// 驗證出現明確使用者回饋橫幅
 			const errorStrip = page.locator('.error-strip[role="alert"]');
@@ -308,10 +304,7 @@ window.__unmountApp = () => unmount(appInstance);
 				};
 			});
 
-			const newDocButton = page.locator('header .global-actions button', {
-				hasText: /新文件|New document/
-			});
-			await newDocButton.click();
+			await clickFileAction(page, /^(新增文件|New document)$/);
 
 			await waitForCondition(async () => {
 				const count = await page.evaluate(() => window.__confirmCalls.length);
@@ -353,15 +346,10 @@ window.__unmountApp = () => unmount(appInstance);
 				};
 			});
 
-			const newDocButton = page.locator('header .global-actions button', {
-				hasText: /新文件|New document/
-			});
+			await page.locator('details.file-menu > summary').click();
+			const newDocButton = page.locator('details.file-menu').getByRole('button', { name: /^(新增文件|New document)$/ });
 			// 連續快速點擊 3 次
-			await Promise.all([
-				newDocButton.click(),
-				newDocButton.click(),
-				newDocButton.click()
-			]);
+			await newDocButton.evaluate(button => { button.click(); button.click(); button.click(); });
 
 			const callCount = await page.evaluate(() => window.__rapidCalls);
 			assert.equal(callCount, 1, 'Only one confirmation prompt must be issued during pending confirm');
@@ -398,10 +386,7 @@ window.__unmountApp = () => unmount(appInstance);
 				await dialog.dismiss();
 			});
 
-			const newDocButton = page.locator('header .global-actions button', {
-				hasText: /新文件|New document/
-			});
-			await newDocButton.click();
+			await clickFileAction(page, /^(新增文件|New document)$/);
 
 			await waitForCondition(() => confirmMessage !== null);
 			assert.ok(
