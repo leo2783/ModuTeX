@@ -1294,18 +1294,25 @@ import type { SourceDocument, SourcePatch, SourceProjection, SourceSpan } from '
 			<a class="brand" href="#/">ModuTeX</a>
 			<a class="secondary-navigation" href="#/" aria-current={route === 'home' ? 'page' : undefined}>{t('首頁', 'Home')}</a>
 			<a class="secondary-navigation" href="#/workbench" aria-current={route === 'workbench' ? 'page' : undefined}>{t('工作台', 'Workbench')}</a>
-			<AppMenu label={t('檔案', 'File')} menuClass="secondary-navigation file-menu">
-				<button type="button" onclick={() => newDocument('blank')} disabled={opening || saving || compiling || confirming}>{t('新增文件', 'New document')}</button>
-				<button type="button" onclick={() => openWorkspaceFileCreate()} disabled={opening || saving || compiling || confirming}>{t('新增工作區檔案', 'New workspace file')}</button>
-				<button type="button" onclick={() => void chooseSource()} disabled={opening || saving}>{t('開啟文件', 'Open document')}</button>
-				{#if desktop}<button type="button" onclick={() => void chooseSource('folder')} disabled={opening || saving}>{t('開啟資料夾', 'Open folder')}</button>{/if}
-				<hr />
-				{#if desktop && source}
-					<button type="button" onclick={saveSource} disabled={opening || saving || compiling || confirming || !dirty || sourceMissingOnDisk()}>{saving ? t('儲存中…', 'Saving…') : t('儲存', 'Save')}</button>
-					<button type="button" onclick={saveSourceAs} disabled={opening || saving || compiling || confirming}>{t('另存新檔', 'Save as')}</button>
-				{/if}
-			</AppMenu>
 			<div class="global-actions">
+				<AppMenu label={t('檔案', 'File')} menuClass="file-menu">
+					<button type="button" onclick={() => newDocument('blank')} disabled={opening || saving || compiling || confirming}>{t('新增文件', 'New document')}</button>
+					<button type="button" onclick={() => openWorkspaceFileCreate()} disabled={opening || saving || compiling || confirming}>{t('新增工作區檔案', 'New workspace file')}</button>
+					<button type="button" onclick={() => void chooseSource()} disabled={opening || saving}>{t('開啟文件', 'Open document')}</button>
+					{#if desktop}<button type="button" onclick={() => void chooseSource('folder')} disabled={opening || saving}>{t('開啟資料夾', 'Open folder')}</button>{/if}
+					<hr />
+					{#if desktop && source}
+						<button type="button" onclick={saveSource} disabled={opening || saving || compiling || confirming || !dirty || sourceMissingOnDisk()}>{saving ? t('儲存中…', 'Saving…') : t('儲存', 'Save')}</button>
+						<button type="button" onclick={saveSourceAs} disabled={opening || saving || compiling || confirming}>{t('另存新檔', 'Save as')}</button>
+					{/if}
+				</AppMenu>
+				<a class="settings-navigation" href="#/settings" aria-current={route === 'settings' ? 'page' : undefined}>{t('設定', 'Settings')}</a>
+				{#await import('./components/LanguageMenu.svelte') then { default: LanguageMenu }}<LanguageMenu locale={preferences.language} onChange={language => changePreference('language', language)} />{/await}
+				<AppMenu label={t('更多', 'More')} menuClass="more-menu">
+					<a href="#/help" aria-current={route === 'help' ? 'page' : undefined}>{t('說明', 'Help')}</a>
+					<a href="#/release-notes" aria-current={route === 'release-notes' ? 'page' : undefined}>{t('版本紀錄', 'Release notes')}</a>
+					{#if isTauri()}<button type="button" onclick={openNewWindow} disabled={openingWindow}>{t('新增視窗', 'New window')}</button>{/if}
+				</AppMenu>
 				{#if route === 'workbench' && desktop && source && !sourceMissingOnDisk()}
 					<div class="global-compile-primary" inert={desktopLoading}>
 						{#if compiling}
@@ -1315,26 +1322,6 @@ import type { SourceDocument, SourcePatch, SourceProjection, SourceSpan } from '
 						{/if}
 					</div>
 				{/if}
-				<AppMenu label={t('更多', 'More')} menuClass="more-menu">
-					<div class="compact-menu-group">
-						<a href="#/" aria-current={route === 'home' ? 'page' : undefined}>{t('首頁', 'Home')}</a>
-						<a href="#/workbench" aria-current={route === 'workbench' ? 'page' : undefined}>{t('工作台', 'Workbench')}</a>
-						<button type="button" onclick={() => newDocument('blank')} disabled={opening || saving || compiling || confirming}>{t('新增文件', 'New document')}</button>
-						<button type="button" onclick={() => openWorkspaceFileCreate()} disabled={opening || saving || compiling || confirming}>{t('新增工作區檔案', 'New workspace file')}</button>
-						<button type="button" onclick={() => void chooseSource()} disabled={opening || saving}>{t('開啟文件', 'Open document')}</button>
-						{#if desktop}<button type="button" onclick={() => void chooseSource('folder')} disabled={opening || saving}>{t('開啟資料夾', 'Open folder')}</button>{/if}
-						{#if desktop && source}
-							<button type="button" onclick={saveSource} disabled={opening || saving || compiling || confirming || !dirty || sourceMissingOnDisk()}>{t('儲存', 'Save')}</button>
-							<button type="button" onclick={saveSourceAs} disabled={opening || saving || compiling || confirming}>{t('另存新檔', 'Save as')}</button>
-						{/if}
-					</div>
-					<hr class="compact-menu-separator" />
-					<a href="#/settings" aria-current={route === 'settings' ? 'page' : undefined}>{t('設定', 'Settings')}</a>
-					<a href="#/help" aria-current={route === 'help' ? 'page' : undefined}>{t('說明', 'Help')}</a>
-					<a href="#/release-notes" aria-current={route === 'release-notes' ? 'page' : undefined}>{t('版本紀錄', 'Release notes')}</a>
-					{#await import('./components/LanguageMenu.svelte') then { default: LanguageMenu }}<LanguageMenu locale={preferences.language} onChange={language => changePreference('language', language)} />{/await}
-					{#if isTauri()}<hr /><button type="button" onclick={openNewWindow} disabled={openingWindow}>{t('新增視窗', 'New window')}</button>{/if}
-				</AppMenu>
 			</div>
 		</nav>
 	</header>

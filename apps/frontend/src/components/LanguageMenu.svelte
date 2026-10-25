@@ -5,7 +5,6 @@
 	let { locale, onChange }: { locale: Language; onChange: (language: Language) => void } = $props();
 	let menu: HTMLDetailsElement;
 	const label = () => text(locale, '語言', 'Language');
-	const currentLanguage = () => locale === 'zh-Hant' ? '繁體中文' : 'English';
 	function choose(language: Language) { onChange(language); menu.open = false; }
 	function close(event: KeyboardEvent) {
 		if (event.key !== 'Escape' || !menu.open) return;
@@ -21,12 +20,8 @@
 />
 
 <details class="language-menu" bind:this={menu}>
-	<summary>
-		<span>{label()}</span>
-		<span class="language-current">
-			{currentLanguage()}
-			<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7.5 5 5 5-5" /></svg>
-		</span>
+	<summary aria-label={label()} title={label()}>
+		<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M5 7h14M5 17h14"/></svg>
 	</summary>
 	<div class="language-options" role="group" aria-label={text(locale, '語言選項', 'Language options')}>
 		{#each [['zh-Hant', '繁體中文'], ['en', 'English']] as const as choice}
@@ -38,26 +33,20 @@
 </details>
 
 <style>
-	.language-menu { position: relative; width: 100%; }
+	.language-menu { position: relative; flex: none; }
 	.language-menu > summary {
 		list-style: none;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		width: 100%;
-		min-height: 34px;
-		padding: 6px 10px;
+		display: grid;
+		place-items: center;
+		width: 36px;
+		height: 36px;
 		border-radius: 4px;
 		cursor: pointer;
 		color: var(--ink);
 	}
-	.language-menu > summary::-webkit-details-marker { display: none; }
 	.language-menu > summary:hover,
 	.language-menu[open] > summary { background: var(--selection); }
 	.language-menu > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-	.language-current { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
-	.language-current svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; }
 	.language-options {
 		position: absolute;
 		inset-block-start: calc(100% + 4px);

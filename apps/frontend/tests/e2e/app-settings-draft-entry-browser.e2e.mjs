@@ -229,8 +229,12 @@ export function getCurrentWindow() {
   });
   const compileBounds = await compile.boundingBox();
   const moreBounds = await page.locator('details.more-menu > summary').boundingBox();
-  assert(compileBounds && moreBounds && compileBounds.x > 800 && compileBounds.x + compileBounds.width <= moreBounds.x, 'Compile stays in the right toolbar action group');
+  assert(compileBounds && moreBounds && compileBounds.x > 800 && compileBounds.x > moreBounds.x + moreBounds.width, 'Only Compile stays at the right edge');
   assert.equal(await page.locator('header a[href="#/compile-settings"]').count(), 0, 'Settings has one entry point');
+  assert.equal(await page.locator('header a[href="#/settings"]').isVisible(), true);
+  assert.equal(await page.locator('details.more-menu a[href="#/settings"]').count(), 0);
+  assert.equal(await page.locator('header .language-menu > summary svg').count(), 1);
+  assert.equal(await page.locator('header .app-menu > summary svg').count(), 0);
   await compile.click();
   await page.locator('canvas').waitFor({ state: 'visible' });
   const locate = page.getByRole('button', { name: /^(定位至 PDF|Locate in PDF)$/ });

@@ -579,7 +579,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 		});
 		await t.test('visible language switch updates editor tools and settings and persists across reload', async () => {
 			const original = await sourceEditor.innerText();
-			await openMoreMenu(); const language = page.locator('details.language-menu > summary'); await language.waitFor({ state: 'visible' }); assert.match(await language.innerText(), /語言.*繁體中文/s);
+			await openMoreMenu(); const language = page.locator('details.language-menu > summary'); await language.waitFor({ state: 'visible' }); assert.equal(await language.getAttribute('aria-label'), '語言'); assert.equal(await language.locator('svg').count(), 1); assert.equal((await language.innerText()).trim(), '');
 			await language.click(); assert.equal(await page.locator('.app').getAttribute('lang'), 'zh-Hant'); assert.equal(await page.getByRole('button', { name: '繁體中文', exact: true }).getAttribute('aria-pressed'), 'true');
 			await page.keyboard.press('Escape'); assert.equal(await page.locator('.language-menu').evaluate(menu => menu.open), false); await openMoreMenu(); await language.click();
 			await page.screenshot({ path: screenshotRoot + 'language-globe-menu.png' });

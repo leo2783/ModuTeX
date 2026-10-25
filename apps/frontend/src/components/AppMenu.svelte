@@ -33,7 +33,6 @@
 <details bind:this={menu} class={`app-menu ${menuClass}`}>
 	<summary aria-label={label}>
 		{label}
-		<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7.5 5 5 5-5" /></svg>
 	</summary>
 	<div class="app-menu-items" aria-label={label}>
 		{@render children()}
@@ -47,17 +46,14 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		gap: 6px;
 		min-height: 36px;
 		padding: 7px 12px;
 		border-radius: 4px;
 		cursor: pointer;
 	}
-	.app-menu > summary::-webkit-details-marker { display: none; }
 	.app-menu > summary:hover,
 	.app-menu[open] > summary { background: var(--selection); }
 	.app-menu > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-	.app-menu > summary svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
 	.app-menu-items {
 		position: absolute;
 		inset-block-start: calc(100% + 6px);
@@ -74,7 +70,7 @@
 		background: var(--surface);
 		box-shadow: 0 8px 24px rgb(0 0 0 / 0.14);
 	}
-	.app-menu.more-menu > .app-menu-items { min-width: min(196px, calc(100vw - 16px)); }
+	.app-menu.more-menu > .app-menu-items { min-width: min(160px, calc(100vw - 16px)); }
 	.app-menu.file-menu > .app-menu-items { inset-inline-start: 0; inset-inline-end: auto; }
 	.app-menu-items :global(button),
 	.app-menu-items :global(a) {

@@ -117,8 +117,8 @@ button:disabled {
 	align-items: center;
 }
 .global-navigation > a,
-.global-navigation > .app-menu,
-.global-actions {
+.global-actions > a,
+.global-actions > .app-menu {
 	flex: none;
 }
 .global-navigation > a:not(.brand) {
@@ -128,10 +128,16 @@ button:disabled {
 	padding: 7px 10px;
 	border-radius: 4px;
 }
-.global-navigation > .app-menu > summary {
+.global-actions > a {
+	min-height: 36px;
+	display: flex;
+	align-items: center;
+	padding: 7px 10px;
+	border-radius: 4px;
+}
+.global-actions > .app-menu > summary {
 	font-size: 14px;
 }
-.global-navigation > .app-menu[aria-current='page'] > summary,
 .global-navigation > a[aria-current='page'] {
 	color: var(--accent);
 	background: var(--selection);
@@ -172,13 +178,14 @@ button:disabled {
 .global-actions {
 	display: flex;
 	align-items: center;
+	flex: 1 1 auto;
+	flex-wrap: wrap;
+	min-width: 0;
 	gap: 8px;
-	margin-inline-start: auto;
+	margin-inline-start: 0;
 }
-.compact-menu-group { display: none; }
-.compact-menu-separator { display: none; }
+.global-compile-primary { flex: none; margin-inline-start: auto; }
 .app-menu-items { max-height: 80dvh; overflow: auto; }
-.app-menu-items .compact-menu-group { display: none; }
 .app-page-content {
 	flex: 1;
 	min-height: 0;
@@ -377,13 +384,11 @@ button.primary {
 	.global-navigation { gap: 4px; }
 	.global-navigation > .secondary-navigation { display: none; }
 	.global-navigation > a.secondary-navigation[href="#/workbench"] { display: flex; }
-	.app-menu-items .compact-menu-group { display: flex; flex-direction: column; }
-	.app-menu-items .compact-menu-separator { display: block; }
 	.workbench-layout.narrow .files { display: none !important; }
 }
 @media (max-width: 960px) {
 	.global-navigation > a:not(.brand) { padding-inline: 8px; }
-	.global-navigation > .app-menu > summary { padding-inline: 8px; }
+	.global-actions > a { padding-inline: 8px; }
 	.global-actions > .app-menu > summary { padding-inline: 8px; }
 	.global-compile-primary button { padding-inline: 9px; }
 }
@@ -392,9 +397,9 @@ button.primary {
 	.global-navigation { gap: 2px; row-gap: 0; flex-wrap: wrap; white-space: normal; }
 	.global-bar .brand { font-size: 18px; }
 	.global-navigation > a:not(.brand) { padding-inline: 6px; font-size: 13px; }
-	.global-navigation > .app-menu > summary { gap: 3px; padding-inline: 6px; font-size: 13px; }
+	.global-actions > a { padding-inline: 6px; font-size: 13px; }
 	.global-actions { gap: 2px; }
-	.global-actions > .app-menu > summary { gap: 3px; padding-inline: 6px; font-size: 13px; }
+	.global-actions > .app-menu > summary { padding-inline: 6px; font-size: 13px; }
 	.global-compile-primary button { padding-inline: 7px; font-size: 12px; }
 	.status-bar { flex-wrap: nowrap; gap: 8px; overflow-x: auto; padding-inline: 8px; white-space: nowrap; }
 	.editor-bar .muted { display: none; }
