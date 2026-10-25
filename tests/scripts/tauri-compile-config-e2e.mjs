@@ -73,7 +73,7 @@ try{
  const mainEditor=page.locator('.cm-content[contenteditable="true"]').first();await mainEditor.waitFor({state:'visible'});
  await mainEditor.click();await page.keyboard.press('Control+End');await page.keyboard.insertText('\n% saved main identity acceptance\n');await page.keyboard.press('Control+s');
  let mainSaved=false;
- for(const until=Date.now()+10000;Date.now()<until;){if((await readFile(join(workspace,'main.tex'),'utf8')).includes('% saved main identity acceptance')){mainSaved=true;break;}await delay(100);}
+ for(const until=Date.now()+10000;Date.now()<until;){try{if((await readFile(join(workspace,'main.tex'),'utf8')).includes('% saved main identity acceptance')){mainSaved=true;break;}}catch(error){if(error.code!=='EBUSY')throw error}await delay(100);}
  assert(mainSaved,'main identity regression requires a real successful UI save');
  receipt.checks.push('main document has a persisted editor identity before child-triggered compilation');
  stage='compile configured main from active include';await page.locator('.tree-file[title="chapter.tex"]').click();await documentTab();const editor=page.locator('.cm-content[contenteditable="true"]').first();await editor.waitFor({state:'visible'});const before=await editor.textContent();assert(before.includes('Included chapter'));await editor.click();await page.keyboard.press('Control+End');await compile();

@@ -364,7 +364,7 @@
 			const discarded = await port.discard(owner, paths);
 			if (!isCurrent(owner, epoch)) return;
 			if (!discarded) {
-				notice = t('已取消捨棄；檔案未變更。', 'Discard cancelled; files were not changed.');
+				notice = t('已取消捨棄，檔案未變更。', 'Discard cancelled. Files were not changed.');
 				return;
 			}
 			notice = t('所選變更已捨棄。', 'Selected changes discarded.');
@@ -487,7 +487,7 @@
 			<p class="git-empty" role="status">{t('工作區沒有 Git 變更。', 'There are no Git changes in this workspace.')}</p>
 		{:else if status}
 			<p class="git-selection-hint">
-				{t('勾選變更以操作；差異未選取路徑時會涵蓋全部。', 'Select changes to act on them. Diffs with no selection include all paths.')}
+				{t('勾選變更以操作。未選取路徑時，差異會涵蓋全部。', 'Select changes to act on them. Diffs with no selection include all paths.')}
 			</p>
 			<div class="git-entry-list" aria-label={t('Git 變更', 'Git changes')}>
 				{#each status.entries as entry (entry.path)}
@@ -558,7 +558,7 @@
 				aria-describedby="workbench-git-commit-hint"
 			></textarea>
 			<p id="workbench-git-commit-hint" class="git-muted">
-				{t('僅提交已暫存的變更；作者名稱使用 Git 設定。', 'Only staged changes are committed. The author name comes from Git configuration.')}
+				{t('僅提交已暫存的變更，作者名稱使用 Git 設定。', 'Only staged changes are committed. The author name comes from Git configuration.')}
 			</p>
 			<button type="button" onclick={commit} disabled={loading || busy !== null || commitMessage.length === 0}>
 				{t('提交已暫存變更', 'Commit staged changes')}
@@ -615,8 +615,8 @@
 			{:else}
 				<p class="git-muted" role="status">
 					{t(
-						'二進位或非 UTF-8 輸出；保留原始位元組，以下僅顯示前 ' + outputPreview.hexBytes + ' / ' + outputPreview.totalBytes + ' 位元組的十六進位預覽。',
-						'Binary or non-UTF-8 output. Original bytes are retained; the hex preview shows ' + outputPreview.hexBytes + ' of ' + outputPreview.totalBytes + ' bytes.'
+						'二進位或非 UTF-8 輸出，保留原始位元組，以下僅顯示前 ' + outputPreview.hexBytes + ' / ' + outputPreview.totalBytes + ' 位元組的十六進位預覽。',
+						'Binary or non-UTF-8 output. Original bytes are retained. The hex preview shows ' + outputPreview.hexBytes + ' of ' + outputPreview.totalBytes + ' bytes.'
 					)}
 				</p>
 				<textarea
@@ -721,9 +721,8 @@
 		font-size: 12px;
 	}
 	.git-entry-list {
+		flex: 0 0 auto;
 		min-width: 0;
-		max-height: 240px;
-		overflow: auto;
 		border-top: 1px solid var(--line);
 		border-bottom: 1px solid var(--line);
 	}
