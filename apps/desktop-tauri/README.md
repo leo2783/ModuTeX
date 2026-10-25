@@ -1,6 +1,6 @@
 # ModuTeX Tauri host
 
-Windows x64；Rust／Tauri 2 後端，前端使用 WebView2。自有程式碼採 Apache-2.0，第三方保留原授權。
+Windows x64 的 Rust／Tauri 2 後端，前端使用 WebView2。自有程式碼採 Apache-2.0，第三方保留原授權。
 
 ## 目錄
 
@@ -12,7 +12,7 @@ Windows x64；Rust／Tauri 2 後端，前端使用 WebView2。自有程式碼採
 | `src/services` | 檔案、Git、監看服務 |
 | `src/shared` | 共用路徑工具 |
 | `src/state` | 設定、工作階段、近期紀錄與能力狀態 |
-| `tests/unit` | 集中單元及原生測試；保留私有模組存取 |
+| `tests/unit` | 集中單元及原生測試，保留私有模組存取 |
 | `tests/tools` | 引擎與終端機 smoke 工具，僅在 `g1-prototypes` 啟用 |
 
 ## 啟動
@@ -23,7 +23,7 @@ Windows x64；Rust／Tauri 2 後端，前端使用 WebView2。自有程式碼採
 npm run tauri
 ```
 
-此指令直接啟動已建置的 Rust release App。首次使用或修改原始碼後先執行 `npm run tauri:build`；日常啟動不重建。
+此指令直接啟動已建置的 Rust release App。首次使用或修改原始碼後先執行 `npm run tauri:build`，日常啟動不重建。
 
 ## 驗證
 
@@ -35,6 +35,4 @@ cargo test --locked --release --manifest-path apps/desktop-tauri/Cargo.toml --li
 cargo build --locked --manifest-path apps/desktop-tauri/Cargo.toml --release
 ```
 
-目錄整理後，實際 crate 107 項測試通過；完整遷移仍依[計畫](../../docs/architecture/TAURI_APACHE_MIGRATION_PLAN_2026-10-17.md)驗收。Electron 與舊 texpile-editor 僅為歷史參考。
-
-Node.js 用於建置、開發與測試。圖示來源與第三方聲明見 [NOTICE](NOTICE)；原型說明見 [G1_PROBES.md](G1_PROBES.md)。
+Node.js 用於建置、開發與測試。圖示來源與第三方聲明見 [NOTICE](NOTICE)。

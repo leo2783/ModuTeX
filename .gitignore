@@ -184,3 +184,9 @@ docs/distribution/
 docs/AUDIT_REPORT_SECURITY_PERF_CI.md
 
 .agents/
+# Internal migration notes and review reports
+/apps/desktop-tauri/G1_PROBES.md
+/docs/licensing/tauri-origin.json
+/docs/*AUDIT*.md
+/docs/*REPORT*.md
+/docs/*PLAN*.md
