@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { build } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { installNativeCanvasBridge, type NativeCanvasFactory } from '../helpers/native-canvas-bridge.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -468,28 +469,8 @@ for (const key of explicitDomKeys) {
 // JSDOM has no layout: ResizeObserver intentionally emits nothing, and RAF is
 // timer-backed. Assertions cover real PDF.js tasks and native pixels, not browser
 // resize/frame scheduling or browser/desktop GUI acceptance.
-const nativeCanvas = require('@napi-rs/canvas') as Record<string, unknown> & {
-	createCanvas(width: number, height: number): {
-		width: number;
-		height: number;
-		getContext(type: '2d'): CanvasRenderingContext2D;
-	};
-};
-const nativeSurfaces = new WeakMap<HTMLCanvasElement, ReturnType<typeof nativeCanvas.createCanvas>>();
-Object.defineProperty(win.HTMLCanvasElement.prototype, 'getContext', {
-	configurable: true,
-	value: function (this: HTMLCanvasElement, kind: string) {
-		if (kind !== '2d') return null;
-		let surface = nativeSurfaces.get(this);
-		if (!surface) {
-			surface = nativeCanvas.createCanvas(this.width, this.height);
-			nativeSurfaces.set(this, surface);
-		}
-		if (surface.width !== this.width) surface.width = this.width;
-		if (surface.height !== this.height) surface.height = this.height;
-		return surface.getContext('2d');
-	}
-});
+const nativeCanvas = require('@napi-rs/canvas') as Record<string, unknown> & NativeCanvasFactory;
+const canvasBridge = installNativeCanvasBridge(win, nativeCanvas);
 
 const windowRecord = win as unknown as Record<string, unknown>;
 const runtimeRecord = globalThis as unknown as Record<string, unknown>;
@@ -615,6 +596,71 @@ function pixelAt(canvas: HTMLCanvasElement, x: number, y: number): number[] {
 	assert.ok(context, 'the native canvas must provide a 2D context');
 	return Array.from(context.getImageData(x, y, 1, 1).data);
 }
+
+test('shared JSDOM canvas bridge preserves drawImage overloads and resized backing surfaces', () => {
+	assert.ok(dom);
+	const source = win.document.createElement('canvas');
+	source.width = 2;
+	source.height = 2;
+	const sourceContext = source.getContext('2d');
+	assert.ok(sourceContext);
+	sourceContext.fillStyle = '#ff0000';
+	sourceContext.fillRect(0, 0, 1, 1);
+	sourceContext.fillStyle = '#00ff00';
+	sourceContext.fillRect(1, 0, 1, 1);
+	sourceContext.fillStyle = '#0000ff';
+	sourceContext.fillRect(0, 1, 1, 1);
+	sourceContext.fillStyle = '#ffffff';
+	sourceContext.fillRect(1, 1, 1, 1);
+
+	const target = win.document.createElement('canvas');
+	target.width = 8;
+	target.height = 6;
+	const targetContext = target.getContext('2d');
+	assert.ok(targetContext);
+	targetContext.drawImage(source, 0, 0);
+	targetContext.drawImage(source, 4, 0, 4, 2);
+	targetContext.drawImage(source, 1, 0, 1, 2, 0, 3, 1, 2);
+	assert.deepEqual(pixelAt(target, 0, 0), [255, 0, 0, 255], 'three-argument drawImage keeps natural-size pixels');
+	assert.deepEqual(pixelAt(target, 7, 1), [255, 255, 255, 255], 'five-argument drawImage keeps scaled pixels');
+	assert.deepEqual(pixelAt(target, 0, 3), [0, 255, 0, 255], 'nine-argument drawImage keeps the cropped source region');
+	assert.deepEqual(pixelAt(target, 0, 4), [255, 255, 255, 255]);
+
+	const resizedSource = win.document.createElement('canvas');
+	resizedSource.width = 1;
+	resizedSource.height = 1;
+	const initialSourceSurface = canvasBridge.nativeSurfaceFor(resizedSource);
+	const initialSourceContext = resizedSource.getContext('2d');
+	assert.ok(initialSourceContext);
+	initialSourceContext.fillStyle = '#ff0000';
+	initialSourceContext.fillRect(0, 0, 1, 1);
+	resizedSource.width = 0;
+	resizedSource.height = 0;
+	const zeroSizeSourceSurface = canvasBridge.nativeSurfaceFor(resizedSource);
+	assert.notEqual(zeroSizeSourceSurface, initialSourceSurface);
+	resizedSource.width = 2;
+	resizedSource.height = 2;
+	const restoredSourceSurface = canvasBridge.nativeSurfaceFor(resizedSource);
+	assert.notEqual(restoredSourceSurface, zeroSizeSourceSurface);
+	assert.equal(restoredSourceSurface.width, 2);
+	assert.equal(restoredSourceSurface.height, 2);
+	const restoredSourceContext = resizedSource.getContext('2d');
+	assert.ok(restoredSourceContext);
+	restoredSourceContext.fillStyle = '#0000ff';
+	restoredSourceContext.fillRect(0, 0, 2, 2);
+
+	const resizedTarget = win.document.createElement('canvas');
+	resizedTarget.width = 1;
+	resizedTarget.height = 1;
+	const previousTargetSurface = canvasBridge.nativeSurfaceFor(resizedTarget);
+	const previouslyObtainedContext = resizedTarget.getContext('2d');
+	assert.ok(previouslyObtainedContext);
+	resizedTarget.width = 2;
+	resizedTarget.height = 2;
+	previouslyObtainedContext.drawImage(resizedSource, 0, 0);
+	assert.notEqual(canvasBridge.nativeSurfaceFor(resizedTarget), previousTargetSurface);
+	assert.deepEqual(pixelAt(resizedTarget, 1, 1), [0, 0, 255, 255], 'a stale context draws into the restored destination backing surface');
+});
 
 async function waitForRenderedPage(
 	target: HTMLElement,

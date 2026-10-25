@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { build } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { installNativeCanvasBridge, type NativeCanvasFactory } from '../helpers/native-canvas-bridge.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -318,21 +319,8 @@ win.matchMedia = (query: string): MediaQueryList => new JSDOMMediaQueryList(quer
 
 // Bridge only the DOM canvas surface to genuine installed native rasterization.
 // PDF.js itself and its task provider are unchanged; JSDOM has no layout engine.
-const nativeCanvas = require('@napi-rs/canvas') as Record<string, unknown> & {
-	createCanvas(width: number, height: number): { width: number; height: number; getContext(type: '2d'): CanvasRenderingContext2D };
-};
-const nativeSurfaces = new WeakMap<HTMLCanvasElement, ReturnType<typeof nativeCanvas.createCanvas>>();
-Object.defineProperty(win.HTMLCanvasElement.prototype, 'getContext', {
-	configurable: true,
-	value: function (this: HTMLCanvasElement, kind: string) {
-		if (kind !== '2d') return null;
-		let surface = nativeSurfaces.get(this);
-		if (!surface) { surface = nativeCanvas.createCanvas(this.width, this.height); nativeSurfaces.set(this, surface); }
-		if (surface.width !== this.width) surface.width = this.width;
-		if (surface.height !== this.height) surface.height = this.height;
-		return surface.getContext('2d');
-	}
-});
+const nativeCanvas = require('@napi-rs/canvas') as Record<string, unknown> & NativeCanvasFactory;
+installNativeCanvasBridge(win, nativeCanvas);
 const windowRecord = win as unknown as Record<string, unknown>;
 const runtimeRecord = globalThis as unknown as Record<string, unknown>;
 for (const key of ['DOMMatrix', 'ImageData', 'Path2D']) {
