@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, writeFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -14,14 +14,27 @@ const run = (file, args, options = {}) => new Promise((accept, reject) => execFi
   { windowsHide: true, timeout: 20000, ...options }, (error, stdout, stderr) =>
     error ? reject(Error(`${error}: ${stdout} ${stderr}`)) : accept(stdout)));
 
-test('CDP readiness accepts a live endpoint without generating failure evidence', async () => {
-  const server = createServer((_request, response) => response.end('{}'));
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+test('CDP readiness accepts a live owned loopback endpoint without generating failure evidence', { skip: !windows }, async () => {
+  const evidence = await mkdtemp(join(tmpdir(), 'modutex-cdp-ready-'));
+  const reservation = createServer();
+  reservation.listen(0, '127.0.0.1');
+  await once(reservation, 'listening');
+  const port = reservation.address().port;
+  await new Promise(resolve => reservation.close(resolve));
+  const script = `require('node:http').createServer((_request,response)=>response.end(JSON.stringify({Browser:'WebView2 fixture',webSocketDebuggerUrl:'ws://127.0.0.1:${port}/devtools/browser/test'}))).listen(${port},'127.0.0.1',()=>console.log('ready'));`;
+  const app = spawn(process.execPath, ['-e', script, '--', `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1'],
+    { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  let stderr = '';
+  app.stderr.on('data', data => { stderr += data; });
   try {
-    await waitNativeCdp({ app: { exitCode: null }, port: server.address().port,
-      stderr: () => '', launchError: () => undefined, timeoutMs: 500 });
-  } finally { server.close(); }
+    await waitNativeCdp({ app, port, evidence, lane: 'ready-test',
+      stderr: () => stderr, launchError: () => undefined, timeoutMs: 5000 });
+    assert.deepEqual(await readdir(evidence), [], 'successful ownership validation creates no failure receipt');
+  } finally {
+    app.kill();
+    await once(app, 'close');
+    await rm(evidence, { recursive: true, force: true });
+  }
 });
 
 test('CDP timeout preserves live owned process evidence and stderr before caller cleanup', { skip: !windows }, async () => {

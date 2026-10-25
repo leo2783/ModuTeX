@@ -636,6 +636,35 @@ test('clean runners prepare real WASM bindings and frontend artifacts before dep
 	}
 });
 
+test('MiKTeX prewarm uses bounded official mirrors and verifies the pinned archive before extraction', async () => {
+	const workflow = load(await readFile(resolve(ROOT, '.github/workflows/tauri-rust.yml'), 'utf8'));
+	const rustTests = workflow.jobs['rust-tests'];
+	assert(rustTests, 'Rust test job is required');
+	const step = stepsOf(rustTests).find(({ name }) => name === 'Install isolated basic MiKTeX and prewarm LuaLaTeX');
+	assert(step, 'MiKTeX prewarm must remain enabled');
+	const run = step.run;
+	const sourceUrls = [...run.matchAll(/Uri = '([^']+)'/g)].map(([, url]) => url);
+	assert.deepEqual(sourceUrls, [
+		'https://mirrors.ibiblio.org/CTAN/systems/win32/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip',
+		'https://ctan.net/systems/windows/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip'
+	]);
+	assert.equal(new Set(sourceUrls).size, 2, 'each pinned source must be attempted at most once');
+	assert.doesNotMatch(run, /miktex\.org\/download\/ctan/, 'download must avoid the unstable MiKTeX redirect');
+	assert.match(run, /\$downloadTimeoutSec = 45/);
+	assert.match(run, /Invoke-WebRequest -Uri \$archiveSource\.Uri[^\r\n]* -TimeoutSec \$downloadTimeoutSec -MaximumRedirection 3/);
+	assert.equal((run.match(/Remove-Item -LiteralPath \$archivePath -Force -ErrorAction Stop/g) ?? []).length, 2,
+		'each source starts clean and a failed transfer removes its partial archive');
+	assert.match(run, /\$expectedArchiveSha256 = '0571e90f6d94353089b4f189fd82a532f9fe559a388c7e7f1102b14b3c1ae27d'/);
+	assert.match(run, /Get-FileHash -LiteralPath \$archivePath -Algorithm SHA256/);
+	assert.match(run, /if \(\$archiveSha256 -ne \$expectedArchiveSha256\)/);
+	assert.match(run, /if \(-not \$archiveVerified\) \{[\s\S]*?throw/);
+	assert(run.indexOf('if (-not $archiveVerified) {') < run.indexOf('Expand-Archive -LiteralPath $archivePath'),
+		'only a successfully downloaded and hash-verified archive may be extracted');
+	assert.match(run, /--set-config-value=\[MPM\]AutoInstall=f/);
+	assert.match(run, /formats', 'build', '--engine=luahbtex'/);
+	assert.match(run, /Invoke-CiBoundedProcess/);
+});
+
 test('release signing remains downstream of the same CI-tested executable identity', async () => {
 	const release = load(
 		await readFile(resolve(ROOT, '.github/workflows/tauri-release.yml'), 'utf8')

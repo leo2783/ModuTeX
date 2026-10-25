@@ -76,7 +76,9 @@ try {
 
     stage = 'new window from visible action';
     const originalPages = new Set(browser.contexts().flatMap(context => context.pages()));
-    await page.getByRole('button', {name:/^(開新視窗|New window)$/}).click();
+    const more = page.locator('details.more-menu');
+    if (!await more.evaluate(element => element.open)) await more.locator(':scope > summary').click();
+    await more.getByRole('button', {name:/^(新增視窗|New window)$/}).click();
     let childPage;
     for (const until=Date.now()+15000;Date.now()<until;) {
         childPage=browser.contexts().flatMap(context=>context.pages()).find(candidate=>!originalPages.has(candidate));

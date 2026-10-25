@@ -33,7 +33,7 @@ const receipt={createdAt:new Date().toISOString(),exe,sha256:createHash('sha256'
 const watchdog=setTimeout(()=>{if(app.pid)execFile('taskkill.exe',['/PID',String(app.pid),'/T','/F'],{windowsHide:true},()=>process.exit(1))},540000);
 const exec=(file,args)=>new Promise((ok,fail)=>execFile(file,args,{cwd:root,windowsHide:true,timeout:35000},(e,out,err)=>e?fail(Error(`${e}: stdout=${out} stderr=${err} killed=${e.killed} signal=${e.signal}`)):ok(out.trim())));
 async function documentTab(){const tab=page.getByRole('tab',{name:/^(文件|Document)$/});if(await tab.count())await tab.click();await page.getByRole('button',{name:/^(原始碼|Source)$/}).click();}
-async function settings(){await page.getByRole('link',{name:/^(編譯設定|Compile settings)$/}).click();await page.getByRole('button',{name:/^(儲存工作區編譯設定|Save workspace compile settings)$/}).waitFor({state:'visible'});await page.waitForFunction(()=>{const b=[...document.querySelectorAll('button')].find(e=>/儲存工作區編譯設定|Save workspace compile settings/.test(e.textContent));return b&&!b.disabled});}
+async function settings(){await page.locator('header').getByRole('link',{name:/^(設定|Settings)$/}).click();await page.getByRole('button',{name:/^(編譯|Compilation)$/}).click();await page.getByRole('button',{name:/^(儲存工作區編譯設定|Save workspace compile settings)$/}).waitFor({state:'visible'});await page.waitForFunction(()=>{const b=[...document.querySelectorAll('button')].find(e=>/儲存工作區編譯設定|Save workspace compile settings/.test(e.textContent));return b&&!b.disabled});}
 async function workbench(){await page.getByRole('link',{name:/^(工作區|Workbench|工作台)$/}).click();}
 async function assertManagedEngine(){
  const expected=process.env.MODUTEX_TEST_EXPECT_ENGINE;if(!expected)return;
@@ -52,6 +52,7 @@ async function compile(cold = false){const started=performance.now();await page.
 try{
  await waitNativeCdp({ app, port:nativeCdp.port, evidence, lane: 'compile-config', stderr: () => stderr, launchError: () => launchError });
  browser=await chromium.connectOverCDP(`http://127.0.0.1:${nativeCdp.port}`,{timeout:10000});for(const until=Date.now()+10000;Date.now()<until;){page=browser.contexts().flatMap(c=>c.pages())[0];if(page)break;await delay(50)}assert(page);page.on('pageerror',e=>receipt.pageErrors.push(e.message));
+ await page.waitForFunction(() => typeof window.__TAURI_INTERNALS__?.invoke === 'function');
  await page.exposeFunction('recordNativeWatchFailure', value => receipt.watchFailures.push(value));
  await page.evaluate(async()=>{const api=window.__TAURI_INTERNALS__;await api.invoke('plugin:event|listen',{event:'frontend://files/error',target:{kind:'Any'},handler:api.transformCallback(event=>window.recordNativeWatchFailure(event.payload))});});
  stage='owned native folder picker';const selected=exec(process.env.MODUTEX_TEST_PWSH??'pwsh.exe',['-NoProfile','-File',join(root,'tests/scripts/helpers/select-owned-folder.ps1'),'-OwnedProcessId',String(app.pid),'-ExpectedExecutablePath',exe,'-FolderPath',workspace]);void selected.catch(()=>{});await clickFileAction(page, /^(開啟資料夾|Open folder)$/);await selected;await page.locator('.tree-file[title="standalone.tex"]').click();
@@ -61,7 +62,12 @@ try{
  stage='real managed compile of active unset main';await compile(coldCache);receipt.checks.push('unset configured main compiles active saved TeX with real managed engine');
  stage='watch after managed compilation';await writeFile(join(workspace,'watch-after.txt'),'native watch after compile\n');await page.locator('.tree-file[title="watch-after.txt"]').waitFor({state:'visible',timeout:10000});assert.deepEqual(receipt.watchFailures,[]);receipt.checks.push('native watch remains live after managed compilation');
  stage='save trusted UI custom profile';await settings();await page.getByLabel(/主 TeX 文件|Main TeX file/).selectOption('main.tex');await page.getByLabel(/編譯引擎設定檔|Engine profile/).selectOption('custom');
- const tectonic=join(root,'vendor/tectonic/windows-x64/tectonic.exe');await page.getByLabel(/受信任的命令範本|Trusted command template/).fill(`"${tectonic}" --outdir {out} --keep-logs {main}`);await page.getByLabel(/^輸出目錄|^Output directory/).fill('out');await page.getByLabel(/^PDF 路徑|^PDF path/).fill('out/result.pdf');await page.getByLabel(/^記錄|^Log path|^日誌/).fill('out/result.log');await page.getByRole('button',{name:/^(儲存工作區編譯設定|Save workspace compile settings)$/}).click();await workbench();
+ const tectonic=join(root,'vendor/tectonic/windows-x64/tectonic.exe');await page.getByLabel(/受信任的命令範本|Trusted command template/).fill(`"${tectonic}" --outdir {out} --keep-logs {main}`);await page.getByLabel(/^輸出目錄|^Output directory/).fill('out');await page.getByLabel(/^PDF 路徑|^PDF path/).fill('out/result.pdf');await page.getByLabel(/^記錄|^Log path|^日誌/).fill('out/result.log');await page.getByRole('button',{name:/^(儲存工作區編譯設定|Save workspace compile settings)$/}).click();
+ await page.waitForFunction(()=>{const button=[...document.querySelectorAll('button')].find(value=>/^(套用頁邊距|Apply margins)$/.test(value.textContent));return button&&!button.disabled});
+ for(const [side,value] of Object.entries({top:'1.5',bottom:'2.5',left:'3',right:'4'}))await page.locator('#compile-margin-'+side).fill(value);
+ await page.getByRole('button',{name:/^(套用頁邊距|Apply margins)$/}).click();
+ for(const until=Date.now()+10000;Date.now()<until;){try{if((await readFile(join(workspace,'main.tex'),'utf8')).includes('left=3cm'))break}catch(error){if(error.code!=='EBUSY')throw error}await delay(50)}
+ const configuredMain=await readFile(join(workspace,'main.tex'),'utf8');assert.match(configuredMain,/top=1\.5cm,bottom=2\.5cm,left=3cm,right=4cm/);receipt.checks.push('four margin controls update the configured main file without changing the active source');await workbench();
  stage='save main document identity before compiling from an include';
  await page.locator('.tree-file[title="main.tex"]').click();await documentTab();
  const mainEditor=page.locator('.cm-content[contenteditable="true"]').first();await mainEditor.waitFor({state:'visible'});

@@ -47,7 +47,7 @@ test('Windows CI/CD blocks and distribution scripts parse with the actual PowerS
   for (const name of ['verify-authenticode-signature.ps1', 'verify-installer-payload.ps1']) {
     inputs.push({ label: name, source: await readFile(join(root, 'scripts/distribution', name), 'utf8') });
   }
-  for (const name of ['ci-bounded-process.ps1', 'owned-process-diagnostics.ps1']) {
+  for (const name of ['ci-bounded-process.ps1', 'owned-process-diagnostics.ps1', 'owned-native-popups.ps1', 'select-owned-folder.ps1', 'cancel-owned-dialog.ps1']) {
     inputs.push({ label: name, source: await readFile(join(root, 'tests/scripts/helpers', name), 'utf8') });
   }
   assert(inputs.length > 10);

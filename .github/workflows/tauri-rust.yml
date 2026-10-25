@@ -224,11 +224,45 @@ jobs:
           $archivePath = Join-Path $miktexRoot 'miktexsetup-5.5.0+1763023-x64.zip'
           $logDirectory = Join-Path $miktexRoot 'logs'
           New-Item -ItemType Directory -Path $logDirectory -ErrorAction Stop | Out-Null
-          Write-Host '[MiKTeX] Downloading pinned setup archive (120-second request timeout)'
-          Invoke-WebRequest -Uri 'https://miktex.org/download/ctan/systems/win32/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip' -OutFile $archivePath -TimeoutSec 120 -ErrorAction Stop
-          $archiveSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($archiveSha256 -ne '0571e90f6d94353089b4f189fd82a532f9fe559a388c7e7f1102b14b3c1ae27d') {
-            throw "MiKTeX setup archive SHA-256 mismatch: $archiveSha256"
+          $archiveSources = @(
+            [pscustomobject]@{
+              Name = 'CTAN mirror mirrors.ibiblio.org'
+              Uri = 'https://mirrors.ibiblio.org/CTAN/systems/win32/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip'
+            },
+            [pscustomobject]@{
+              Name = 'CTAN mirror ctan.net'
+              Uri = 'https://ctan.net/systems/windows/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip'
+            }
+          )
+          $downloadTimeoutSec = 45
+          $expectedArchiveSha256 = '0571e90f6d94353089b4f189fd82a532f9fe559a388c7e7f1102b14b3c1ae27d'
+          $archiveVerified = $false
+          foreach ($archiveSource in $archiveSources) {
+            if (Test-Path -LiteralPath $archivePath) {
+              Remove-Item -LiteralPath $archivePath -Force -ErrorAction Stop
+            }
+            try {
+              Write-Host "[MiKTeX] Downloading pinned setup archive from $($archiveSource.Name) (one attempt, $downloadTimeoutSec-second timeout)"
+              Invoke-WebRequest -Uri $archiveSource.Uri -OutFile $archivePath -TimeoutSec $downloadTimeoutSec -MaximumRedirection 3 -ErrorAction Stop
+              if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf) -or (Get-Item -LiteralPath $archivePath).Length -eq 0) {
+                throw 'MiKTeX setup archive download produced no file or an empty file'
+              }
+              $archiveSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($archiveSha256 -ne $expectedArchiveSha256) {
+                throw "MiKTeX setup archive SHA-256 mismatch from $($archiveSource.Name): $archiveSha256"
+              }
+              $archiveVerified = $true
+              Write-Host "[MiKTeX] Verified pinned setup archive SHA-256 from $($archiveSource.Name)"
+              break
+            } catch {
+              if (Test-Path -LiteralPath $archivePath) {
+                Remove-Item -LiteralPath $archivePath -Force -ErrorAction Stop
+              }
+              Write-Warning "[MiKTeX] Setup archive source $($archiveSource.Name) failed; trying the next official mirror if available: $($_.Exception.Message)"
+            }
+          }
+          if (-not $archiveVerified) {
+            throw 'MiKTeX setup archive download failed or failed SHA-256 verification at every pinned CTAN mirror'
           }
           Write-Host '[MiKTeX] Extracting verified setup archive'
           $setupDirectory = Join-Path $miktexRoot 'setup'

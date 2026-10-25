@@ -15,36 +15,53 @@ $folder = (Resolve-Path -LiteralPath $FolderPath).Path
 if (-not (Test-Path -LiteralPath $folder -PathType Container)) { throw 'EXPECTED_TEST_FOLDER' }
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-public static class OwnedDialogWindow {
-    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr window, uint command);
-    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
-    public static bool BelongsTo(IntPtr window, uint process) {
-        for (int depth = 0; window != IntPtr.Zero && depth < 16; depth++) {
-            uint current; GetWindowThreadProcessId(window, out current);
-            if (current == process) return true;
-            window = GetWindow(window, 4);
-        }
-        return false;
-    }
-}
-'@
-$processCondition = [System.Windows.Automation.PropertyCondition]::new(
-    [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $OwnedProcessId)
+. (Join-Path $PSScriptRoot 'owned-native-popups.ps1')
 $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 $observed = @()
+$nativeWindows = @{}
 while ([DateTime]::UtcNow -lt $deadline) {
     if (-not (Get-Process -Id $OwnedProcessId -ErrorAction SilentlyContinue)) { break }
-    $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
-        [System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
-    foreach ($window in $windows) {
-        if ($window.Current.ProcessId -ne $OwnedProcessId -and
-            -not [OwnedDialogWindow]::BelongsTo([IntPtr]::new($window.Current.NativeWindowHandle), [uint32]$OwnedProcessId)) { continue }
-        $observed += [pscustomobject]@{id=$window.Current.AutomationId;type=$window.Current.ClassName}
-        $elements = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-            [System.Windows.Automation.Condition]::TrueCondition)
+    $windows = @([OwnedNativePopupWindows]::Enumerate([uint32]$OwnedProcessId))
+    foreach ($popup in $windows) {
+        $nativeHandle = $popup.Handle.ToInt64().ToString()
+        if (-not $nativeWindows.ContainsKey($nativeHandle)) {
+            $nativeChildren = @([OwnedNativePopupWindows]::EnumerateChildren($popup.Handle) | ForEach-Object {
+                [pscustomobject]@{processId=$_.ProcessId;controlId=$_.ControlId;class=$_.ClassName;text=$_.Text}
+            })
+            $nativeWindows[$nativeHandle] = [pscustomobject]@{
+                processId=$popup.ProcessId;class=$popup.ClassName;title=$popup.Title;children=$nativeChildren
+            }
+        }
+        if ($popup.ClassName -eq '#32770' -and $popup.ProcessId -eq $OwnedProcessId) {
+            $nativeSelectionDetail = ''
+            if ([OwnedNativePopupWindows]::TrySelectFolder(
+                $popup.Handle, [uint32]$OwnedProcessId, $folder, [ref]$nativeSelectionDetail)) {
+                @{
+                    processId=$OwnedProcessId
+                    selected=$folder
+                    driver='Win32 GetDlgItem/WM_SETTEXT/BM_CLICK'
+                    popupClass=$popup.ClassName
+                    editControlId=1152
+                    selectButtonId=1
+                } | ConvertTo-Json -Compress
+                exit 0
+            }
+            $observed += [pscustomobject]@{id='native-fallback';type=$nativeSelectionDetail}
+            # Native controls can appear after the popup becomes visible. Poll again without entering UIA.
+            continue
+        }
+        $nativeSnapshot = $nativeWindows[$nativeHandle] | ConvertTo-Json -Compress -Depth 6
+        [Console]::Error.WriteLine("OWNED_FOLDER_WIN32_CHILDREN $nativeSnapshot")
+        [Console]::Error.Flush()
+        try {
+            $window = [System.Windows.Automation.AutomationElement]::FromHandle($popup.Handle)
+            if ($null -eq $window) { continue }
+            $observed += [pscustomobject]@{id=$window.Current.AutomationId;type=$popup.ClassName;processId=$popup.ProcessId}
+            $elements = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+                [System.Windows.Automation.Condition]::TrueCondition)
+        } catch {
+            continue
+        }
         $entry = $null
         $select = $null
         foreach ($element in $elements) {
@@ -77,4 +94,5 @@ while ([DateTime]::UtcNow -lt $deadline) {
     Start-Sleep -Milliseconds 100
 }
 $controls = @($observed | Sort-Object id,type -Unique) | ConvertTo-Json -Compress
-throw "OWNED_FOLDER_DIALOG_NOT_FOUND controls=$controls"
+$native = @($nativeWindows.Values) | ConvertTo-Json -Compress -Depth 6
+throw "OWNED_FOLDER_DIALOG_NOT_FOUND uia=$controls native=$native"

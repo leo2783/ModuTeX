@@ -52,11 +52,11 @@ try {
     receipt.pageErrors = pageErrors;
     receipt.confirmations = confirmations;
     page.on('pageerror', error => pageErrors.push(error.message));
-    page.on('dialog', async dialog => {
-        if (dialog.type() === 'confirm') confirmations.push(dialog.message());
-        await dialog.dismiss();
-    });
+
     await page.waitForFunction(() => !!globalThis.__TAURI_INTERNALS__?.invoke);
+    page.on('dialog', dialog => {
+        if (dialog.type() === 'confirm') confirmations.push(dialog.message());
+    });
     await waitForFileActions(page);
     receipt.timings = {homeReadyObservedMs: Math.round(performance.now() - spawnedAt)};
     stage = 'new document';
