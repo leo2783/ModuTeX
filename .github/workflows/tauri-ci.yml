@@ -186,7 +186,7 @@ jobs:
       checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
       package_version: ${{ needs.source-identity.outputs.package_version }}
   native-e2e:
-    name: Seven native Windows WebView E2E lanes
+    name: Native Windows WebView E2E lanes
     needs:
       - source-identity
       - desktop-build

@@ -291,7 +291,6 @@ button.primary {
 .sidebar-heading button svg { display: block; flex: none; }
 .sidebar-scroll { min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain;}
 .sidebar-primary > .splitter.horizontal { width: 100%; }
-.files > .git-panel { flex: 0 0 min(24dvh, 220px); min-height: 100px; max-height: 260px; overflow-x: hidden; overflow-y: auto; border-top: 1px solid var(--line); }
 .workspace-name { padding: 4px 12px; font-size: 12px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .compile-status { padding: 6px 16px; border-bottom: 1px solid var(--line); background: var(--canvas); font-size: 13px; overflow-wrap: anywhere; }
 .compile-progress { height: 4px; margin-top: 6px; overflow: hidden; background: var(--line); border-radius: 2px; }

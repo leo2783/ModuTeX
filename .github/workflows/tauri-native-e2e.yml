@@ -63,8 +63,6 @@ jobs:
             script: tests/scripts/tauri-g2-workbench-e2e.mjs
           - lane: g4-files
             script: tests/scripts/tauri-g4-files-e2e.mjs
-          - lane: g4-git
-            script: tests/scripts/tauri-g4-git-e2e.mjs
           - lane: g4-terminal
             script: tests/scripts/tauri-g4-terminal-e2e.mjs
           - lane: compile-config

@@ -18,7 +18,6 @@ import type { CompileIdentity, Diagnostic, FileEntry, WorkspaceInfo } from '@mod
 	import WorkbenchLayout from './WorkbenchLayout.svelte';
 	import DragSeparator from './splitter/DragSeparator.svelte';
 	import { clampSplitterValue, splitterBounds } from './splitter/resize-logic.ts';
-	import GitPanel from '../features/git/GitPanel.svelte';
 	import DraftPanel from '../features/draft/DraftPanel.svelte';
 import WorkbenchDock from './WorkbenchDock.svelte';
 
@@ -270,7 +269,6 @@ type WorkbenchDockTab = 'problems' | 'output' | 'terminal' | null;
 					</div>
 				</section>
 			</div>
-			<GitPanel workspaceId={workspace?.id ?? null} {locale} />
 		</aside>
 	{/snippet}
 	{#snippet editor({ active, hidden, inert })}
