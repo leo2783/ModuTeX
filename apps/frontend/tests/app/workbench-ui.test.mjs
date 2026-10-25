@@ -577,6 +577,87 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			}
 			await page.screenshot({ path: screenshotRoot + 'text-structure-20261012.png' });
 		});
+
+        await t.test('title-only documents insert a formula in the body and undo without changing metadata', async () => {
+            const text = "\\documentclass{article}\n\\usepackage[margin=2cm]{geometry}\n\n\\title{The Data efficiency of System 1 Decision model in fine-tuning: Take Laya for example}\n\\author{}\n\\date{}\n\n\\begin{document}\n\\maketitle\n\\end{document}\n";
+            await page.getByRole('button', { name: '原始碼', exact: true }).click();
+            await sourceEditor.click(); await page.keyboard.press('Control+A'); await page.keyboard.insertText(text);
+            const original = await sourceEditor.innerText();
+            await page.getByRole('button', { name: '視覺化', exact: true }).click();
+            await page.locator('.source-block[data-structure="title"]').waitFor();
+            await page.locator('.source-block[data-structure="date"]').click();
+            await page.locator('summary[aria-label="數學"]').click();
+            await page.getByRole('button', { name: '公式儲存格', exact: true }).click();
+            const draft = page.locator('.inline-equation-draft math-field');
+            await draft.waitFor({ state: 'visible' });
+            await draft.click();
+            await page.waitForFunction(() => document.activeElement === document.querySelector('.inline-equation-draft math-field'));
+            await page.keyboard.type('x');
+            await page.waitForFunction(() => document.querySelector('.inline-equation-draft math-field')?.value.includes('x'));
+            await page.getByRole('button', { name: '完成公式', exact: true }).click();
+            await page.waitForFunction(() => !document.querySelector('.inline-equation-draft')).catch(async error => {
+                throw new Error(JSON.stringify({ error: error.message, source: (await sourceEditor.textContent()).slice(0, 2000), issue: await page.locator('.inline-equation-error, .source-error').allTextContents() }));
+            });
+            assert.equal(await page.locator('.source-error:not(:empty)').count(), 0);
+            await page.getByRole('button', { name: '原始碼', exact: true }).click();
+            const updated = await sourceEditor.innerText();
+            assert(updated.includes("\\author{}"));
+            assert(updated.includes("\\date{}"));
+            assert(updated.includes("\\usepackage{amsmath}"));
+            assert(updated.includes("\\usepackage{amssymb}"));
+            const formula = updated.search(/\\\[\s*x\s*\\\]/);
+            assert(formula > updated.indexOf("\\maketitle"));
+            assert(formula < updated.indexOf("\\end{document}"));
+            await sourceEditor.click(); await page.keyboard.press('Control+z');
+            assert.equal(await sourceEditor.innerText(), original);
+            await page.getByRole('button', { name: '視覺化', exact: true }).click();
+        });
+
+
+        await t.test('partial derivative cells move and delete without changing title or date', async () => {
+            const text = "\\documentclass{article}\n\\usepackage{amsmath}\n\\title{Cell safety}\n\\author{}\n\\date{}\n\\begin{document}\n\\maketitle\nFirst paragraph.\n\\[\\begin{pmatrix}2 & \\frac{\\partial^2 f}{\\partial x^2} & 52\\\\2 & 5 & 6666\\\\5 & 8 & 88\\end{pmatrix}\\]\n\\par Last paragraph.\n\\end{document}\n";
+            await page.getByRole('button', { name: '原始碼', exact: true }).click();
+            await sourceEditor.click(); await page.keyboard.press('Control+A'); await page.keyboard.insertText(text);
+            const original = await sourceEditor.innerText();
+            await page.getByRole('button', { name: '視覺化', exact: true }).click();
+            const formula = page.locator('.visual-math').first(); await formula.waitFor();
+            await formula.getByRole('button', { name: '編輯公式', exact: true }).click();
+            await page.getByRole('button', { name: '取消公式', exact: true }).click();
+            await page.locator('.visual-cell-toolbar').getByRole('button', { name: '下移儲存格', exact: true }).click();
+            await page.getByRole('button', { name: '原始碼', exact: true }).click();
+            const moved = await sourceEditor.innerText();
+            assert.equal(moved.slice(0, moved.indexOf('\\maketitle') + 10), original.slice(0, original.indexOf('\\maketitle') + 10));
+            assert(moved.indexOf('\\partial') > moved.indexOf('Last paragraph.'));
+            await sourceEditor.click(); await page.keyboard.press('Control+z'); assert.equal(await sourceEditor.innerText(), original);
+            await page.getByRole('button', { name: '視覺化', exact: true }).click();
+            await formula.waitFor();
+            const formulaIndex = Number(await formula.getAttribute('data-cell-index'));
+            const handle = page.locator('.cell-drag-handle').nth(formulaIndex);
+            const handleBox = await handle.boundingBox();
+            const titleBox = await page.locator('.notebook-cell').first().boundingBox();
+            assert(handleBox && titleBox);
+            await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + 8);
+            await page.mouse.down(); await page.mouse.move(titleBox.x + 30, titleBox.y + 1, {steps:12}); await page.mouse.up();
+            await page.getByRole('button', { name: '原始碼', exact: true }).click();
+            const dragged = await sourceEditor.innerText();
+            assert.equal(dragged.slice(0, dragged.indexOf('\\maketitle') + 10), original.slice(0, original.indexOf('\\maketitle') + 10));
+            assert(dragged.indexOf('\\partial') > dragged.indexOf('\\maketitle'));
+            assert(dragged.indexOf('\\partial') < dragged.indexOf('First paragraph.'));
+            await sourceEditor.click(); await page.keyboard.press('Control+z'); assert.equal(await sourceEditor.innerText(), original);
+            await page.getByRole('button', { name: '視覺化', exact: true }).click();
+            await formula.getByRole('button', { name: '編輯公式', exact: true }).click();
+            await page.getByRole('button', { name: '取消公式', exact: true }).click();
+            page.once('dialog', dialog => dialog.accept());
+            await page.locator('.visual-cell-toolbar').getByRole('button', { name: '刪除此儲存格', exact: true }).click();
+            await formula.waitFor({state:'detached'});
+            await page.getByRole('button', { name: '原始碼', exact: true }).click();
+            const deleted = await sourceEditor.innerText();
+            assert(!deleted.includes('\\partial'));
+            assert(deleted.includes('\\date{}')); assert(deleted.includes('First paragraph.')); assert(deleted.includes('Last paragraph.'));
+            await sourceEditor.click(); await page.keyboard.press('Control+z'); assert.equal(await sourceEditor.innerText(), original);
+            await page.getByRole('button', { name: '視覺化', exact: true }).click();
+        });
+
 		await t.test('visible language switch updates editor tools and settings and persists across reload', async () => {
 			const original = await sourceEditor.innerText();
 			await openMoreMenu(); const language = page.locator('details.language-menu > summary'); await language.waitFor({ state: 'visible' }); assert.equal(await language.getAttribute('aria-label'), '語言'); assert.equal(await language.locator('svg').count(), 1); assert.equal((await language.innerText()).trim(), '');

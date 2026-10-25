@@ -7,6 +7,7 @@ import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { createSourceState, sourceState, visualInsertionTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
 import { equationSource, matrixSource } from '../../src/features/math/source.ts';
 import { createTable, tableSource } from '../../src/features/tables/source.ts';
+import { withPackage } from '../../src/features/tables/preamble.ts';
 import { sourceLimit } from '../../src/features/files/read.ts';
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
 const bytes = (text: string) => new TextEncoder().encode(text);
@@ -249,4 +250,39 @@ test('clicked cells retain all text and toolbar insertion captures the active ca
    } finally { view.dispose(); }
   }
  } finally { fixture.restore(); }
+});
+
+test('title-only documents expose a body placeholder for formulas without changing metadata', () => {
+ const fixture = domFixture();
+ const text = ['\\documentclass{article}', '\\usepackage[margin=2cm]{geometry}', '', '\\title{The Data efficiency of System 1 Decision model in fine-tuning: Take Laya for example}', '\\author{}', '\\date{}', '', '\\begin{document}', '\\maketitle', '\\end{document}', ''].join('\n');
+ const original = SourceDocument.open(bytes(text));
+ let state = createSourceState(original);
+ const view = new VisualEditor(fixture.target, 'main.tex', { source: () => state.field(sourceState).projection.document,
+  apply: () => assert.fail('Capturing insertion must not write'), history: () => false, readOnly: () => false, rejected: () => assert.fail('Unexpected rejection'), status: () => {} });
+ try {
+  view.sync(parseSource(original));
+  const bodyEnd = text.indexOf('\\end{document}');
+  const dateCaret = text.indexOf('\\date{}') + 6;
+  let datePosition = -1;
+  view.view.state.doc.forEach((node, offset) => { if (node.attrs.name === 'date') datePosition = offset + 1; });
+  assert.ok(datePosition >= 0);
+  view.view.dispatch(view.view.state.tr.setSelection(TextSelection.create(view.view.state.doc, datePosition)));
+  assert.equal(view.toolInsertionSelection(true)?.span.from, dateCaret, 'inline math can still edit metadata');
+  assert.equal(view.toolInsertionSelection(false)?.span.from, bodyEnd, 'block math belongs in the document body');
+  assert.equal(view.cellInsertionBoundary()?.from, bodyEnd);
+  assert.equal(view.navigate(sourceSpan(original, bodyEnd)), true, 'a title-only document needs an editable body cell');
+  const target = view.insertionSelection();
+  assert.ok(target);
+  assert.equal(target.inlineOnly, false);
+  assert.equal(target.span.from, bodyEnd);
+  const formula = equationSource('\\frac{\\partial^2}{\\partial x}', false);
+  state = withPackage(state, visualInsertionTransaction(state, target.span, formula), ['amsmath', 'amssymb']).state;
+  const updated = state.field(sourceState).projection.document.read();
+  assert.match(updated, /\\author\{\}/);
+  assert.match(updated, /\\date\{\}/);
+  assert.equal(updated.slice(updated.indexOf('\\title{'), updated.indexOf('\\begin{document}')).replace(/\\usepackage\{amsmath\}\n|\\usepackage\{amssymb\}\n/g, ''), text.slice(text.indexOf('\\title{'), text.indexOf('\\begin{document}')));
+  assert.ok(updated.indexOf(formula) > updated.indexOf('\\maketitle'));
+  assert.ok(updated.indexOf(formula) < updated.indexOf('\\end{document}'));
+  assert.deepEqual(historyTransaction(state, 'undo')!.state.field(sourceState).projection.document.toBytes(), original.toBytes());
+ } finally { view.dispose(); fixture.restore(); }
 });

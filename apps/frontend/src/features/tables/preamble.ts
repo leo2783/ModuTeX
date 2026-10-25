@@ -13,10 +13,15 @@ export function withPackage(state: EditorState, transaction: Transaction, name: 
 	if (!plans.length) return transaction;
 	const target = rangeInsertionTarget(state, plans[0]!.span);
 	const insert = plans.map(plan => plan.insert).join('');
-	const changes = [{ from: target.from, to: target.to, insert }];
+	if (target.from !== target.to) throw new Error('PREAMBLE_RANGE');
+	const changes: { from: number; to: number; insert: string }[] = [];
 	transaction.changes.iterChanges((from, to, _a, _b, value) => changes.push({ from, to, insert: value.toString() }));
-	if (changes.slice(1).some(change => change.from < target.to || change.from === target.from)) throw new Error('PREAMBLE_RANGE');
-	return state.update({ changes, selection: { anchor: transaction.newSelection.main.head + insert.length }, userEvent: 'input.tool' });
+	if (changes.some(change => change.from === target.from || change.from < target.from && change.to > target.from)) throw new Error('PREAMBLE_RANGE');
+	changes.push({ from: target.from, to: target.to, insert });
+	changes.sort((left, right) => left.from - right.from || left.to - right.to);
+	const packagePosition = transaction.changes.mapPos(target.from, 1);
+	const selection = transaction.newSelection.main.head + (packagePosition <= transaction.newSelection.main.head ? insert.length : 0);
+	return state.update({ changes, selection: { anchor: selection }, userEvent: 'input.tool' });
 }
 /** Inspect current parser nodes, not arbitrary substrings in comments, macros or document text. */
 export function booktabsPlan(source: SourceDocument, parsed: SourceProjection): PackagePlan | null {

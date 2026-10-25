@@ -46,6 +46,7 @@ interface InlineWrapper { readonly open: string; readonly close: string; readonl
 
 export interface VisualProjection {
 	readonly documentId: string; readonly version: number; readonly document: VisualNode;
+	readonly bodyStart?: number; readonly bodyEnd?: number;
 	/** Presentation snapshot: source-coordinate changes never invalidate unchanged DOM nodes. */
 	readonly viewDocument?: VisualNode;
 	/** Relative source offset at every visual UTF-16 boundary; formatted blocks use segments, Raw has neither. */
@@ -223,8 +224,10 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 	const boundaries: (readonly number[] | null)[] = [];
 	const segments: (readonly InlineSegment[] | null)[] = [];
 	const titleMarkers = new Set<number>();
+	let bodyHasContent = false;
 	const add = (node: SyntaxNode) => {
 		if (node.kind === 'environment' && node.name === 'document') { for (const child of node.children) add(child); return; }
+		bodyHasContent = true;
 		const content = node.kind === 'text' ? node.span : node.content;
 		const attrs = { from: node.span.from, to: node.span.to, editFrom: content?.from ?? node.span.from,
 			editTo: content?.to ?? node.span.to, role: node.kind === 'heading' ? 'heading' : node.kind === 'format' ? 'format' : 'paragraph', name: node.name,
@@ -289,10 +292,12 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 		paragraphMarker = null;
 		if (plainNodes.some((node) => node.kind === 'format' || node.kind === 'math')) {
 			const inline = decodeInline(source, plainNodes)!;
+			bodyHasContent = true;
 			blocks.push(visualSchema.nodes.source_block!.create(attrs, inline.content));
 			boundaries.push(null); segments.push(inline.segments); plainNodes = []; return;
 		}
 		const plain = decodePlain(source, plainNodes, from, to)!;
+		bodyHasContent = true;
 		blocks.push(visualSchema.nodes.source_block!.create(attrs, plain.text ? visualSchema.text(plain.text) : undefined));
 		boundaries.push(plain.boundaries); segments.push(null); plainNodes = [];
 	};
@@ -334,7 +339,15 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 		else { flush(); add(node); }
 	}
 	flush();
-	if (!blocks.length) {
+	if (body && !bodyHasContent) {
+		const position = body.content?.to ?? body.span.to;
+		boundaries.push(Object.freeze([0]));
+		segments.push(null);
+		blocks.push(visualSchema.nodes.source_block!.create({
+			from: position, to: position, editFrom: position, editTo: position,
+			role: 'paragraph', name: '', level: 2
+		}));
+	} else if (!blocks.length) {
 		const from = body?.content ? body.content.from : 0;
 		const to = body?.content ? body.content.to : source.length;
 		boundaries.push(Object.freeze([0]));
@@ -344,7 +357,8 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 			role: 'paragraph', name: '', level: 2
 		}));
 	}
-	return { documentId: source.documentId, version: source.version, document: visualSchema.nodes.doc!.create(null, blocks), boundaries: Object.freeze(boundaries), segments: Object.freeze(segments) };
+	return { documentId: source.documentId, version: source.version, document: visualSchema.nodes.doc!.create(null, blocks), bodyStart: body?.content?.from, bodyEnd: body?.content?.to,
+		boundaries: Object.freeze(boundaries), segments: Object.freeze(segments) };
 }
 const escaped: Record<string, string> = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '$': '\\$', '%': '\\%', '&': '\\&', '#': '\\#', '_': '\\_', '^': '\\textasciicircum{}', '~': '\\textasciitilde{}' };
 export function escapeVisualText(value: string): string { return normalized(value).replace(/[\\{}$%&#_^~]/g, (character) => escaped[character]!); }
@@ -817,5 +831,7 @@ export function advanceVisual(
 		boundaries.push(editBoundaries(old, edit.from, edit.to, edit.insert, source.profile.preferredLineEnding));
 	}
 	return { documentId: next.documentId, version: next.version, document: visualSchema.nodes.doc!.create(null, blocks),
+		bodyStart: projection.bodyStart === undefined ? undefined : mapPosition(change, projection.bodyStart, 'before'),
+		bodyEnd: projection.bodyEnd === undefined ? undefined : mapPosition(change, projection.bodyEnd, 'after'),
 		viewDocument: transaction.doc, boundaries: Object.freeze(boundaries), segments: Object.freeze(segments) };
 }

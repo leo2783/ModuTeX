@@ -1,5 +1,5 @@
 import { Annotation, ChangeSet, EditorSelection, EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
-import { EditorProjection, SourceDocument, type EditorPatch, type SourcePatch, type SourceSpan } from '../document-core/core.ts';
+import { EditorProjection, SourceDocument, parseSource, type EditorPatch, type SourcePatch, type SourceSpan } from '../document-core/core.ts';
 import { sourceLimit } from '../files/read.ts';
 
 interface HistoryEntry {
@@ -175,4 +175,15 @@ export function sourcePatchTransaction(state: EditorState, identity: { documentI
 	});
 	const exact = preserveLineEndings ? EditorProjection.open(source.apply({ expectedVersion: source.version, patches }).document) : null;
 	return state.update({ changes, userEvent: 'input.visual', annotations: exact ? exactSource.of({ ...exact, patches }) : [] });
+}
+
+/** Clear a maketitle field's value while retaining its directive, especially an empty date. */
+export function metadataClearTransaction(state: EditorState, span: SourceSpan): { readonly value: string; readonly transaction: ReturnType<typeof sourcePatchTransaction> | null } {
+	const source = state.field(sourceState).projection.document;
+	if (span.documentId !== source.documentId || span.version !== source.version) throw new Error('STALE_METADATA');
+	const field = parseSource(source).nodes.find(node => node.span.from === span.from && ['title', 'author', 'date'].includes(node.name));
+	if (!field?.content || field.content.from < span.from || field.content.to > source.length || field.content.to < field.content.from) throw new Error('METADATA_RANGE');
+	const value = source.read(field.content.from, field.content.to);
+	const transaction = value ? sourcePatchTransaction(state, source, [{ from: field.content.from, to: field.content.to, insert: '', expected: value }]) : null;
+	return { value, transaction };
 }

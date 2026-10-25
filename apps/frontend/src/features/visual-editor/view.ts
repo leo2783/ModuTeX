@@ -86,20 +86,40 @@ export class VisualEditor {
 	private toolbarKey = '';
 	private commandMode = false;
 	private dragCleanup: (() => void) | null = null;
-	private pendingMove: { documentId: string; version: number; index: number } | null = null;
+	private pendingMove: { documentId: string; version: number; index: number; bodyIndex?: number } | null = null;
 	private createDragHandle(index: number): HTMLElement {
-		return cellDragHandle(this.view.dom.ownerDocument, index, this.editable() && !!this.options.cellReorder, this.text('拖曳儲存格', 'Drag cell'), () => {
-			this.dragCleanup?.(); this.selectCell(index); const source = this.options.source(), cells: SourceSpan[] = [];
-			for (let i = 0; i < this.view.state.doc.childCount; i++) { const span = this.cellSpan(i); if (!span) return null; cells.push(span); }
-			return { cells, current: () => !this.disposed && this.editable() && this.options.source() === source, commit: boundary => {
-				if (this.options.cellReorder?.(cells, index, boundary) === false) return;
+		const enabled = this.editable() && !!this.options.cellReorder && this.isBodyCell(index);
+		return cellDragHandle(this.view.dom.ownerDocument, index, enabled, this.text('拖曳儲存格', 'Drag cell'), () => {
+			this.dragCleanup?.(); this.selectCell(index); const source = this.options.source(), order = this.bodyCellOrder();
+			const cellIndex = order?.indices.indexOf(index) ?? -1;
+			if (!order || cellIndex < 0) return null;
+			return { cells: order.cells, current: () => !this.disposed && this.editable() && this.options.source() === source, commit: visualBoundary => {
+				const boundary = order.indices.filter(value => value < visualBoundary).length;
+				if (this.options.cellReorder?.(order.cells, cellIndex, boundary) === false) return;
 				const next = this.options.source(); if (next.version === source.version) return;
-				this.cellOriginal = null; this.pendingMove = { documentId: next.documentId, version: next.version, index: boundary > index ? boundary - 1 : boundary };
+				const destination = boundary > cellIndex ? boundary - 1 : boundary;
+				const selectedIndex = order.indices[Math.min(destination, order.indices.length - 1)];
+				this.cellOriginal = null; this.pendingMove = { documentId: next.documentId, version: next.version, index: selectedIndex ?? index, bodyIndex: destination };
 				if (this.projection?.version === next.version) { const pending = this.pendingMove; this.pendingMove = null; this.navigateCell(pending.index); }
 			} };
 		}, cleanup => { this.dragCleanup = cleanup; });
 	}
 	private moveCell(index: number, next: number): void {
+		if (this.options.cellReorder) {
+			const order = this.bodyCellOrder(), cellIndex = order?.indices.indexOf(index) ?? -1;
+			if (!order || cellIndex < 0) return;
+			const visualBoundary = next < index ? next : index + 2;
+			const boundary = order.indices.filter(value => value < visualBoundary).length;
+			if (this.options.cellReorder(order.cells, cellIndex, boundary) === false) return;
+			const source = this.options.source();
+			if (source.version === order.cells[0]?.version) return;
+			const destination = boundary > cellIndex ? boundary - 1 : boundary;
+			const selectedIndex = order.indices[Math.min(destination, order.indices.length - 1)];
+			this.cellOriginal = null;
+			this.pendingMove = { documentId: source.documentId, version: source.version, index: selectedIndex ?? index, bodyIndex: destination };
+			if (this.projection?.version === source.version) { this.pendingMove = null; this.navigateCell(selectedIndex ?? index); }
+			return;
+		}
 		const span = this.cellSpan(index), adjacent = this.cellSpan(next);
 		if (!span || !adjacent || !this.options.cellAction) return;
 		if (this.options.cellAction(next < index ? 'move-up' : 'move-down', span, adjacent) === false) return;
@@ -225,6 +245,46 @@ export class VisualEditor {
 		if (typeof from !== 'number' || typeof to !== 'number' || from < 0 || to > source.length || from > to) return null;
 		return { documentId: this.projection.documentId, version: this.projection.version, from, to };
 	}
+	private isMaketitleField(node: VisualNode | null | undefined): boolean {
+		return ['source_block', 'raw_block'].includes(node?.type.name ?? '') && ['title', 'author', 'date'].includes(node?.attrs.name);
+	}
+	private bodyCellOrder(): { readonly cells: SourceSpan[]; readonly indices: number[] } | null {
+		const projection = this.projection, start = projection?.bodyStart, end = projection?.bodyEnd;
+		if (!projection) return null;
+		const source = this.options.source();
+		if (projection.documentId !== source.documentId || projection.version !== source.version) return null;
+		const fragment = start === undefined && end === undefined;
+		const hasBodyBounds = typeof start === 'number' && typeof end === 'number' && Number.isSafeInteger(start) && Number.isSafeInteger(end) && start <= end && end <= source.length;
+		if (!fragment && !hasBodyBounds) return null;
+		const cells: SourceSpan[] = [], indices: number[] = [];
+		for (let index = 0; index < projection.document.childCount; index++) {
+			const span = this.cellSpan(index);
+			if (!span) return null;
+			if (fragment || span.from >= start! && span.to <= end!) {
+				cells.push(span); indices.push(index);
+			}
+		}
+		return cells.length ? { cells, indices } : null;
+	}
+	private isBodyCell(index: number): boolean {
+		const projection = this.projection;
+		if (!projection || index < 0 || index >= projection.document.childCount) return false;
+		const source = this.options.source();
+		if (projection.documentId !== source.documentId || projection.version !== source.version) return false;
+		const child = projection.document.child(index), from = child.attrs.from, to = child.attrs.to;
+		if (typeof from !== 'number' || typeof to !== 'number' || !Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > source.length) return false;
+		const start = projection.bodyStart, end = projection.bodyEnd;
+		if (start === undefined && end === undefined) return true;
+		return typeof start === 'number' && typeof end === 'number' && Number.isSafeInteger(start) && Number.isSafeInteger(end) && start <= end && end <= source.length && from >= start && to <= end;
+	}
+	private bodyInsertionSpan(): SourceSpan | null {
+		const projection = this.projection;
+		const position = projection?.bodyEnd;
+		if (!projection || typeof position !== 'number' || !Number.isSafeInteger(position)) return null;
+		const source = this.options.source();
+		if (projection.documentId !== source.documentId || projection.version !== source.version || position < 0 || position > source.length) return null;
+		return { documentId: projection.documentId, version: projection.version, from: position, to: position };
+	}
 
 	private text(traditionalChinese: string, english: string): string {
 		return text(this.options.locale ? this.options.locale() : 'zh-Hant', traditionalChinese, english);
@@ -234,6 +294,10 @@ export class VisualEditor {
 		const source = this.options.source();
 		if (this.projection.documentId !== source.documentId || this.projection.version !== source.version) return null;
 		const childCount = this.projection.document.childCount;
+		if (this.isMaketitleField(this.projection.document.maybeChild(index - 1)) || this.isMaketitleField(this.projection.document.maybeChild(index))) {
+			const body = this.bodyInsertionSpan();
+			if (body) return body;
+		}
 		let offset: number;
 		if (childCount === 0) {
 			offset = 0;
@@ -329,6 +393,8 @@ export class VisualEditor {
 		const doc = this.view?.dom.ownerDocument ?? document;
 		const childCount = this.view.state.doc.childCount;
 		const node = this.view.state.doc.child(cellIndex);
+		const bodyOrder = this.bodyCellOrder(), bodyIndex = bodyOrder?.indices.indexOf(cellIndex) ?? -1;
+		const canMove = this.options.cellReorder ? bodyIndex >= 0 : !!this.options.cellAction;
 		const container = doc.createElement('div');
 		container.className = 'visual-cell-toolbar';
 		container.addEventListener('pointerdown', event => event.preventDefault());
@@ -405,13 +471,14 @@ export class VisualEditor {
 		moveUpBtn.textContent = '↑';
 		moveUpBtn.title = this.text('上移儲存格', 'Move cell up');
 		moveUpBtn.setAttribute('aria-label', this.text('上移儲存格', 'Move cell up'));
-		moveUpBtn.disabled = !this.editable() || cellIndex <= 0 || !this.options.cellAction;
-		moveUpBtn.dataset.atEdge = String(cellIndex <= 0);
+		moveUpBtn.disabled = !this.editable() || !canMove || (this.options.cellReorder ? bodyIndex <= 0 : cellIndex <= 0);
+		moveUpBtn.dataset.atEdge = String(this.options.cellReorder ? bodyIndex <= 0 : cellIndex <= 0);
 		this.cellActionButtons.add(moveUpBtn);
 		moveUpBtn.addEventListener('click', (event) => {
 			event.preventDefault();
 			event.stopPropagation();
-			if (!this.editable() || cellIndex <= 0 || !this.options.cellAction) return;
+			if (!this.editable() || !canMove || (this.options.cellReorder ? bodyIndex <= 0 : cellIndex <= 0)) return;
+			if (this.options.cellReorder) { this.moveCell(cellIndex, cellIndex - 1); return; }
 			const span = this.cellSpan(cellIndex);
 			const adjacent = this.cellSpan(cellIndex - 1);
 			if (!span || !adjacent) { this.options.rejected(); return; }
@@ -424,13 +491,14 @@ export class VisualEditor {
 		moveDownBtn.textContent = '↓';
 		moveDownBtn.title = this.text('下移儲存格', 'Move cell down');
 		moveDownBtn.setAttribute('aria-label', this.text('下移儲存格', 'Move cell down'));
-		moveDownBtn.disabled = !this.editable() || cellIndex >= childCount - 1 || !this.options.cellAction;
-		moveDownBtn.dataset.atEdge = String(cellIndex >= childCount - 1);
+		moveDownBtn.disabled = !this.editable() || !canMove || (this.options.cellReorder ? bodyIndex >= (bodyOrder?.indices.length ?? 0) - 1 : cellIndex >= childCount - 1);
+		moveDownBtn.dataset.atEdge = String(this.options.cellReorder ? bodyIndex >= (bodyOrder?.indices.length ?? 0) - 1 : cellIndex >= childCount - 1);
 		this.cellActionButtons.add(moveDownBtn);
 		moveDownBtn.addEventListener('click', (event) => {
 			event.preventDefault();
 			event.stopPropagation();
-			if (!this.editable() || cellIndex >= childCount - 1 || !this.options.cellAction) return;
+			if (!this.editable() || !canMove || (this.options.cellReorder ? bodyIndex >= (bodyOrder?.indices.length ?? 0) - 1 : cellIndex >= childCount - 1)) return;
+			if (this.options.cellReorder) { this.moveCell(cellIndex, cellIndex + 1); return; }
 			const span = this.cellSpan(cellIndex);
 			const adjacent = this.cellSpan(cellIndex + 1);
 			if (!span || !adjacent) { this.options.rejected(); return; }
@@ -893,7 +961,9 @@ export class VisualEditor {
 		this.view.updateState(EditorState.create({ doc: document, plugins: this.view.state.plugins, selection: TextSelection.near(document.resolve(position)) }));
 		if (this.pendingMove) {
 			const pending = this.pendingMove; this.pendingMove = null;
-			if (pending.documentId === source.documentId && pending.version === source.version) this.navigateCell(pending.index);
+			if (pending.documentId === source.documentId && pending.version === source.version) {
+				this.navigateCell(pending.bodyIndex === undefined ? pending.index : this.bodyCellOrder()?.indices[pending.bodyIndex] ?? pending.index);
+			}
 		}
 		this.refresh();
 	}
@@ -1035,6 +1105,11 @@ export class VisualEditor {
 	/** Toolbar insertion retains clicked text and the active caret; explicit boundary actions stay separate. */
 	toolInsertionSelection(inline = false): { span: SourceSpan; inlineOnly: boolean; atCaret: boolean } | null {
 		const captured = this.insertionSelection();
+		const selectedIndex = this.selectedCellIndex ?? Math.min(this.view.state.selection.$from.index(0), this.view.state.doc.childCount - 1);
+		if (!inline && this.isMaketitleField(this.projection?.document.maybeChild(selectedIndex))) {
+			const body = this.bodyInsertionSpan();
+			if (body) return { span: body, inlineOnly: false, atCaret: false };
+		}
 		if (this.selectedCellIndex !== null && captured) {
 			const span = this.cellSpan(this.selectedCellIndex), node = this.view.state.doc.child(this.selectedCellIndex);
 			if (!inline && span && node.attrs.role === 'paragraph' && /^\s*(?:\\par)?\s*$/.test(this.options.source().read(span.from, span.to))) return { span, inlineOnly: false, atCaret: true };
@@ -1047,6 +1122,7 @@ export class VisualEditor {
 	}
 	cellInsertionBoundary(): SourceSpan | null {
 		const index = this.selectedCellIndex ?? Math.min(this.view.state.selection.$from.index(0), this.view.state.doc.childCount - 1);
+		if (this.isMaketitleField(this.projection?.document.maybeChild(index))) return this.bodyInsertionSpan();
 		return this.boundarySpan(index + 1);
 	}
 	textStructureSelection(): { span: SourceSpan; content: string } | null {

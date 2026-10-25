@@ -80,3 +80,20 @@ test('editing a visual document separates an adjacent document terminator in the
 	assert.match(changed.doc.toString(), /58866\n\\end\{document\}/);
 	assert.deepEqual(historyTransaction(changed, 'undo')!.state.field(sourceState).projection.document.toBytes(), original.toBytes());
 });
+
+for (const eol of ['\n', '\r\n']) {
+ test(`metadata edits before the package insertion keep their caret and undo atomically (${JSON.stringify(eol)})`, () => {
+  const text = ['\\documentclass{article}', '\\title{A title}', '\\author{}', '\\date{}', '\\begin{document}', '\\maketitle', '\\end{document}', ''].join(eol);
+  const original = SourceDocument.open(new TextEncoder().encode('\ufeff' + text));
+  let state = createSourceState(original);
+  const at = state.doc.toString().indexOf('\\date{}') + 6;
+  state = state.update({ selection: { anchor: at } }).state;
+  const change = insertionTransaction(state, insertionTarget(state), '2026');
+  const updated = withPackage(state, change, ['amsmath', 'amssymb']).state;
+  assert.equal(updated.selection.main.head, at + 4, 'a later package insertion cannot move the metadata caret');
+  assert.match(updated.doc.toString(), /\\date\{2026\}/);
+  assert.match(updated.doc.toString(), /\\usepackage\{amsmath\}/);
+  assert.match(updated.doc.toString(), /\\usepackage\{amssymb\}/);
+  assert.deepEqual(historyTransaction(updated, 'undo')!.state.field(sourceState).projection.document.toBytes(), original.toBytes());
+ });
+}

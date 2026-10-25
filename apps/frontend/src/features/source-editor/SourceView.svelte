@@ -5,11 +5,11 @@
 	import { clipboardImage } from '../images/view.ts';
 	import { Compartment, EditorState } from '@codemirror/state';
 	import { EditorView, lineNumbers, highlightActiveLineGutter, keymap } from '@codemirror/view';
-	import type { EditorProjection, SourceDocument, SourceProjection, SourceSpan, SourcePatch } from '../document-core/core.ts';
+	import { type EditorProjection, type SourceDocument, type SourceProjection, type SourceSpan, type SourcePatch } from '../document-core/core.ts';
 	import { ParserClient } from '../parser/client.ts';
 	import { VisualEditor } from '../visual-editor/view.ts';
 	import 'prosemirror-view/style/prosemirror.css';
-	import { createSourceState, sourceState, sourcePatches, sourcePatchTransaction, historyTransaction, savedCheckpoint, insertionTarget, insertionTransaction, type InsertionTarget } from './state.ts';
+	import { createSourceState, sourceState, sourcePatches, sourcePatchTransaction, historyTransaction, savedCheckpoint, insertionTarget, insertionTransaction, metadataClearTransaction, type InsertionTarget } from './state.ts';
 	import { cellMoveTransaction } from './cell-move.ts';
 	import MathPanel from '../math/MathPanel.svelte';
 	import ToolbarIcon from '../../components/ToolbarIcon.svelte';
@@ -719,6 +719,14 @@
 			return;
 		}
 		if (action === 'delete') {
+			try {
+				const cleared = metadataClearTransaction(editor.state, span);
+				if (cleared.value && !window.confirm(t('確定要清除此欄位嗎？', 'Clear this field?'))) return false;
+				if (cleared.transaction) editor.dispatch(cleared.transaction);
+				toolError = null;
+				visual?.focus();
+				return true;
+			} catch (error) { if (error instanceof Error && error.message === 'METADATA_RANGE') { /* Not a metadata cell. */ } else { toolError = 'insert-stale'; return false; } }
 			const content = current.read(span.from, span.to);
 			const isNonEmpty = content.trim().length > 0 && content.trim() !== '\\par';
 			if (isNonEmpty && !window.confirm(t('確定要刪除此區塊嗎？', 'Delete this cell?'))) {
