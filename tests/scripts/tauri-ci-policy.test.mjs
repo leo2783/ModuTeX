@@ -419,14 +419,14 @@ export function validateTauriCiContract(wf) {
 	validatePackageAndLifecycle(wf, gates);
 }
 
-test('automatic CI covers all branches except documentation branches', async () => {
+test('automatic CI covers every branch and skips only docs-only changes', async () => {
 	const { on: triggers } = (await workflow()).workflow;
 	for (const event of ['push', 'pull_request']) {
 		const filters = triggers[event];
 		assert.equal(filters.branches, undefined, `${event} must not restrict CI to named development branches`);
-		assert.deepEqual(filters['branches-ignore'], ['docs', 'docs/**']);
-		assert.equal(filters.paths, undefined, `${event} must validate every source path`);
-		assert.equal(filters['paths-ignore'], undefined, `${event} excludes documentation branches, not files`);
+		assert.equal(filters['branches-ignore'], undefined, `${event} must include documentation branches with code changes`);
+		assert.equal(filters.paths, undefined, `${event} must not allowlist source paths`);
+		assert.deepEqual(filters['paths-ignore'], ['docs/**'], `${event} skips only changes confined to docs/`);
 	}
 });
 

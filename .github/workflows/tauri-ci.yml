@@ -1,12 +1,10 @@
 name: Tauri CI
 on:
   push:
-    branches-ignore:
-      - docs
+    paths-ignore:
       - docs/**
   pull_request:
-    branches-ignore:
-      - docs
+    paths-ignore:
       - docs/**
   workflow_dispatch:
     inputs:
