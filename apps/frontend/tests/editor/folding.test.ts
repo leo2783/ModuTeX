@@ -12,6 +12,14 @@ const source = (text: string) => SourceDocument.open(new TextEncoder().encode(te
 const publish = (state: EditorState) => state.update({ effects: foldProjection.of(parseSource(state.field(sourceState).projection.document)) }).state;
 const rangeAt = (state: EditorState, text: string) => { const line = state.doc.lineAt(state.doc.toString().indexOf(text)); return foldable(state, line.from, line.to); };
 
+test('chapter folding contains its sections and ends before the next chapter', () => {
+	const original = source('\\begin{document}\n\\chapter{One}\nintro\n\\section{Child}\nbody\n\\chapter*{Two}\nnext\n\\end{document}');
+	const state = publish(createSourceState(original, undefined, sourceFolding()));
+	const chapter = rangeAt(state, '\\chapter{One}')!;
+	assert.equal(state.doc.sliceString(chapter.from, chapter.to), '\nintro\n\\section{Child}\nbody');
+	assert.equal(state.doc.sliceString(rangeAt(state, '\\section{Child}')!.from, chapter.to), '\nbody');
+});
+
 test('real folding service respects heading hierarchy and matched environment delimiters with mixed EOL', () => {
 	const original = source('\uFEFF\\begin{document}\r\n\\section{One}\nfirst\r\\subsection{Child}\r\nchild\n\\section*{Two}\nlast\n\\end{document}');
 	const state = publish(createSourceState(original, undefined, sourceFolding()));

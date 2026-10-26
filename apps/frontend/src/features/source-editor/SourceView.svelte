@@ -958,9 +958,9 @@
 					{/each}
 				</div>
 			</details>
-			<button class="icon-tool" title={t('粗體', 'Bold')} aria-label={t('粗體', 'Bold')} onclick={() => applyFormat('strong')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="bold" /></button>
-			<button class="icon-tool" title={t('斜體', 'Italic')} aria-label={t('斜體', 'Italic')} onclick={() => applyFormat('em')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="italic" /></button>
-			<button class="icon-tool" title={t('底線', 'Underline')} aria-label={t('底線', 'Underline')} onclick={() => applyFormat('underline')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="underline" /></button>
+			<button class="icon-tool" title={t('粗體', 'Bold')} aria-label={t('粗體', 'Bold')} onmousedown={event => event.preventDefault()} onclick={() => applyFormat('strong')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="bold" /></button>
+			<button class="icon-tool" title={t('斜體', 'Italic')} aria-label={t('斜體', 'Italic')} onmousedown={event => event.preventDefault()} onclick={() => applyFormat('em')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="italic" /></button>
+			<button class="icon-tool" title={t('底線', 'Underline')} aria-label={t('底線', 'Underline')} onmousedown={event => event.preventDefault()} onclick={() => applyFormat('underline')} disabled={!active || saving || tool !== null || !parsed}><ToolbarIcon kind="underline" /></button>
 			<details class="math-menu" bind:this={colorMenu}>
 				<summary title={t('文字顏色', 'Text color')} aria-label={t('文字顏色', 'Text color')}><ToolbarIcon kind="color" /></summary>
 				<div class="math-menu-items color-options">
@@ -1026,7 +1026,7 @@
 	.visual :global(.catalog-preview) { display: flex; align-items: center; justify-content: center; min-height: 32px; pointer-events: none; }
 	.visual :global(.catalog-preview math-field) { font-size: 21px; border: 0; padding: 0; background: transparent; pointer-events: none; min-width: 0; }
 	.visual :global(.catalog-label) { font-size: 12px; line-height: 1.3; }
-	.visual :global(.code-content) { font: 14px/1.6 Consolas, monospace; white-space: pre; overflow-x: auto; background: var(--canvas); padding: 12px; border: 1px solid var(--line); }
+	.visual :global(.code-content) { font: 14px/1.6 Consolas, monospace; white-space: pre; overflow-x: auto; background: var(--canvas); padding: 12px 0; border-block: 1px solid var(--line); margin-inline: 0; }
 	.visual :global(.inline-equation-catalog) { flex-direction: column; gap: 6px; width: min(480px, 100%); max-height: 30vh; overflow: auto; padding: 8px; box-sizing: border-box; background: var(--surface); border: 1px solid var(--line); margin-top: 8px; }
 	.visual :global(.inline-equation-catalog-nav), .visual :global(.inline-equation-catalog-grid) { display: flex; flex-wrap: wrap; gap: 4px; }
 	.visual :global(.catalog-tab), .visual :global(.catalog-item-btn) { min-height: 32px; font-size: 14px; padding: 5px 8px; } .visual :global(.catalog-back) { align-self: flex-start; padding: 4px 8px; border: 0; background: transparent; color: var(--accent); }
@@ -1059,7 +1059,10 @@
 	.structure-menu summary { gap: 12px; padding: 5px 8px; } .structure-options button { display: flex; align-items: center; gap: 12px; min-height: 36px; } .structure-mark { color: var(--muted); width: 24px; font-size: 12px; font-weight: 600; }
 	.visual :global(.source-block[data-source-role='abstract']) { max-width: 70ch; margin-inline: auto; padding-block: 8px; }
 	.visual :global(.source-block[data-source-role='abstract']::before) { content: var(--abstract-label); display: block; text-align: center; font-weight: 600; margin-bottom: 8px; }
-	.visual :global(.source-block[data-structure='title']) { text-align: center; font-size: 28px; }
+	.visual :global(.source-block[data-structure='title']) { text-align: center; font-size: 28px; line-height: 1.35; margin-block: 0 16px; }
+	.visual :global(.source-block[data-structure='author']), .visual :global(.source-block[data-structure='date']) { text-align: center; margin-block: 4px; }
+	.visual :global(.document-date) { text-align: center; margin-block: 4px; }
+	.visual :global(.source-block[data-source-role='heading']:not([data-structure='title'])) { line-height: 1.35; margin-block: 8px; }
 	.icon-tool { width: 36px; min-width: 36px; height: 36px; min-height: 36px; padding: 7px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border-color: transparent; }
 	.table-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--line); }
 	.parser-error { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--ink); }
@@ -1068,6 +1071,8 @@
 	.editor-surfaces { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); }
 	.visual { min-height: 0; overflow: auto; padding: 24px; }
 	.visual :global(.ProseMirror) { position: relative; min-height: 100%; outline: none; font-size: 16px; line-height: 1.7; }
+	.visual :global(.ProseMirror > .visual-cell-boundary:first-child) { height: 8px; }
+	.cell-actions-bar:empty { display: none; }
 	.visual :global(.source-block) { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
 	.visual :global(.raw-latex) { font: 13px/1.6 Consolas, monospace; padding: 8px; border: 1px solid var(--line); background: var(--canvas); white-space: pre-wrap; overflow-wrap: anywhere; }
 	.tool-error { margin: 4px 12px; color: var(--ink); }

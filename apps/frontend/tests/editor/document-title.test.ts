@@ -4,7 +4,32 @@ import { createRequire } from 'node:module';
 import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { createSourceState, sourcePatchTransaction, sourceState, historyTransaction } from '../../src/features/source-editor/state.ts';
+import { DATE_VALUES } from '../../src/features/compile/document-date.ts';
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
+
+test('automatic numeric dates render as dates without exposing their TeX commands', () => {
+ const dom = new JSDOM('<!doctype html><body><div id="editor"></div></body>', {pretendToBeVisual:true});
+ const previous = new Map<string, PropertyDescriptor | undefined>();
+ for (const key of ['window','document','navigator','MutationObserver','Node','HTMLElement','getComputedStyle']) {
+  previous.set(key,Object.getOwnPropertyDescriptor(globalThis,key));
+  Object.defineProperty(globalThis,key,{configurable:true,writable:true,value:key === 'getComputedStyle' ? dom.window.getComputedStyle.bind(dom.window) : dom.window[key]});
+ }
+ try {
+  for (const mode of ['iso','slash','day-first'] as const) {
+   const source = SourceDocument.open(new TextEncoder().encode(`\\documentclass{article}\n\\title{Title}\n\\date{${DATE_VALUES[mode]}}\n\\begin{document}\n\\maketitle\nBody.\n\\end{document}`));
+   const target = dom.window.document.getElementById('editor')!;
+   const view = new VisualEditor(target,'main.tex',{source:()=>source,apply:()=>source,history:()=>false,readOnly:()=>false,rejected:()=>assert.fail('Unexpected edit'),status:()=>{}});
+   try {
+    view.sync(parseSource(source));
+    assert.match(target.querySelector('.document-date')!.textContent!,mode === 'iso' ? /^\d{4}-\d{2}-\d{2}$/ : mode === 'slash' ? /^\d{4}\/\d{2}\/\d{2}$/ : /^\d{2}\/\d{2}\/\d{4}$/);
+    assert(!target.textContent!.includes('\\number'));
+   } finally { view.dispose(); }
+  }
+ } finally {
+  dom.window.close();
+  for (const [key,descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis,key,descriptor); else Reflect.deleteProperty(globalThis,key); }
+ }
+});
 
 test('preamble title renders at maketitle without exposing a raw command or changing source bytes', { timeout: 5000 }, () => {
   const dom = new JSDOM('<!doctype html><body><div id="editor"></div></body>', { pretendToBeVisual: true });

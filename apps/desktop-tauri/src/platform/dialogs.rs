@@ -39,6 +39,8 @@ impl DialogSeam for NativeDialogSeam {
             .dialog()
             .file()
             .set_parent(window)
+            .add_filter("LaTeX", &["tex"])
+            .set_file_name("untitled.tex")
             .blocking_save_file()
             .and_then(|fp| fp.into_path().ok())
     }

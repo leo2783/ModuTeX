@@ -12,6 +12,7 @@ import { imageCell, clipboardImage } from '../images/view.ts';
 import { formatShortcut, type TextFormat } from '../source-editor/format.ts';
 import { advanceVisual, prepareVisualEdit, projectVisual, visualCaretAnchor, visualSchema, visualMarkName, createVisualMark, supportedVisualMark, type VisualProjection } from './schema.ts';
 import { text, type Language } from '../../i18n/text.ts';
+import { numericDatePreview } from '../compile/document-date.ts';
 
 interface VisualOptions {
 	source(): SourceDocument;
@@ -68,6 +69,9 @@ export class VisualEditor {
 	private projection: VisualProjection | null = null;
 	private applying = false;
 	private disposed = false;
+	private pendingFocus = false;
+	private pendingMathDeletion: { documentId: string; version: number; position: number } | null = null;
+	private pendingLineBreak: { documentId: string; version: number; position: number; marks: readonly string[] } | null = null;
 	private refreshedEditable: boolean | undefined;
 	private refreshedLabel: string | undefined;
 	private selectedCellIndex: number | null = null;
@@ -368,7 +372,7 @@ export class VisualEditor {
 						const span = this.boundarySpan(boundaryIndex);
 						if (!span) { this.options.rejected(); return; }
 						const next = this.projection?.document.maybeChild(boundaryIndex);
-						this.options.insertBlock(kind, span, next?.type.name === 'source_block');
+						this.options.insertBlock(kind, span, next?.type.name === 'source_block' && !['par','null'].includes(next.attrs.name));
 					});
 					return button;
 				};
@@ -445,7 +449,7 @@ export class VisualEditor {
 					const span = this.boundarySpan(boundary);
 					if (!span) { this.options.rejected(); return; }
 					const next = this.projection?.document.maybeChild(boundary);
-					this.options.insertBlock(kind, span, next?.type.name === 'source_block');
+					this.options.insertBlock(kind, span, next?.type.name === 'source_block' && !['par','null'].includes(next.attrs.name));
 				});
 				return button;
 			};
@@ -662,6 +666,15 @@ export class VisualEditor {
 				return { ...rendered, update: next => next.type === initial.type &&
 					next.attrs.role === initial.attrs.role && next.attrs.name === initial.attrs.name && next.attrs.level === initial.attrs.level };
 			}, raw_block: (initial, _view, getPos) => {
+				if (initial.attrs.name === 'date' && numericDatePreview(String(initial.attrs.source)) !== null) {
+					const dom = target.ownerDocument.createElement('p'); dom.className = 'document-date'; dom.contentEditable = 'false';
+					dom.textContent = numericDatePreview(String(initial.attrs.source));
+					return {dom, ignoreMutation:() => true, update:next => {
+						const value = next.attrs.name === 'date' ? numericDatePreview(String(next.attrs.source)) : null;
+						if (value === null) return false;
+						dom.textContent = value; return true;
+					}};
+				}
 				if (imagePath(String(initial.attrs.source)) && this.options.image) {
 					let node = initial;
 					const dom = target.ownerDocument.createElement('figure'); dom.contentEditable = 'false';
@@ -787,14 +800,25 @@ export class VisualEditor {
 					if (source.read(anchored.attrs.from, anchored.attrs.to) !== anchored.attrs.source) { this.options.rejected(); return; }
 					this.options.equation({ latex: String(anchored.attrs.latex), inline: Boolean(anchored.attrs.inline) }, { documentId: source.documentId, version: source.version, from: anchored.attrs.from, to: anchored.attrs.to });
 				};
-				const editKey = (event: KeyboardEvent) => { if (!event.isComposing && (event.key === 'Enter' || event.key === ' ')) edit(event); };
+				const editKey = (event: KeyboardEvent) => {
+					if (event.isComposing || event.keyCode === 229) return;
+					if (event.key === 'Backspace' || event.key === 'Delete') {
+						const position = getPos();
+						if (!this.editable() || typeof position !== 'number') return;
+						this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, position)));
+						if (this.deleteMath(event.key)) { event.preventDefault(); event.stopPropagation(); }
+					} else if (event.key === 'Enter' || event.key === ' ') edit(event);
+				};
 				content.addEventListener('click', edit, true); content.addEventListener('keydown', editKey, true); render();
+				dom.addEventListener('mousedown', event => { if (!content.contains(event.target as Node)) event.preventDefault(); });
 				{
 					dom.addEventListener('click', () => {
 						const pos = getPos();
 						if (typeof pos === 'number' && !this.disposed) {
 							const cellIndex = this.view.state.doc.resolve(pos).index(0);
+							this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)));
 							if (this.selectedCellIndex !== cellIndex) this.selectCell(cellIndex);
+							this.focus();
 						}
 					});
 				}
@@ -806,6 +830,7 @@ export class VisualEditor {
 			dispatchTransaction: (transaction) => this.dispatch(transaction),
 			handleKeyDown: (_view, event) => {
 				if (_view.composing || event.isComposing || event.keyCode === 229 || event.key === 'Process') return false;
+				if (!event.ctrlKey && !event.metaKey && !event.altKey && ['Backspace', 'Delete'].includes(event.key) && this.deleteMath(event.key)) return true;
 				if (event.key === 'Escape' && this.selectedCellIndex !== null) {
 					this.commandMode = true; this.view.focus();
 					return true;
@@ -825,14 +850,14 @@ export class VisualEditor {
 					event.ctrlKey !== event.metaKey && ['z', 'y'].includes(event.key.toLowerCase())) {
 					if (!options.readOnly()) {
 						if (this.view.state.storedMarks !== null) this.view.dispatch(this.view.state.tr.setStoredMarks(null));
-						options.history(event.key.toLowerCase() === 'y' || event.shiftKey ? 'redo' : 'undo');
+						if (options.history(event.key.toLowerCase() === 'y' || event.shiftKey ? 'redo' : 'undo')) this.focus();
 					}
 					return true;
 				}
 				if (event.key === 'Enter' && this.editable()) {
 					const selection = this.view.state.selection;
 					if (!['paragraph', 'abstract'].includes(selection.$from.parent.attrs.role) || !selection.$from.sameParent(selection.$to)) { options.rejected(); return true; }
-					this.view.dispatch(this.view.state.tr.insertText('\n\n')); return true;
+					return this.insertLineBreak();
 				}
 				return false;
 			},
@@ -852,6 +877,59 @@ export class VisualEditor {
 	}
 	private editable(): boolean {
 		return !this.disposed && !this.options.readOnly() && this.projection?.documentId === this.options.source().documentId && this.projection.version === this.options.source().version;
+	}
+	private insertLineBreak(): boolean {
+		if (!this.editable() || !this.projection) return false;
+		const state = this.view.state, selection = state.selection;
+		const span = this.formatSelection();
+		if (!span || !(selection instanceof TextSelection)) return false;
+		const index = selection.$from.index(0), block = this.projection.document.child(index);
+		const context = state.storedMarks ?? selection.$from.marks();
+		const anchor = visualCaretAnchor(this.projection, index, block, selection.$from.parentOffset, 'right', context.map(visualMarkName));
+		const segment = anchor ? this.projection.segments?.[index]?.[anchor.segment] : null;
+		if (segment && (!anchor?.safeToSplit || span.to > segment.editTo)) { this.options.rejected(); return true; }
+		const wrappers = segment?.wrappers ?? [];
+		const insert = [...wrappers].reverse().map(wrapper => wrapper.close).join('') + '\\\\' + wrappers.map(wrapper => wrapper.open).join('');
+		const source = this.options.source();
+		try {
+			const next = this.options.apply(this.projection, [{from: span.from, to: span.to, expected: source.read(span.from, span.to), insert}]);
+			this.pendingLineBreak = {documentId: next.documentId, version: next.version, position: selection.from + 1, marks: context.map(visualMarkName)};
+			this.pendingFocus = true;
+			this.refresh();
+		} catch { this.options.rejected(); }
+		return true;
+	}
+	/** Remove only a source-anchored math atom; never serialize its surrounding paragraph. */
+	private deleteMath(key: string): boolean {
+		if (!this.editable() || !this.projection) return false;
+		const state = this.view.state, selection = state.selection;
+		let position: number | null = null;
+		if (selection instanceof NodeSelection) position = selection.from;
+		else if (selection instanceof TextSelection && selection.empty) {
+			const caret = selection.$from, backward = key === 'Backspace';
+			const adjacent = backward ? caret.nodeBefore : caret.nodeAfter;
+			if (adjacent?.type.name === 'math_inline') position = backward ? caret.pos - adjacent.nodeSize : caret.pos;
+			else if (caret.depth === 1 && (backward ? caret.parentOffset === 0 : caret.parentOffset === caret.parent.content.size)) {
+				const edge = backward ? caret.before(1) : caret.after(1);
+				const neighbor = backward ? state.doc.resolve(edge).nodeBefore : state.doc.resolve(edge).nodeAfter;
+				if (neighbor?.type.name === 'math_block') position = backward ? edge - neighbor.nodeSize : edge;
+			}
+		}
+		if (position === null) return false;
+		const node = this.projection.document.nodeAt(position);
+		if (!node || !['math_inline', 'math_block'].includes(node.type.name)) return false;
+		const source = this.options.source();
+		try {
+			const expected = source.read(node.attrs.from, node.attrs.to);
+			if (expected !== node.attrs.source) throw new Error('STALE_VISUAL');
+			const next = this.options.apply(this.projection, [{ from: node.attrs.from, to: node.attrs.to, expected, insert: '' }]);
+			if (next !== this.options.source()) throw new Error('VISUAL_RECEIPT');
+			this.selectedCellIndex = null; this.cellOriginal = null;
+			this.pendingMathDeletion = { documentId: next.documentId, version: next.version, position };
+			this.pendingFocus = true;
+			this.refresh();
+		} catch { this.options.rejected(); }
+		return true;
 	}
 	private anchorAt(position: number | undefined, displayed: VisualNode): VisualNode | null {
 		const anchored = typeof position === 'number' ? this.projection?.document.nodeAt(position) : null;
@@ -957,8 +1035,19 @@ export class VisualEditor {
 		}
 		this.cachedDecorations = null;
 		const document = this.projection.document;
-		const position = Math.min(this.view.state.selection.from, document.content.size);
-		this.view.updateState(EditorState.create({ doc: document, plugins: this.view.state.plugins, selection: TextSelection.near(document.resolve(position)) }));
+		const previousSelection = this.view.state.selection;
+		const anchor = document.resolve(Math.min(previousSelection.anchor, document.content.size));
+		const head = document.resolve(Math.min(previousSelection.head, document.content.size));
+		const deletion = this.pendingMathDeletion;
+		this.pendingMathDeletion = null;
+		const lineBreak = this.pendingLineBreak;
+		this.pendingLineBreak = null;
+		const currentBreak = lineBreak?.documentId === source.documentId && lineBreak.version === source.version ? lineBreak : null;
+		const selection = currentBreak ? TextSelection.near(document.resolve(Math.min(currentBreak.position, document.content.size)))
+			: deletion?.documentId === source.documentId && deletion.version === source.version
+			? TextSelection.near(document.resolve(Math.min(deletion.position, document.content.size)))
+			: TextSelection.between(anchor, head);
+		this.view.updateState(EditorState.create({ doc: document, plugins: this.view.state.plugins, selection, ...(currentBreak ? {storedMarks: currentBreak.marks.map(createVisualMark)} : {}) }));
 		if (this.pendingMove) {
 			const pending = this.pendingMove; this.pendingMove = null;
 			if (pending.documentId === source.documentId && pending.version === source.version) {
@@ -966,6 +1055,11 @@ export class VisualEditor {
 			}
 		}
 		this.refresh();
+		if (this.pendingFocus) {
+			this.pendingFocus = false;
+			const active = this.view.dom.ownerDocument.activeElement;
+			if (this.editable() && (!active || active === this.view.dom.ownerDocument.body || this.view.dom.contains(active))) this.view.focus();
+		}
 	}
 	private dispatch(transaction: Transaction): void {
 		if (this.disposed) return;
@@ -1051,7 +1145,11 @@ export class VisualEditor {
 		}
 		finally { this.applying = false; this.refresh(); }
 	}
-	focus(): void { if (!this.disposed) this.view.focus(); }
+	focus(): void {
+		if (this.disposed) return;
+		if (!this.editable() && !this.options.readOnly()) { this.pendingFocus = true; return; }
+		this.view.focus();
+	}
 	/** Tools capture only one literal text segment, never hidden source selections. */
 	insertionSelection(): { span: SourceSpan; inlineOnly: boolean } | null {
 		if (!this.editable() || !this.projection) return null;
@@ -1074,6 +1172,11 @@ export class VisualEditor {
 		const selection = this.view.state.selection;
 		if (!selection.$from.sameParent(selection.$to) || selection.$from.parent.type.name !== 'source_block') return null;
 		const index = selection.$from.index(0), node = this.projection.document.child(index);
+		if (selection.empty) {
+			const marks = this.view.state.storedMarks ?? selection.$from.marks();
+			const anchor = visualCaretAnchor(this.projection, index, node, selection.$from.parentOffset, 'right', marks.map(visualMarkName));
+			return anchor ? { documentId: this.projection.documentId, version: this.projection.version, from: anchor.from, to: anchor.from } : null;
+		}
 		if (this.projection.segments?.[index]?.some(segment => segment.atom && selection.$from.parentOffset < segment.to && selection.$to.parentOffset > segment.from)) return null;
 		const boundary = (offset: number, start: boolean): number | null => {
 			const segments = this.projection!.segments?.[index];

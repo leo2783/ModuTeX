@@ -76,6 +76,7 @@ function literalBoundaries(value: string): readonly number[] {
 	return Object.freeze(result);
 }
 const decodedEscapes: Record<string, string> = { '\\%': '%', '\\&': '&', '\\$': '$', '\\#': '#', '\\_': '_', '\\{': '{', '\\}': '}',
+	'\\\\': '\n',
 	'\\textbackslash{}': '\\', '\\textasciicircum{}': '^', '\\textasciitilde{}': '~' };
 function decodePlain(source: SourceDocument, nodes: readonly SyntaxNode[], from: number, to: number): { text: string; boundaries: readonly number[] } | null {
 	let text = '', cursor = from; const boundaries = [0];
@@ -220,6 +221,9 @@ function projectMaketitleMetadata(
 }
 export function projectVisual(source: SourceDocument, parsed: SourceProjection): VisualProjection {
 	if (!projectionIsCurrent(source, parsed)) throw new Error('STALE_VISUAL');
+	const body = parsed.nodes.find((node) => node.kind === 'environment' && node.name === 'document');
+	const headingNames = new Set((body?.children ?? parsed.nodes).filter(node => node.kind === 'heading').map(node => node.name.replace(/\*$/, '')));
+	const sectionLevel = headingNames.has('part') ? 4 : headingNames.has('chapter') ? 3 : 2;
 	const blocks: VisualNode[] = [];
 	const boundaries: (readonly number[] | null)[] = [];
 	const segments: (readonly InlineSegment[] | null)[] = [];
@@ -231,7 +235,7 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 		const content = node.kind === 'text' ? node.span : node.content;
 		const attrs = { from: node.span.from, to: node.span.to, editFrom: content?.from ?? node.span.from,
 			editTo: content?.to ?? node.span.to, role: node.kind === 'heading' ? 'heading' : node.kind === 'format' ? 'format' : 'paragraph', name: node.name,
-			level: ({ title: 1, section: 2, subsection: 3, subsubsection: 4 } as Record<string, number>)[node.name.replace(/\*$/, '')] ?? 2 };
+		level: ({ title: 1, part: 2, chapter: headingNames.has('part') ? 3 : 2, section: sectionLevel, subsection: sectionLevel + 1, subsubsection: sectionLevel + 2 } as Record<string, number>)[node.name.replace(/\*$/, '')] ?? 2 };
 		if (node.kind === 'heading' && node.name === 'title') {
 			const marker = /^\s*\\maketitle(?![A-Za-z])/.exec(source.read(node.span.to, source.length));
 			if (marker) { attrs.to += marker[0].length; titleMarkers.add(node.span.to + marker[0].indexOf('\\maketitle')); }
@@ -279,14 +283,46 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 			blocks.push(visualSchema.nodes.source_block!.create(attrs, plain.text ? visualSchema.text(plain.text) : undefined));
 		} else { boundaries.push(null); segments.push(null); blocks.push(visualSchema.nodes.raw_block!.create({ ...attrs, source: source.read(node.span.from, node.span.to) })); }
 	};
-	const body = parsed.nodes.find((node) => node.kind === 'environment' && node.name === 'document');
 	let plainNodes: SyntaxNode[] = [];
 	let paragraphMarker: SyntaxNode | null = null;
 	const maketitleMetadata = body ? projectMaketitleMetadata(source, parsed, body) : null;
 	let projectedMaketitleMetadata = false;
 	const flush = () => {
 		if (!plainNodes.length) { if (paragraphMarker) add(paragraphMarker); paragraphMarker = null; return; }
+		if (paragraphMarker) {
+			const separatorEnd = plainNodes.at(-1)!.span.to;
+			// Source line separators around \par do not add visual rows. Real Enter
+			// line breaks are explicit \\ nodes and remain part of the cell.
+			while (plainNodes[0]?.kind === 'text') {
+				const node = plainNodes[0], value = source.read(node.span.from,node.span.to);
+				const count = /^[\r\n]+/.exec(value)?.[0].length ?? 0;
+				if (!count) break;
+				if (count === value.length) { plainNodes.shift(); continue; }
+				plainNodes[0] = {...node,span:{...node.span,from:node.span.from + count}}; break;
+			}
+			while (plainNodes.at(-1)?.kind === 'text') {
+				const node = plainNodes.at(-1)!, value = source.read(node.span.from,node.span.to);
+				const count = /[\r\n]+$/.exec(value)?.[0].length ?? 0;
+				if (!count) break;
+				if (count === value.length) { plainNodes.pop(); continue; }
+				plainNodes[plainNodes.length-1] = {...node,span:{...node.span,to:node.span.to-count}}; break;
+			}
+			if (!plainNodes.length) {
+				const marker = paragraphMarker;
+				add(marker); const empty = blocks.pop()!;
+				blocks.push(empty.type.create({...empty.attrs,to:separatorEnd,editFrom:separatorEnd,editTo:separatorEnd},empty.content));
+				paragraphMarker = null; return;
+			}
+		}
 		const from = plainNodes[0]!.span.from, to = plainNodes.at(-1)!.span.to;
+		if (paragraphMarker && plainNodes.every(node => node.kind === 'text') && !source.read(from, to).trim()) {
+			// TeX source separators are not empty lines typed into the new cell.
+			const marker = paragraphMarker;
+			add(marker);
+			const empty = blocks.pop()!;
+			blocks.push(empty.type.create({...empty.attrs,to,editFrom:to,editTo:to},empty.content));
+			paragraphMarker = null; plainNodes = []; return;
+		}
 		if (!paragraphMarker && plainNodes.every(node => node.kind === 'text') && !source.read(from, to).trim()) { plainNodes = []; return; }
 		const attrs = { from: paragraphMarker?.span.from ?? from, to, editFrom: from, editTo: to, name: paragraphMarker ? 'par' : '' };
 		paragraphMarker = null;
@@ -310,6 +346,8 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 			if (exactMaketitle && !projectedMaketitleMetadata && maketitleMetadata &&
 				(maketitleMetadata.fields.length > 0 || maketitleMetadata.fallbackNodes.length > 0)) {
 				for (const field of maketitleMetadata.fields) {
+					// Empty metadata directives retain their source bytes without blank notebook cells.
+					if (field.node.name !== 'title' && field.inline.content.size === 0) continue;
 					blocks.push(visualSchema.nodes.source_block!.create({
 						from: field.node.span.from, to: field.node.span.to,
 						editFrom: field.contentFrom, editTo: field.contentTo,
@@ -666,7 +704,8 @@ export function prepareVisualEdit(source: SourceDocument, projection: VisualProj
 	const edits = Object.freeze([...blockEdits(source, projection, transaction)]);
 	const patches = edits.map(edit => edit.patch).sort((left, right) => left.from - right.from || left.to - right.to);
 	const end = projection.document.lastChild?.attrs.to;
-	if (edits.length && typeof end === 'number' && end > 0 && source.read(end, Math.min(source.length, end + 14)).startsWith('\\end{document}') && !/[\r\n]/.test(source.read(end - 1, end))) {
+	if (edits.length && typeof end === 'number' && end > 0 && source.read(end, Math.min(source.length, end + 14)).startsWith('\\end{document}') &&
+		(!/[\r\n]/.test(source.read(end - 1, end)) || patches.some(patch => patch.to === end && patch.insert.length > 0 && !/[\r\n]$/.test(patch.insert)))) {
 		const last = patches.at(-1);
 		if (last && last.to === end) patches[patches.length - 1] = { ...last, insert: last.insert + source.profile.preferredLineEnding };
 		else patches.push({ from: end, to: end, expected: '', insert: source.profile.preferredLineEnding });

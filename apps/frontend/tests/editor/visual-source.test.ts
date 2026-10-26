@@ -5,7 +5,28 @@ import { EditorState } from '@codemirror/state';
 import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { visualSchema, projectVisual, visualPatches, escapeVisualText, advanceVisual } from '../../src/features/visual-editor/schema.ts';
 import { createSourceState, sourceState, sourcePatchTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
+import { createDraft } from '../../src/features/files/templates.ts';
 const source = (value: string) => SourceDocument.open(new TextEncoder().encode(value));
+
+test('report template projects a compact editable title and chapter without raw syntax or empty metadata cells', () => {
+	const original = createDraft('report');
+	const bytes = original.toBytes();
+	const projection = projectVisual(original, parseSource(original));
+	const blocks: string[] = [];
+	projection.document.forEach(node => {
+		assert.equal(node.type.name, 'source_block');
+		assert.equal(node.attrs.role, 'heading');
+		blocks.push(node.textContent);
+	});
+	assert.deepEqual(blocks, ['Report title', 'Introduction']);
+	const state = VisualState.create({ doc: projection.document });
+	const position = projection.document.child(0).nodeSize + 1;
+	const transaction = state.tr.insertText('New ', position);
+	const patches = visualPatches(original, projection, transaction);
+	const updated = original.apply({ expectedVersion: original.version, patches }).document;
+	assert.equal(updated.read(), original.read().replace('\\chapter{Introduction}', '\\chapter{New Introduction}'));
+	assert.deepEqual(original.toBytes(), bytes);
+});
 
 test('one persistent PM state edits shifted blocks while fresh source anchors remain separate from presentation metadata', () => {
 	const originalText = '\uFEFF\\section{One}\r\nBody $x$ \\opaque{keep}\r\n\\section{Two}\nTail';

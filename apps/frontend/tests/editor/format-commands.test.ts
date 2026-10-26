@@ -177,6 +177,37 @@ function visualDom() {
 	} };
 }
 
+test('reprojecting a format toggle retains the entire visual selection for repeated toolbar clicks', () => {
+	const fixture = visualDom();
+	try {
+		for (const [format, command] of formats) {
+			const original = SourceDocument.open(bytes('\ufeff\\section{Heading}\r\nBefore plain after.\r\n'));
+			let editor = createSourceState(original);
+			const view = new VisualEditor(fixture.target, 'format.tex', {
+				source: () => editor.field(sourceState).projection.document,
+				apply: () => { throw new Error('Formatting uses the source transaction'); },
+				history: () => false, readOnly: () => false, rejected: () => assert.fail('Unexpected rejection'), status: () => {}
+			});
+			try {
+				view.sync(parseSource(original));
+				let position = -1;
+				view.view.state.doc.descendants((node, offset) => { if (node.isText && node.text!.includes('Before')) position = offset + node.text!.indexOf('Before'); });
+				view.view.dispatch(view.view.state.tr.setSelection(TextSelection.create(view.view.state.doc, position, position + 6)));
+				for (const active of [true, false, true, false]) {
+					const span = view.formatSelection(); assert.ok(span);
+					editor = formatTransaction(editor, parseSource(editor.field(sourceState).projection.document), format, span).state;
+					const current = editor.field(sourceState).projection.document;
+					view.sync(parseSource(current));
+					assert.equal(current.read().includes('\\' + command + '{Before}'), active);
+					const selection = view.formatSelection(); assert.ok(selection);
+					assert.equal(current.read(selection.from, selection.to), 'Before');
+				}
+				assert.deepEqual(editor.field(sourceState).projection.document.toBytes(), original.toBytes());
+			} finally { view.dispose(); }
+		}
+	} finally { fixture.restore(); }
+});
+
 test('genuine ProseMirror selections bridge to source formatting, parser reproject and exact shared CodeMirror undo', { timeout: 5000 }, () => {
 	const fixture = visualDom();
 	try {

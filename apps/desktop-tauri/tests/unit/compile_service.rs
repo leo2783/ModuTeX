@@ -95,6 +95,36 @@ impl Drop for TestDirectory {
     }
 }
 
+#[test]
+fn managed_fontconfig_uses_private_configuration_and_preserves_existing_files() {
+    let directory = TestDirectory::new();
+    let cache = directory.path().join("cache & fonts");
+    let environment =
+        build_process_environment(&[], &[], None, directory.path(), Some(&cache)).unwrap();
+    let path = environment
+        .iter()
+        .find(|(key, _)| key == "FONTCONFIG_FILE")
+        .unwrap()
+        .1
+        .clone();
+    assert_eq!(PathBuf::from(path), directory.path().join("fontconfig.xml"));
+    let config = fs::read_to_string(directory.path().join("fontconfig.xml")).unwrap();
+    assert!(config.contains("/Fonts</dir>"));
+    assert!(config.contains("cache &amp; fonts/fontconfig"));
+    assert!(!config.contains("<include"));
+    assert!(build_process_environment(&[], &[], None, directory.path(), Some(&cache)).is_err());
+    assert_eq!(
+        fs::read_to_string(directory.path().join("fontconfig.xml")).unwrap(),
+        config
+    );
+    let system = build_process_environment(&[], &[], None, directory.path(), None).unwrap();
+    assert!(!system.iter().any(|(key, _)| key == "FONTCONFIG_FILE"));
+    assert!(
+        validate_profile_environment(vec![("FONTCONFIG_FILE".into(), "untrusted.xml".into())])
+            .is_err()
+    );
+}
+
 struct WorkspaceFixture {
     owner: OwnerId,
     workspace_id: WorkspaceId,

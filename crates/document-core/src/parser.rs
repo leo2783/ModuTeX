@@ -924,7 +924,10 @@ fn is_container(name: &str) -> bool {
 }
 
 fn is_heading(name: &str) -> bool {
-    matches!(name, "title" | "section" | "subsection" | "subsubsection")
+    matches!(
+        name,
+        "title" | "part" | "chapter" | "section" | "subsection" | "subsubsection"
+    )
 }
 
 fn is_maketitle_metadata(name: &str) -> bool {

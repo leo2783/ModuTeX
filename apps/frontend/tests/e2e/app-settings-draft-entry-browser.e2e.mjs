@@ -259,6 +259,15 @@ export function getCurrentWindow() {
   await page.waitForFunction(()=>!document.querySelector('#compile-margin-top')?.disabled);
   for(const side of ['top','bottom','left','right']) assert.equal(await page.locator('#compile-margin-'+side).inputValue(),'2');
   const originalMain=await page.evaluate(()=>window.appFixture.savedSources()['main.tex']);
+  const dateMode = page.locator('#document-date-mode');
+  await dateMode.selectOption('iso');
+  await page.getByRole('button',{name:/^(套用日期設定|Apply date settings)$/}).click();
+  await page.waitForFunction(()=>document.querySelector('.cm-content')?.textContent.includes('\\date{\\number\\year-'));
+  assert.equal(await page.evaluate(()=>window.appFixture.savedSources()['main.tex']),originalMain,'Date settings must preserve the unsaved draft boundary');
+  await dateMode.selectOption('none');
+  await page.getByRole('button',{name:/^(套用日期設定|Apply date settings)$/}).click();
+  await page.waitForFunction(()=>document.querySelector('.cm-content')?.textContent.includes('\\date{}'));
+  await page.screenshot({path:path.join(repository,'.verification-artifacts/tauri/document-date-settings.png')});
   for(const [side,value] of Object.entries({top:'1.5',bottom:'2.5',left:'3',right:'4'})) await page.locator('#compile-margin-'+side).fill(value);
   await applyMargins.click();
   await page.waitForFunction(()=>document.querySelector('.cm-content')?.textContent.includes('top=1.5cm'));
@@ -374,7 +383,7 @@ export function getCurrentWindow() {
   assert.equal(cleanClose.prevented, false, 'A clean native close must proceed without a prompt');
   assert.equal(await page.evaluate(() => window.appFixture.nativeCloseCount()), 1);
   const closeDialog = page.getByRole('dialog', {name:/^(儲存變更？|Save changes\?)$/});
-  const closeSaveButton = () => closeDialog.locator('button').filter({hasText:/儲存|Save/}).first();
+  const closeSaveButton = () => closeDialog.getByRole('button',{name:/^(儲存並關閉|Save & close)$/});
   const unsavedCloseText = page.locator('.cm-content').first();
   await unsavedCloseText.click();
   await unsavedCloseText.press('ControlOrMeta+End');

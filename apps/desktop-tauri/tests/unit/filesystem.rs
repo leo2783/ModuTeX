@@ -581,6 +581,54 @@ fn reopen_recent_save_as_batch_rollback_and_reparse_rejection() {
 }
 
 #[test]
+fn save_new_draft_without_workspace_then_write_and_reopen() {
+    let tmp = TempWorkspace::new("new-template");
+    let svc = tmp.service(DEFAULT_CLOSE_DRAIN_TIMEOUT);
+    let main = owner("main");
+    let target = tmp.base.join("new-report.tex");
+    let request = SaveAsRequest {
+        images: None,
+        workspace_id: None,
+        bytes: b"\\documentclass{report}\n\\begin{document}\\chapter{Intro}\\end{document}"
+            .to_vec(),
+        document_id: doc_id("doc_report"),
+        document_version: doc_ver(0),
+    };
+    assert_eq!(svc.save_as(&main, &request, None, ts(1)).unwrap(), None);
+    assert!(!target.exists());
+    let saved = svc
+        .save_as(&main, &request, Some(&target), ts(2))
+        .unwrap()
+        .unwrap();
+    assert_eq!(fs::read(&target).unwrap(), request.bytes);
+    svc.write_file(
+        &main,
+        &WriteRequest {
+            workspace_id: saved.opened.workspace.id.clone(),
+            path: saved.opened.write.path.clone(),
+            bytes: b"updated report".to_vec(),
+            expected_revision: Some(saved.opened.write.revision),
+            document_id: request.document_id,
+            document_version: doc_ver(1),
+        },
+    )
+    .unwrap();
+    svc.close_workspace(&main, &saved.opened.workspace.id)
+        .unwrap();
+    let reopened = svc.open_workspace_file(&main, &target, ts(3)).unwrap();
+    let read = svc
+        .read_file(
+            &main,
+            &FileRef {
+                workspace_id: reopened.opened.id,
+                path: rel("new-report.tex"),
+            },
+        )
+        .unwrap();
+    assert_eq!(read.bytes, b"updated report");
+}
+
+#[test]
 fn revoked_owner_blocks_later_and_racing_workspace_admissions() {
     let tmp = TempWorkspace::new("revoke-admission");
     let svc = tmp.service(DEFAULT_CLOSE_DRAIN_TIMEOUT);

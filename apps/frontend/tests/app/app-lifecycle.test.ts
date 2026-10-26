@@ -1560,7 +1560,7 @@ test('New confirms discarding a dirty source and Save As watches the new owner',
 		workbench.pasteIntoSource('DISCARDED_OLD_DRAFT');
 		await workbench.waitForSource('DISCARDED_OLD_DRAFT');
 
-		const newDocument = workbench.findButton((label) => label === 'New document' || label === '新文件');
+		const newDocument = workbench.findButton((label) => label === 'New document' || label === '新文件' || label === '新增文件');
 		assert.ok(newDocument);
 		const confirmations = workbench.confirmCount();
 		newDocument.click();
@@ -1598,6 +1598,30 @@ test('New confirms discarding a dirty source and Save As watches the new owner',
 		await workbench.writeExternalAndWait(savedAsPath, external);
 		await workbench.waitForSource('SAVE_AS_EXTERNAL');
 		assert.equal(workbench.notice('changed'), null);
+	});
+});
+
+test('report template saves to a new TeX file through Save and subsequent saves use its disk revision', { timeout: 180_000 }, async () => {
+	await withHostWorkbench(async (workbench) => {
+		await workbench.goHome();
+		const report = await waitFor(() => workbench.findButton(label => label.startsWith('報告') || label.startsWith('Report')), 10_000, workbench.flush);
+		assert.ok(report);
+		report.click();
+		await workbench.waitForSource('\\chapter{Introduction}');
+		const save = workbench.findButton(label => label === 'Save' || label === '儲存');
+		assert.ok(save);
+		assert.equal(save.disabled, false);
+		const savedPath = path.join(path.dirname(workbench.secondPath), 'saved-as.tex');
+		assert.equal(fs.existsSync(savedPath), false);
+		save.click();
+		await waitFor(() => fs.existsSync(savedPath) ? true : undefined, 10_000, workbench.flush);
+		await waitFor(() => workbench.activeWatchCount() === 1 ? true : undefined, 10_000, workbench.flush);
+		assert.match(await fs.promises.readFile(savedPath, 'utf8'), /\\chapter\{Introduction\}/);
+		workbench.pasteIntoSource('REPORT_SAVED_AGAIN');
+		await workbench.waitForSource('REPORT_SAVED_AGAIN');
+		workbench.findButton(label => label === 'Save' || label === '儲存')!.click();
+		await waitFor(() => workbench.lastWrite('saved-as.tex'), 10_000, workbench.flush);
+		assert.match(await fs.promises.readFile(savedPath, 'utf8'), /REPORT_SAVED_AGAIN/);
 	});
 });
 
