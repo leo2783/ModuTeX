@@ -1,4 +1,4 @@
-import { projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan } from '@modutex/document-core';
+import { projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan } from '../document-core/core.ts';
 export interface TableDraft {
 	readonly rows: number; readonly columns: number; readonly cells: readonly string[];
 	readonly weights: readonly number[]; readonly width: number; readonly header: boolean;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SourceDocument } from '@modutex/document-core';
+import { SourceDocument } from '../../src/features/document-core/core.ts';
 import { imageSource, imagePath, referencedImages } from '../../src/features/images/store.ts';
 
 test('managed image source round trips and file references ignore comments and literal code', () => {

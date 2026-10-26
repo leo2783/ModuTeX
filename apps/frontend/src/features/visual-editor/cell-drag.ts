@@ -1,4 +1,4 @@
-import type { SourceSpan } from '@modutex/document-core';
+import type { SourceSpan } from '../document-core/core.ts';
 const releases = new WeakMap<HTMLElement, () => void>();
 type LayoutTask = (cells: ReadonlyMap<HTMLElement, ReadonlyMap<number, HTMLElement>>) => (() => void) | null;
 const layouts = new WeakMap<Document, { tasks: Set<LayoutTask>; frame: number }>();

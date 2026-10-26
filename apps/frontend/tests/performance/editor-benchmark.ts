@@ -8,7 +8,7 @@ import {
 	SourceDocument,
 	parseSource,
 	type SourceProjection
-} from '@modutex/document-core';
+} from '../../src/features/document-core/core.ts';
 import {
 	createSourceState,
 	sourceState,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { imageType, validateImageFile, IMAGE_BYTES_LIMIT } from '../src/images.ts';
-import { parseSaveAsRequest } from '../src/validate.ts';
+import { imageType, validateImageFile, IMAGE_BYTES_LIMIT } from '../src/schemas/images.ts';
+import { parseSaveAsRequest } from '../src/schemas/validate.ts';
 
 const png = () => Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lXcAAAAASUVORK5CYII=', 'base64'));
 test('image byte envelopes require bounded PNG/JPEG bytes and matching extensions', () => {

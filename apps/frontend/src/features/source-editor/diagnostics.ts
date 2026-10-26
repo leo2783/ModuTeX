@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { EditorState } from '@codemirror/state';
-import type { SourceSpan } from '@modutex/document-core';
+import type { SourceSpan } from '../document-core/core.ts';
 import { sourceState } from './state.ts';
 
 /**

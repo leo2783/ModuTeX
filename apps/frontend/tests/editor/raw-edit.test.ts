@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
-import { SourceDocument, parseSource, type SourceSpan } from '@modutex/document-core';
+import { SourceDocument, parseSource, type SourceSpan } from '../../src/features/document-core/core.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { rawEditTransaction } from '../../src/features/source-editor/raw.ts';
 import { createSourceState, sourceState, sourcePatchTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
@@ -14,7 +14,7 @@ function span(source: SourceDocument, expected: string): SourceSpan {
 }
 test('explicit Raw replacement and deletion preserve surrounding BOM/mixed EOL and share exact CM undo/redo', () => {
 	const expected = '\\opaque{keep}', originalText = '\uFEFFplain\r\n' + expected + '\rtail\n';
-	for (const replacement of ['\\unknown{雪%😀}', '']) {
+	for (const replacement of ['\\unknown{雪%\ud840\udc00}', '']) {
 		const original = SourceDocument.open(bytes(originalText));
 		let editor = createSourceState(original);
 		const captured = span(original, expected);

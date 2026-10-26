@@ -1,0 +1,214 @@
+name: Tauri CI - Frontend, Svelte, and contracts
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Validated full source commit SHA from source admission.
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  frontend-types:
+    name: Frontend types and Svelte check
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.22.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          if ((node --version) -ne 'v24.22.1') { throw 'Node.js 24.22.1 required' }
+          if ((npm --version) -ne '11.19.1') { throw 'npm 11.19.1 required' }
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+      - name: Set up pinned document-core WASM toolchain
+        uses: ./.github/actions/setup-document-core-wasm
+      - name: Build shared contracts
+        run: npm run build:shared --workspace=modutex-frontend
+      - name: Build document-core WASM bindings
+        run: npm run build:document-core --workspace=modutex-frontend
+      - name: Run Svelte-check and TypeScript verification
+        run: npm run frontend:check
+  frontend-unit:
+    name: Frontend unit tests
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.22.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          if ((node --version) -ne 'v24.22.1') { throw 'Node.js 24.22.1 required' }
+          if ((npm --version) -ne '11.19.1') { throw 'npm 11.19.1 required' }
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+      - name: Set up pinned document-core WASM toolchain
+        uses: ./.github/actions/setup-document-core-wasm
+      - name: Build shared contracts
+        run: npm run build:shared --workspace=modutex-frontend
+      - name: Run frontend unit tests, including the Draft paragraph regression
+        env:
+          RAYON_NUM_THREADS: '1'
+          ROLLDOWN_WORKER_THREADS: '1'
+          ROLLDOWN_MAX_BLOCKING_THREADS: '1'
+        run: npm run frontend:test
+      - name: Run focused Tauri IPC, production CSP, and source policy regressions
+        run: >-
+          node --test apps/frontend/tests/tauri-files.test.mjs apps/frontend/tests/production/tauri-csp.test.mjs
+          tests/scripts/source-no-emoji.test.mjs
+  frontend-browser-e2e:
+    name: Frontend PDF and SyncTeX browser E2E
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.22.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          test "$(node --version)" = 'v24.22.1'
+          test "$(npm --version)" = '11.19.1'
+      - name: Install frontend browser-test dependencies
+        run: npm ci --ignore-scripts
+      - name: Set up pinned document-core WASM toolchain
+        uses: ./.github/actions/setup-document-core-wasm
+      - name: Build shared contracts
+        run: npm run build:shared --workspace=modutex-frontend
+      - name: Build the frontend for browser E2E
+        run: npm run frontend:build
+      - name: Install Playwright Chromium and system dependencies
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Run PDF, SyncTeX, Draft, and Workbench Dock browser E2E
+        run: |
+          node --test --test-concurrency=1 \
+            apps/frontend/tests/e2e/pdf-synctex-browser.e2e.mjs \
+            apps/frontend/tests/e2e/app-settings-draft-entry-browser.e2e.mjs \
+            apps/frontend/tests/e2e/draft-panel-browser.e2e.mjs \
+            apps/frontend/tests/e2e/workbench-dock-browser.e2e.mjs \
+            apps/frontend/tests/e2e/updater-browser.e2e.mjs
+      - name: Run full-app workbench and replacement browser regressions
+        env:
+          MODUTEX_TEST_BROWSER_CHANNEL: chromium
+        run: node --test --test-concurrency=1 apps/frontend/tests/app/*.test.mjs
+  frontend-build:
+    name: Build and upload Tauri frontend assets and notices
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.22.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          if ((node --version) -ne 'v24.22.1') { throw 'Node.js 24.22.1 required' }
+          if ((npm --version) -ne '11.19.1') { throw 'npm 11.19.1 required' }
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+      - name: Set up pinned document-core WASM toolchain
+        uses: ./.github/actions/setup-document-core-wasm
+      - name: Build shared contracts
+        run: npm run build:shared --workspace=modutex-frontend
+      - name: Remove stale Tauri frontend output
+        run: |
+          $dist = 'apps/frontend/dist-tauri'
+          if (Test-Path -LiteralPath $dist) { Remove-Item -LiteralPath $dist -Recurse -Force }
+      - name: Build frontend in Tauri mode
+        run: npm run frontend:build:tauri
+      - name: Verify Tauri frontend output
+        run: |
+          $dist = 'apps/frontend/dist-tauri'
+          if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
+            throw 'Tauri frontend build did not produce apps/frontend/dist-tauri'
+          }
+          if (@(Get-ChildItem -LiteralPath $dist -File -Recurse).Count -eq 0) {
+            throw 'Tauri frontend build output is empty'
+          }
+      - name: Verify frontend origin licensing
+        run: node scripts/licensing/verify-frontend-origin.mjs
+      - name: Verify real Tauri production bundle loading and shipped notices
+        env:
+          MODUTEX_TEST_FRONTEND_DIST: apps/frontend/dist-tauri
+        run: node --test apps/frontend/tests/production/bundle-loading.test.mjs apps/frontend/tests/production/notices.test.mjs
+      - name: Run frontend origin licensing and resource-limit tests
+        run: node --test tests/scripts/licensing/*.test.mjs
+      - name: Upload Tauri frontend assets and required notices
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/frontend/dist-tauri
+            LICENSE
+            apps/desktop-tauri/NOTICE
+            apps/frontend/LICENSE
+            apps/frontend/NOTICE
+            apps/frontend/THIRD_PARTY_NOTICES.md
+            packages/frontend-contracts/LICENSE
+            vendor/notices/TECTONIC-LICENSE.txt
+            vendor/notices/TECTONIC-NOTICE.md
+          if-no-files-found: error
+          include-hidden-files: true
+  contracts-tests:
+    name: Shared frontend contract tests
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.22.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          if ((node --version) -ne 'v24.22.1') { throw 'Node.js 24.22.1 required' }
+          if ((npm --version) -ne '11.19.1') { throw 'npm 11.19.1 required' }
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+      - name: Build shared contracts
+        run: npm run build:shared --workspace=modutex-frontend
+      - name: Test @modutex/frontend-contracts
+        run: npm run test --workspace=@modutex/frontend-contracts
+      - name: Type-check shared contracts and their tests
+        run: npm run check --workspace=@modutex/frontend-contracts

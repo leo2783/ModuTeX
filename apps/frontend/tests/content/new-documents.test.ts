@@ -3,10 +3,22 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createServer } from 'vite';
-import { SourceDocument } from '@modutex/document-core';
+import { SourceDocument } from '../../src/features/document-core/core.ts';
 import { createDraft, templateOptions } from '../../src/features/files/templates.ts';
+import { readSource } from '../../src/features/files/read.ts';
 import { createSourceState, sourceState, historyTransaction } from '../../src/features/source-editor/state.ts';
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
+
+test('source file opening accepts LaTeX and rejects retired Typst files without reading them', async () => {
+	const content = '\\documentclass{article}\n\\usepackage[margin=3cm]{geometry}\n';
+	const accepted = await readSource(new File([content], 'main.TEX'));
+	assert.equal(accepted.read(), content);
+	let read = false;
+	const retired = new File(['retired input'], 'main.typ');
+	retired.arrayBuffer = async () => { read = true; throw new Error('Retired input must not be read'); };
+	await assert.rejects(readSource(retired), /FILE_TYPE/);
+	assert.equal(read, false);
+});
 
 test('template choices are an immutable closed allowlist with actual descriptions', () => {
 	assert.deepEqual(templateOptions.map((option) => option.id), ['blank', 'article', 'report']);
@@ -43,7 +55,7 @@ test('each template creates an independent SourceDocument and never shares mutab
 	}
 });
 
-test('self-authored blank, article and report sources use only standard document classes', () => {
+test('blank, article and report sources use standard classes and editable two-centimetre margins', () => {
 	const blank = createDraft('blank').read(), article = createDraft('article').read(), report = createDraft('report').read();
 	assert.match(blank, /\\documentclass(?:\[[^\]]*\])?\{article\}/);
 	assert.match(article, /\\documentclass(?:\[[^\]]*\])?\{article\}/);
@@ -56,7 +68,9 @@ test('self-authored blank, article and report sources use only standard document
 	for (const text of [blank, article, report]) {
 		assert.match(text, /\\begin\{document\}/);
 		assert.match(text, /\\end\{document\}/);
-		assert.doesNotMatch(text, /\\(?:usepackage|RequirePackage|input|include|write18|openout)\b/);
+		assert.equal(text.split('\\usepackage[margin=2cm]{geometry}').length - 1, 1);
+		assert.ok(text.indexOf('\\usepackage[margin=2cm]{geometry}') < text.indexOf('\\begin{document}'));
+		assert.doesNotMatch(text.replace('\\usepackage[margin=2cm]{geometry}', ''), /\\(?:usepackage|RequirePackage|input|include|write18|openout)\b/);
 		assert.doesNotMatch(text, /https?:\/\//);
 	}
 });

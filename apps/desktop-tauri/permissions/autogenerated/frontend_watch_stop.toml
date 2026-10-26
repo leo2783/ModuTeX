@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-frontend-watch-stop"
+description = "Enables the frontend_watch_stop command without any pre-configured scope."
+commands.allow = ["frontend_watch_stop"]
+
+[[permission]]
+identifier = "deny-frontend-watch-stop"
+description = "Denies the frontend_watch_stop command without any pre-configured scope."
+commands.deny = ["frontend_watch_stop"]

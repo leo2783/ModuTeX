@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-frontend-write-file"
+description = "Enables the frontend_write_file command without any pre-configured scope."
+commands.allow = ["frontend_write_file"]
+
+[[permission]]
+identifier = "deny-frontend-write-file"
+description = "Denies the frontend_write_file command without any pre-configured scope."
+commands.deny = ["frontend_write_file"]

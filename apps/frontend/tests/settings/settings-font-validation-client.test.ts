@@ -248,6 +248,21 @@ test(
 			api.flushSync();
 			await api.tick();
 
+			const aside = container.querySelector('aside');
+			assert.ok(aside, 'Aside navigation element must exist');
+			const navButtons = Array.from(aside.querySelectorAll('button'));
+			const editorNavBtn = navButtons[2];
+			assert.ok(editorNavBtn, 'Editor nav button must exist');
+
+			// Navigate to Editor section
+			editorNavBtn.click();
+			api.flushSync();
+			await api.tick();
+			assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
+			const editorHeading = container.querySelector<HTMLHeadingElement>('#editor-preferences');
+			assert.ok(editorHeading, 'Editor preferences heading must exist');
+			assert.equal(win.document.activeElement, editorHeading, 'Focus must move to Editor heading');
+
 			const input = container.querySelector<HTMLInputElement>('#source-font-size');
 			assert.ok(input, 'Font size input must exist');
 			assert.equal(input.value, '14', 'Initial font size must match preferences');
@@ -347,6 +362,17 @@ test(
 			assert.equal(input.value, '99');
 			assert.equal(input.getAttribute('aria-invalid'), 'true');
 
+			// Navigate to Restore defaults section
+			const restoreNavBtn = navButtons.find(button => /恢復預設值|Restore defaults/.test(button.textContent ?? ''));
+			assert.ok(restoreNavBtn, 'Restore defaults nav button must exist');
+			restoreNavBtn.click();
+			api.flushSync();
+			await api.tick();
+			assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
+			const restoreHeading = container.querySelector<HTMLHeadingElement>('#restore-preferences');
+			assert.ok(restoreHeading, 'Restore defaults heading must exist');
+			assert.equal(win.document.activeElement, restoreHeading, 'Focus must move to Restore defaults heading');
+
 			// Click the actual Restore defaults button
 			const restoreBtn = container.querySelector<HTMLButtonElement>('.restore-button');
 			assert.ok(restoreBtn, 'Restore defaults button must exist');
@@ -355,8 +381,18 @@ test(
 			await api.tick();
 
 			assert.equal(restoreCount, 1, 'Restore callback must be called exactly once');
-			assert.equal(input.value, '14', 'Restore must reset invalid draft to default 14 even when pref was already 14');
-			assert.equal(input.getAttribute('aria-invalid'), null);
+
+			// Reopen Editor section to query fresh remounted input (never detached node)
+			editorNavBtn.click();
+			api.flushSync();
+			await api.tick();
+			assert.equal(container.querySelectorAll('section').length, 1, 'Must render only the selected category panel');
+			assert.equal(win.document.activeElement, container.querySelector('#editor-preferences'), 'Focus must move to Editor heading');
+
+			const freshInput = container.querySelector<HTMLInputElement>('#source-font-size');
+			assert.ok(freshInput, 'Freshly remounted font size input must exist');
+			assert.equal(freshInput.value, '14', 'Restore must reset invalid draft to default 14 even when pref was already 14');
+			assert.equal(freshInput.getAttribute('aria-invalid'), null);
 			assert.equal(container.querySelector('#source-font-size-error'), null);
 		} finally {
 			if (mounted !== undefined) {

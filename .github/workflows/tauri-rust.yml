@@ -1,0 +1,566 @@
+name: Tauri CI - Rust and document-core WASM
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Validated full source commit SHA from source admission.
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  document-core-wasm:
+    name: Document-core WASM and resource-limit tests
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.22.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          test "$(node --version)" = 'v24.22.1'
+          test "$(npm --version)" = '11.19.1'
+      - name: Install document-core test dependencies
+        run: npm ci --ignore-scripts
+      - name: Set up pinned document-core WASM toolchain
+        uses: ./.github/actions/setup-document-core-wasm
+      - name: Fetch locked document-core dependencies
+        run: cargo fetch --locked --manifest-path crates/document-core/Cargo.toml --target wasm32-unknown-unknown
+      - name: Build document-core WASM and generate bindings
+        run: npm run build:document-core --workspace=modutex-frontend
+      - name: Run document-core WASM and resource-limit regression tests
+        run: node --test crates/document-core/tests/wasm.test.mjs crates/document-core/tests/resource-limits.test.mjs
+  rust-format:
+    name: Rust formatting
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install Rust toolchain 1.97.1 with rustfmt
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain installation failed with exit code $LASTEXITCODE" }
+          rustup default 1.97.1-x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain selection failed with exit code $LASTEXITCODE" }
+      - name: Verify Rust toolchain versions
+        run: |
+          $rustcVer = rustc --version
+          if ($LASTEXITCODE -ne 0) { throw 'rustc is unavailable' }
+          if ($rustcVer -notmatch 'rustc 1\.97\.1') { throw "rustc 1.97.1 required, got $rustcVer" }
+          $cargoVer = cargo --version
+          if ($LASTEXITCODE -ne 0) { throw 'cargo is unavailable' }
+          if ($cargoVer -notmatch 'cargo 1\.97\.1') { throw "cargo 1.97.1 required, got $cargoVer" }
+      - name: Check Rust formatting
+        run: |
+          cargo fmt --manifest-path apps/desktop-tauri/Cargo.toml --check
+          if ($LASTEXITCODE -ne 0) { throw "desktop-tauri formatting check failed with exit code $LASTEXITCODE" }
+          cargo fmt --manifest-path crates/document-core/Cargo.toml --check
+          if ($LASTEXITCODE -ne 0) { throw "document-core formatting check failed with exit code $LASTEXITCODE" }
+  rust-clippy:
+    name: Rust Clippy and all-target check
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Download source-matched Tauri frontend assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FRONTEND_ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          $artifactDirectory = Join-Path $env:RUNNER_TEMP ('modutex-tauri-frontend-' + [guid]::NewGuid().ToString('N'))
+          if (Test-Path -LiteralPath $artifactDirectory) {
+            throw 'Frontend artifact staging directory unexpectedly exists'
+          }
+          New-Item -ItemType Directory -Path $artifactDirectory -ErrorAction Stop | Out-Null
+          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir $artifactDirectory
+          if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
+          $dist = Join-Path $artifactDirectory 'apps/frontend/dist-tauri'
+          if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
+            throw 'Frontend artifact did not contain apps/frontend/dist-tauri'
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $dist 'index.html') -PathType Leaf)) {
+            throw 'Frontend artifact did not contain the built Tauri index.html'
+          }
+          if (@(Get-ChildItem -LiteralPath $dist -File -Recurse -Force).Count -eq 0) {
+            throw 'Tauri frontend artifact is empty'
+          }
+          $checkoutDist = 'apps/frontend/dist-tauri'
+          if (Test-Path -LiteralPath $checkoutDist) {
+            Remove-Item -LiteralPath $checkoutDist -Recurse -Force -ErrorAction Stop
+          }
+          New-Item -ItemType Directory -Path $checkoutDist -ErrorAction Stop | Out-Null
+          Get-ChildItem -LiteralPath $dist -Force |
+            Copy-Item -Destination $checkoutDist -Recurse -Force -ErrorAction Stop |
+            Out-Null
+          if (-not (Test-Path -LiteralPath (Join-Path $checkoutDist 'index.html') -PathType Leaf)) {
+            throw 'The staged Tauri frontend index.html was not installed in the checkout'
+          }
+      - name: Install Rust toolchain 1.97.1 with Clippy
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt,clippy --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain installation failed with exit code $LASTEXITCODE" }
+          rustup default 1.97.1-x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain selection failed with exit code $LASTEXITCODE" }
+      - name: Verify Rust toolchain versions
+        run: |
+          $rustcVer = rustc --version
+          if ($LASTEXITCODE -ne 0) { throw 'rustc is unavailable' }
+          if ($rustcVer -notmatch 'rustc 1\.97\.1') { throw "rustc 1.97.1 required, got $rustcVer" }
+          $cargoVer = cargo --version
+          if ($LASTEXITCODE -ne 0) { throw 'cargo is unavailable' }
+          if ($cargoVer -notmatch 'cargo 1\.97\.1') { throw "cargo 1.97.1 required, got $cargoVer" }
+      - name: Run Clippy on all targets and features
+        run: >
+          cargo clippy --manifest-path apps/desktop-tauri/Cargo.toml --locked --release --target x86_64-pc-windows-msvc
+          --all-targets --all-features -- -D warnings
+
+          if ($LASTEXITCODE -ne 0) { throw "desktop-tauri clippy failed with exit code $LASTEXITCODE" }
+
+          cargo clippy --manifest-path crates/document-core/Cargo.toml --locked --release --target
+          x86_64-pc-windows-msvc --all-targets --all-features -- -D warnings
+
+          if ($LASTEXITCODE -ne 0) { throw "document-core clippy failed with exit code $LASTEXITCODE" }
+      - name: Check all targets and all features
+        run: >
+          cargo check --manifest-path apps/desktop-tauri/Cargo.toml --locked --release --target x86_64-pc-windows-msvc
+          --all-targets --all-features
+
+          if ($LASTEXITCODE -ne 0) { throw "desktop-tauri check failed with exit code $LASTEXITCODE" }
+
+          cargo check --manifest-path crates/document-core/Cargo.toml --locked --release --target x86_64-pc-windows-msvc
+          --all-targets --all-features
+
+          if ($LASTEXITCODE -ne 0) { throw "document-core check failed with exit code $LASTEXITCODE" }
+  rust-tests:
+    name: Rust tests
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Download source-matched Tauri frontend assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FRONTEND_ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          $artifactDirectory = Join-Path $env:RUNNER_TEMP ('modutex-tauri-frontend-' + [guid]::NewGuid().ToString('N'))
+          if (Test-Path -LiteralPath $artifactDirectory) {
+            throw 'Frontend artifact staging directory unexpectedly exists'
+          }
+          New-Item -ItemType Directory -Path $artifactDirectory -ErrorAction Stop | Out-Null
+          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir $artifactDirectory
+          if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
+          $dist = Join-Path $artifactDirectory 'apps/frontend/dist-tauri'
+          if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
+            throw 'Frontend artifact did not contain apps/frontend/dist-tauri'
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $dist 'index.html') -PathType Leaf)) {
+            throw 'Frontend artifact did not contain the built Tauri index.html'
+          }
+          if (@(Get-ChildItem -LiteralPath $dist -File -Recurse -Force).Count -eq 0) {
+            throw 'Tauri frontend artifact is empty'
+          }
+          $checkoutDist = 'apps/frontend/dist-tauri'
+          if (Test-Path -LiteralPath $checkoutDist) {
+            Remove-Item -LiteralPath $checkoutDist -Recurse -Force -ErrorAction Stop
+          }
+          New-Item -ItemType Directory -Path $checkoutDist -ErrorAction Stop | Out-Null
+          Get-ChildItem -LiteralPath $dist -Force |
+            Copy-Item -Destination $checkoutDist -Recurse -Force -ErrorAction Stop |
+            Out-Null
+          if (-not (Test-Path -LiteralPath (Join-Path $checkoutDist 'index.html') -PathType Leaf)) {
+            throw 'The staged Tauri frontend index.html was not installed in the checkout'
+          }
+      - name: Install Rust toolchain 1.97.1
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain installation failed with exit code $LASTEXITCODE" }
+          rustup default 1.97.1-x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain selection failed with exit code $LASTEXITCODE" }
+      - name: Verify Rust toolchain versions
+        run: |
+          $rustcVer = rustc --version
+          if ($LASTEXITCODE -ne 0) { throw 'rustc is unavailable' }
+          if ($rustcVer -notmatch 'rustc 1\.97\.1') { throw "rustc 1.97.1 required, got $rustcVer" }
+          $cargoVer = cargo --version
+          if ($LASTEXITCODE -ne 0) { throw 'cargo is unavailable' }
+          if ($cargoVer -notmatch 'cargo 1\.97\.1') { throw "cargo 1.97.1 required, got $cargoVer" }
+      - name: Install isolated basic MiKTeX and prewarm LuaLaTeX
+        id: miktex
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . ./tests/scripts/helpers/ci-bounded-process.ps1
+          $script:CiProcessDeadline = [DateTime]::UtcNow.AddSeconds(720)
+          $miktexRoot = Join-Path $env:RUNNER_TEMP ('modutex-miktex-' + [guid]::NewGuid().ToString('N'))
+          if (Test-Path -LiteralPath $miktexRoot) { throw 'MiKTeX temporary directory unexpectedly exists' }
+          New-Item -ItemType Directory -Path $miktexRoot -ErrorAction Stop | Out-Null
+          $archivePath = Join-Path $miktexRoot 'miktexsetup-5.5.0+1763023-x64.zip'
+          $logDirectory = Join-Path $miktexRoot 'logs'
+          New-Item -ItemType Directory -Path $logDirectory -ErrorAction Stop | Out-Null
+          $archiveSources = @(
+            [pscustomobject]@{
+              Name = 'CTAN mirror mirrors.ibiblio.org'
+              Uri = 'https://mirrors.ibiblio.org/CTAN/systems/win32/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip'
+            },
+            [pscustomobject]@{
+              Name = 'CTAN mirror ctan.net'
+              Uri = 'https://ctan.net/systems/windows/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip'
+            }
+          )
+          $downloadTimeoutSec = 45
+          $expectedArchiveSha256 = '0571e90f6d94353089b4f189fd82a532f9fe559a388c7e7f1102b14b3c1ae27d'
+          $archiveVerified = $false
+          foreach ($archiveSource in $archiveSources) {
+            if (Test-Path -LiteralPath $archivePath) {
+              Remove-Item -LiteralPath $archivePath -Force -ErrorAction Stop
+            }
+            try {
+              Write-Host "[MiKTeX] Downloading pinned setup archive from $($archiveSource.Name) (one attempt, $downloadTimeoutSec-second timeout)"
+              Invoke-WebRequest -Uri $archiveSource.Uri -OutFile $archivePath -TimeoutSec $downloadTimeoutSec -MaximumRedirection 3 -ErrorAction Stop
+              if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf) -or (Get-Item -LiteralPath $archivePath).Length -eq 0) {
+                throw 'MiKTeX setup archive download produced no file or an empty file'
+              }
+              $archiveSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($archiveSha256 -ne $expectedArchiveSha256) {
+                throw "MiKTeX setup archive SHA-256 mismatch from $($archiveSource.Name): $archiveSha256"
+              }
+              $archiveVerified = $true
+              Write-Host "[MiKTeX] Verified pinned setup archive SHA-256 from $($archiveSource.Name)"
+              break
+            } catch {
+              if (Test-Path -LiteralPath $archivePath) {
+                Remove-Item -LiteralPath $archivePath -Force -ErrorAction Stop
+              }
+              Write-Warning "[MiKTeX] Setup archive source $($archiveSource.Name) failed; trying the next official mirror if available: $($_.Exception.Message)"
+            }
+          }
+          if (-not $archiveVerified) {
+            throw 'MiKTeX setup archive download failed or failed SHA-256 verification at every pinned CTAN mirror'
+          }
+          
+          Write-Host '[MiKTeX] Extracting verified setup archive'
+          $setupDirectory = Join-Path $miktexRoot 'setup'
+          $installDirectory = Join-Path $miktexRoot 'portable'
+          New-Item -ItemType Directory -Path $setupDirectory, $installDirectory -ErrorAction Stop | Out-Null
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $setupDirectory
+          $setupExecutables = @(Get-ChildItem -LiteralPath $setupDirectory -Filter 'miktexsetup_standalone.exe' -File -Recurse)
+          if ($setupExecutables.Count -ne 1) {
+            throw "Expected exactly one miktexsetup_standalone.exe in the verified archive, found $($setupExecutables.Count)"
+          }
+          $setupPath = $setupExecutables[0].FullName
+
+          $packageMirrors = @(
+            [pscustomobject]@{
+              Name = 'latigo'
+              Uri = 'https://mirror.latigo.net/ctan/systems/win32/miktex/tm/packages/'
+            },
+            [pscustomobject]@{
+              Name = 'ibiblio'
+              Uri = 'https://mirrors.ibiblio.org/CTAN/systems/win32/miktex/tm/packages/'
+            }
+          )
+
+          $selectedPackageMirror = $null
+          $setupOptions = $null
+          $attempt = 0
+
+          foreach ($mirror in $packageMirrors) {
+            $attempt++
+            $candidateRepository = Join-Path $miktexRoot "repository-$attempt"
+            New-Item -ItemType Directory -Path $candidateRepository -ErrorAction Stop | Out-Null
+
+            $candidateOptions = @(
+              "--local-package-repository=$candidateRepository",
+              '--package-set=basic',
+              "--portable=$installDirectory",
+              '--use-registry=no',
+              '--modify-path=no'
+            )
+
+            $downloadArguments = @("--remote-package-repository=$($mirror.Uri)") + $candidateOptions + @('download')
+            $downloadLog = Join-Path $logDirectory "setup-download-$attempt.log"
+
+            Write-Host "[MiKTeX] Downloading portable basic package set from $($mirror.Name)"
+
+            try {
+              Invoke-CiBoundedProcess `
+                -FilePath $setupPath `
+                -Arguments $downloadArguments `
+                -LogPath $downloadLog `
+                -PortableRoot $installDirectory `
+                -TimeoutSeconds 180 | Out-Null
+
+              $setupOptions = $candidateOptions
+              $selectedPackageMirror = $mirror.Uri
+              break
+            } catch {
+              $stderrLog = "$downloadLog.stderr.log"
+              $stderrTail = if (Test-Path -LiteralPath $stderrLog) {
+                (Get-Content -LiteralPath $stderrLog -Tail 8) -join " | "
+              } else {
+                ""
+              }
+
+              Write-Warning "[MiKTeX] Package mirror $($mirror.Name) failed: $($_.Exception.Message); stderr: $stderrTail"
+            }
+          }
+
+          if (-not $selectedPackageMirror) {
+            throw 'MiKTeX basic package download failed at every configured package mirror; inspect setup-download-*.log.stderr.log'
+          }
+
+          Write-Host '[MiKTeX] Installing portable basic package set'
+
+          Invoke-CiBoundedProcess `
+            -FilePath $setupPath `
+            -Arguments ($setupOptions + @('install')) `
+            -LogPath (Join-Path $logDirectory 'setup-install.log') `
+            -PortableRoot $installDirectory `
+            -TimeoutSeconds 180 | Out-Null
+
+          $mpmExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'mpm.exe' -File -Recurse)
+          if ($mpmExecutables.Count -ne 1) {
+            throw "Expected exactly one installed mpm.exe, found $($mpmExecutables.Count)"
+          }
+
+          $mpmPath = $mpmExecutables[0].FullName
+
+          Write-Host "[MiKTeX] Using the successful package mirror: $selectedPackageMirror"
+
+          Invoke-CiBoundedProcess `
+            -FilePath $mpmPath `
+            -Arguments @("--set-repository=$selectedPackageMirror") `
+            -LogPath (Join-Path $logDirectory 'mpm-repository.log') `
+            -PortableRoot $installDirectory `
+            -TimeoutSeconds 60 | Out-Null
+
+          Write-Host '[MiKTeX] Updating online package catalog'
+
+          Invoke-CiBoundedProcess `
+            -FilePath $mpmPath `
+            -Arguments @('--update-db') `
+            -LogPath (Join-Path $logDirectory 'mpm-update-db.log') `
+            -PortableRoot $installDirectory `
+            -TimeoutSeconds 120 | Out-Null
+
+          $initexmfExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'initexmf.exe' -File -Recurse)
+          if ($initexmfExecutables.Count -ne 1) {
+            throw "Expected exactly one installed initexmf.exe, found $($initexmfExecutables.Count)"
+          }
+          $initexmfPath = $initexmfExecutables[0].FullName
+          Write-Host '[MiKTeX] Disabling automatic package installation for all TeX subprocesses'
+          Invoke-CiBoundedProcess -FilePath $initexmfPath -Arguments @('--set-config-value=[MPM]AutoInstall=f') -LogPath (Join-Path $logDirectory 'initexmf-disable-installer.log') -PortableRoot $installDirectory -TimeoutSeconds 30 | Out-Null
+          Write-Host '[MiKTeX] Verifying automatic package installation is disabled'
+          $verifyLog = Join-Path $logDirectory 'initexmf-verify-installer.log'
+          Invoke-CiBoundedProcess -FilePath $initexmfPath -Arguments @('--show-config-value=[MPM]AutoInstall') -LogPath $verifyLog -PortableRoot $installDirectory -TimeoutSeconds 30 | Out-Null
+          $installerState = (Get-Content -LiteralPath $verifyLog -Raw -ErrorAction Stop).Trim()
+          if ($installerState -notmatch '^(?i:false|f|0)$') {
+            throw "MiKTeX automatic package installation must be disabled, got '$installerState'"
+          }
+          Write-Host "[MiKTeX] Automatic package installation verified: $installerState"
+
+          Write-Host '[MiKTeX] Preparing explicit LuaLaTeX dependencies'
+
+          $miktexExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'miktex.exe' -File -Recurse)
+          if ($miktexExecutables.Count -ne 1) {
+            throw "Expected exactly one installed miktex.exe, found $($miktexExecutables.Count)"
+          }
+          $miktexPath = $miktexExecutables[0].FullName
+
+          $texmfInstall = Join-Path $installDirectory 'texmfs/install'
+          $requiredPackages = @(
+            [pscustomobject]@{
+              Id = 'unicode-data'
+              RelativePath = 'tex/generic/unicode-data/UnicodeData.txt'
+            },
+            [pscustomobject]@{
+              Id = 'lua-uni-algos'
+              RelativePath = 'tex/luatex/lua-uni-algos/lua-uni-data.lua'
+            }
+          )
+
+          foreach ($package in $requiredPackages) {
+            $requiredFile = Join-Path $texmfInstall $package.RelativePath
+
+            if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
+              Write-Host "[MiKTeX] Installing missing package: $($package.Id)"
+
+              Invoke-CiBoundedProcess `
+                -FilePath $miktexPath `
+                -Arguments @(
+                  '--disable-installer',
+                  'packages',
+                  'install',
+                  '--repository',
+                  $selectedPackageMirror,
+                  $package.Id
+                ) `
+                -LogPath (Join-Path $logDirectory "install-$($package.Id).log") `
+                -PortableRoot $installDirectory `
+                -TimeoutSeconds 120 | Out-Null
+            }
+
+            if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
+              throw "MiKTeX package $($package.Id) did not provide required file: $requiredFile"
+            }
+
+            if ((Get-Item -LiteralPath $requiredFile).Length -eq 0) {
+              throw "MiKTeX required file is empty: $requiredFile"
+            }
+
+            Write-Host "[MiKTeX] Verified package: $($package.Id)"
+          }
+
+          Write-Host '[MiKTeX] Refreshing filename database'
+
+          Invoke-CiBoundedProcess `
+            -FilePath $miktexPath `
+            -Arguments @('--disable-installer', 'fndb', 'refresh') `
+            -LogPath (Join-Path $logDirectory 'miktex-fndb-refresh.log') `
+            -PortableRoot $installDirectory `
+            -TimeoutSeconds 60 | Out-Null
+
+          $findtexmfExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'findtexmf.exe' -File -Recurse)
+          if ($findtexmfExecutables.Count -ne 1) {
+            throw "Expected exactly one installed findtexmf.exe, found $($findtexmfExecutables.Count)"
+          }
+          $findtexmfPath = $findtexmfExecutables[0].FullName
+
+          Write-Host '[MiKTeX] Verifying Lua module discovery'
+
+          $luaLookupLog = Join-Path $logDirectory 'findtexmf-lua-uni-data.log'
+
+          Invoke-CiBoundedProcess `
+            -FilePath $findtexmfPath `
+            -Arguments @('--file-type=lua', 'lua-uni-data.lua') `
+            -LogPath $luaLookupLog `
+            -PortableRoot $installDirectory `
+            -TimeoutSeconds 30 | Out-Null
+
+          $luaLookupPaths = @(
+            Get-Content -LiteralPath $luaLookupLog |
+              ForEach-Object { $_.Trim().Trim('"') } |
+              Where-Object {
+                $_ -and (Test-Path -LiteralPath $_ -PathType Leaf)
+              }
+          )
+
+          if ($luaLookupPaths.Count -lt 1) {
+            throw 'lua-uni-data.lua exists but is not discoverable by MiKTeX'
+          }
+
+          Write-Host "[MiKTeX] Verified Lua module: $($luaLookupPaths[0])"
+
+          $lualatexExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'lualatex.exe' -File -Recurse)
+          if ($lualatexExecutables.Count -ne 1) {
+            throw "Expected exactly one installed lualatex.exe, found $($lualatexExecutables.Count)"
+          }
+          $lualatexPath = $lualatexExecutables[0].FullName
+
+
+          $miktexExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'miktex.exe' -File -Recurse)
+          if ($miktexExecutables.Count -ne 1) {
+            throw "Expected exactly one installed miktex.exe, found $($miktexExecutables.Count)"
+          }
+          $miktexPath = $miktexExecutables[0].FullName
+          Write-Host '[MiKTeX] Explicitly building lualatex.fmt with automatic installation disabled'
+          Invoke-CiBoundedProcess -FilePath $miktexPath -Arguments @('--disable-installer', 'formats', 'build', '--engine=luahbtex', 'lualatex') -LogPath (Join-Path $logDirectory 'miktex-format-build-lualatex.log') -PortableRoot $installDirectory -TimeoutSeconds 180
+
+          $findtexmfExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'findtexmf.exe' -File -Recurse)
+          if ($findtexmfExecutables.Count -ne 1) {
+            throw "Expected exactly one installed findtexmf.exe, found $($findtexmfExecutables.Count)"
+          }
+          $findtexmfPath = $findtexmfExecutables[0].FullName
+          Write-Host '[MiKTeX] Verifying the LuaHBTeX lualatex.fmt exists before PDF prewarm'
+          $formatLookupOutput = Invoke-CiBoundedProcess -FilePath $findtexmfPath -Arguments @('--the-name-of-the-game=luahbtex', '--file-type=fmt', 'lualatex.fmt') -LogPath (Join-Path $logDirectory 'findtexmf-lualatex-format.log') -PortableRoot $installDirectory -TimeoutSeconds 30
+          $formatPath = @($formatLookupOutput | ForEach-Object { ($_ -as [string]).Trim().Trim('"') } | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1)
+          if ($formatPath.Count -ne 1 -or (Get-Item -LiteralPath $formatPath[0]).Length -eq 0) {
+            throw "MiKTeX did not create a non-empty LuaHBTeX lualatex.fmt: $($formatLookupOutput -join ' ')"
+          }
+
+          Write-Host '[MiKTeX] Verifying LuaLaTeX version with automatic installation disabled'
+          $versionOutput = Invoke-CiBoundedProcess -FilePath $lualatexPath -Arguments @('--disable-installer', '--version') -LogPath (Join-Path $logDirectory 'lualatex-version.log') -PortableRoot $installDirectory -TimeoutSeconds 30
+          $versionText = $versionOutput | Out-String
+          if ($versionText -notmatch '(?i)Lua(?:HB)?TeX') {
+            throw "MiKTeX LuaLaTeX executable failed version verification: $versionText"
+          }
+
+          $sourcePath = Join-Path $miktexRoot 'luaotfload-prewarm.tex'
+          @'
+          \documentclass{article}
+          \usepackage{fontspec}
+          \setmainfont{Latin Modern Roman}
+          \begin{document}
+          ModuTeX LuaLaTeX prerequisite verification.
+          \end{document}
+          '@ | Set-Content -LiteralPath $sourcePath -Encoding ascii
+          $prewarmDirectory = Join-Path $miktexRoot 'prewarm-output'
+          New-Item -ItemType Directory -Path $prewarmDirectory -ErrorAction Stop | Out-Null
+          $prewarmArguments = @(
+            '--disable-installer',
+            '-interaction=nonstopmode',
+            '-halt-on-error',
+            '-no-shell-escape',
+            "-output-directory=$prewarmDirectory",
+            $sourcePath
+          )
+          Write-Host '[MiKTeX] Prewarming fontspec and validating a real PDF with automatic installation disabled'
+          Invoke-CiBoundedProcess -FilePath $lualatexPath -Arguments $prewarmArguments -LogPath (Join-Path $logDirectory 'lualatex-prewarm.log') -PortableRoot $installDirectory -TimeoutSeconds 180
+          Save-CiPortableLogs -PortableRoot $installDirectory -LogDirectory $logDirectory
+          $prewarmPdf = Join-Path $prewarmDirectory 'luaotfload-prewarm.pdf'
+          if (-not (Test-Path -LiteralPath $prewarmPdf -PathType Leaf)) { throw 'LuaLaTeX prewarm did not produce its PDF' }
+          $pdfBytes = [System.IO.File]::ReadAllBytes($prewarmPdf)
+          if ($pdfBytes.Length -lt 5 -or [System.Text.Encoding]::ASCII.GetString($pdfBytes, 0, 5) -ne '%PDF-') {
+            throw 'LuaLaTeX prewarm output is not a PDF'
+          }
+          "lualatex=$lualatexPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Run Rust tests for desktop-tauri with serialized process cleanup
+        env:
+          MODUTEX_TEST_LUALATEX: ${{ steps.miktex.outputs.lualatex }}
+        run: >
+          cargo test --manifest-path apps/desktop-tauri/Cargo.toml --locked --release --target x86_64-pc-windows-msvc -p
+          modutex-desktop-tauri -- --test-threads=1
+
+          if ($LASTEXITCODE -ne 0) { throw "desktop-tauri tests failed with exit code $LASTEXITCODE" }
+
+          cargo test --manifest-path crates/document-core/Cargo.toml --locked --release --target x86_64-pc-windows-msvc
+          --all-targets --all-features
+
+          if ($LASTEXITCODE -ne 0) { throw "document-core tests failed with exit code $LASTEXITCODE" }
+      - name: Upload MiKTeX logs on failure
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: miktex-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/modutex-miktex-*/logs/**
+            ${{ runner.temp }}/modutex-miktex-*/prewarm-output/*.log
+          if-no-files-found: ignore
+          retention-days: 7

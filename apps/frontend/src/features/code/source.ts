@@ -6,7 +6,7 @@ import {
 	type SourceProjection,
 	type SourceSpan,
 	type SyntaxNode
-} from '@modutex/document-core';
+} from '../document-core/core.ts';
 import { insertionTransaction, rangeInsertionTarget, sourceState } from '../source-editor/state.ts';
 
 export interface CodeDraft {

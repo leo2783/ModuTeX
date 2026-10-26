@@ -1,4 +1,4 @@
-import { SourceDocument, parseSource, type SourcePatch, type SourceProjection } from '@modutex/document-core';
+import { SourceDocument, parseSource, type SourcePatch, type SourceProjection } from '../document-core/core.ts';
 
 export type ParserRequest =
 	| { readonly kind: 'reset'; readonly seq: number; readonly documentId: string; readonly version: number; readonly bytes: Uint8Array }
@@ -21,7 +21,7 @@ export class ParserEngine {
 			if (request.kind === 'reset') {
 				if (!(request.bytes instanceof Uint8Array) || !(request.bytes.buffer instanceof ArrayBuffer) || request.bytes.byteLength > 5 * 1024 * 1024 ||
 					(request.documentId === this.documentId && request.version < this.version)) throw new Error('REQUEST');
-				const next = SourceDocument.open(request.bytes);
+				const next = SourceDocument.openAt(request.bytes, request.documentId, request.version);
 				this.source = next; this.documentId = request.documentId; this.version = request.version;
 			} else {
 				if (!this.source || request.documentId !== this.documentId) throw new Error('STALE');
@@ -39,8 +39,7 @@ export class ParserEngine {
 				} else if (request.kind === 'parse') {
 					if (request.version !== this.version) throw new Error('STALE');
 					const source = this.source;
-					return { kind: 'projection', seq: request.seq, projection: parseSource({ documentId: this.documentId,
-						version: this.version, read: () => source.read() }) };
+					return { kind: 'projection', seq: request.seq, projection: parseSource(source) };
 				} else throw new Error('REQUEST');
 			}
 			return { kind: 'ack', seq: request.seq };

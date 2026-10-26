@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { EditorView as CodeMirrorView } from '@codemirror/view';
 import type { Node as VisualNode } from 'prosemirror-model';
 import { NodeSelection, TextSelection } from 'prosemirror-state';
-import { SourceDocument, parseSource, type SourceSpan } from '@modutex/document-core';
+import { SourceDocument, parseSource, type SourceSpan } from '../../src/features/document-core/core.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { createSourceState, historyTransaction, sourcePatchTransaction, sourceState } from '../../src/features/source-editor/state.ts';
 import { createTable, tableSource } from '../../src/features/tables/source.ts';
@@ -507,10 +507,10 @@ test('a caret hit-tested from mounted visual text edits the matching source offs
 		assert.equal(hitPosition, expectedPosition, 'DOM hit testing should resolve to the visible text caret');
 		const state = mounted.visual.view.state;
 		mounted.visual.view.dispatch(
-			state.tr.setSelection(TextSelection.create(state.doc, hitPosition)).insertText('🧪')
+			state.tr.setSelection(TextSelection.create(state.doc, hitPosition)).insertText('\ud840\udc00')
 		);
 
-		const editedText = sourceText.replace(text, 'Body before 🧪after');
+		const editedText = sourceText.replace(text, 'Body before \ud840\udc00after');
 		assert.equal(mounted.source().read(), editedText);
 		assert.deepEqual(mounted.source().toBytes(), bytesWithBom(editedText));
 		assert.deepEqual(undoAndSync(mounted).toBytes(), originalBytes);

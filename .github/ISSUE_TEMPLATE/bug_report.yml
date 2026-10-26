@@ -4,9 +4,6 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for filing an issue. For questions and general discussion, the
-        [Discord](https://discord.com/invite/7wanVzCBWf) is a better fit.
-
         If you are reporting an issue where you are not able to compile your document,
         please do the following first:
 

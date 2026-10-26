@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-import { SourceDocument } from '@modutex/document-core';
+import { SourceDocument } from '../document-core/core.ts';
 
 export const sourceLimit = 5 * 1024 * 1024;
 export { pdfLimit, readPdf } from './pdf-read.ts';
 
-export function readSourceBytes(bytes: Uint8Array): SourceDocument {
+export function readSourceBytes(
+	bytes: Uint8Array,
+	identity?: { readonly documentId: string; readonly version: number }
+): SourceDocument {
 	if (bytes.byteLength > sourceLimit) throw new Error('SOURCE_TOO_LARGE');
-	return SourceDocument.open(bytes);
+	return identity
+		? SourceDocument.openAt(bytes, identity.documentId, identity.version)
+		: SourceDocument.open(bytes);
 }
 export async function readSource(file: File): Promise<SourceDocument> {
 	if (!/\.tex$/i.test(file.name)) throw new Error('FILE_TYPE');

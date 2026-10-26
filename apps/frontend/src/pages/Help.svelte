@@ -1,12 +1,9 @@
 <script lang="ts">
-	import installation from '../../../../docs/user/INSTALLATION.md?raw';
-	import agpl from '../../../../LICENSE?raw';
-	import apache from '../../../../LICENSES/Apache-2.0.txt?raw';
+	import apache from '../../../../LICENSE?raw';
 	import tectonicNotice from '../../../../vendor/notices/TECTONIC-NOTICE.md?raw';
 	import tectonicLicense from '../../../../vendor/notices/TECTONIC-LICENSE.txt?raw';
-	import drawioNotice from '../../../../vendor/notices/DRAWIO-NOTICE.md?raw';
-	import drawioLicense from '../../../../vendor/notices/DRAWIO-LICENSE.txt?raw';
 	import frontendNotices from '../../THIRD_PARTY_NOTICES.md?raw';
+	import rustNotices from '../features/document-core/generated/RUST_THIRD_PARTY_NOTICES.md?raw';
 	import { helpTopics, type HelpTopic } from '../features/help/topics.ts';
 	import { helpText } from '../features/help/content.ts';
 	import { contentBlocks, inlineParts } from '../features/release-notes/content.ts';
@@ -19,7 +16,7 @@
 	let lastTopic: HelpTopic | null = null;
 
 	const title = $derived(t(helpTopics.find((item) => item.id === topic)?.title ?? '說明', helpTitles[topic] ?? 'Help'));
-	const document = $derived(topic === 'installation' ? installation : (locale === 'en' ? helpEnglish : helpText)[topic] ?? '');
+	const document = $derived((locale === 'en' ? helpEnglish : helpText)[topic] ?? '');
 	const loaded = $derived.by(() => { try { return { blocks: contentBlocks(document), failed: false }; } catch { return { blocks: [], failed: true }; } });
 
 	function handleTopicNavigation() {
@@ -40,8 +37,8 @@
 
 	const notices = $derived([
 		{ name: 'Tectonic 0.17.0', notice: tectonicNotice, license: tectonicLicense },
-		{ name: 'Draw.io 31.1.8', notice: drawioNotice, license: drawioLicense },
-		{ name: t('前端元件', 'Frontend components'), notice: '', license: frontendNotices }
+		{ name: t('前端元件', 'Frontend components'), notice: '', license: frontendNotices },
+		{ name: t('文件核心 Rust/WASM 相依套件', 'Document core Rust/WASM dependencies'), notice: '', license: rustNotices }
 	]);
 </script>
 {#snippet inline(text: string)}{#each inlineParts(text) as part}{#if part.kind === 'code'}<code>{part.text}</code>{:else if part.kind === 'link'}<a href={part.href}>{part.text}</a>{:else}{part.text}{/if}{/each}{/snippet}
@@ -60,8 +57,8 @@
 			<h1 id="help-heading" bind:this={heading} tabindex="-1">{title}</h1>
 			<a href="#/workbench">{t('返回工作台', 'Back to workbench')}</a>
 		</header>
-		{#if topic === 'agpl' || topic === 'apache'}
-			<pre class="license-text" lang="en">{topic === 'agpl' ? agpl : apache}</pre>
+		{#if topic === 'apache'}
+			<pre class="license-text" lang="en">{apache}</pre>
 		{:else if topic === 'notices'}
 			<p>{t('本頁收錄下列元件的附帶聲明與授權；不取代分發物中其他依賴、字型及素材的 notices。', 'These are the bundled notices and licenses for the listed components. Other dependencies, fonts and assets may have additional notices in the distribution.')}</p>
 			{#each notices as item}
@@ -74,7 +71,7 @@
 		{:else if loaded.failed}
 			<p role="alert">{t('無法讀取說明文件。請確認程式檔案完整。', 'Unable to read help. Check that the application files are complete.')}</p>
 		{:else}
-			<article lang={topic === 'installation' ? 'zh-Hant' : locale}>
+			<article lang={locale}>
 				{#each loaded.blocks as block}
 					{#if block.kind === 'heading'}<h2>{block.text}</h2>
 					{:else if block.kind === 'list'}<ul>{#each block.items as item}<li>{@render inline(item)}</li>{/each}</ul>

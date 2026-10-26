@@ -412,7 +412,7 @@ test('wide viewport (>960): renders sidebar, hides tabs, activates both panes, a
 		assert.equal(previewPane.dataset.inert, 'false');
 
 		// 4. Draggable separator must be rendered with proper accessibility attributes
-		const separator = container.querySelector<HTMLElement>('[role="separator"]');
+		const separator = container.querySelector<HTMLElement>('.workbench-editor-separator');
 		assert.ok(separator, 'Draggable separator must exist in wide mode');
 		assert.equal(separator.getAttribute('tabindex'), '0');
 		assert.equal(separator.getAttribute('aria-orientation'), 'vertical');
@@ -442,7 +442,7 @@ test('keyboard bounds and resizing respect container-derived 280px minimum const
 	flushSync();
 
 	try {
-		const separator = container.querySelector<HTMLElement>('[role="separator"]');
+		const separator = container.querySelector<HTMLElement>('.workbench-editor-separator');
 		assert.ok(separator);
 		const panesContainer = container.querySelector<HTMLElement>('.workbench-panes');
 		assert.ok(panesContainer);
@@ -510,6 +510,69 @@ test('keyboard bounds and resizing respect container-derived 280px minimum const
 	}
 });
 
+test('sidebar splitter clamps to pane bounds and supports keyboard, captured pointer, and resize', async () => {
+	assert.ok(dom, 'DOM must be initialized');
+	const container = dom.window.document.getElementById('app');
+	assert.ok(container);
+	container.innerHTML = '';
+
+	const instance = mount(WorkbenchTestHarness, { target: container, props: { forceMode: 'wide' } });
+	flushSync();
+
+	try {
+		const body = container.querySelector<HTMLElement>('.workbench-body');
+		const sidebar = container.querySelector<HTMLElement>('.workbench-sidebar-slot');
+		const separator = container.querySelector<HTMLElement>('.workbench-sidebar-separator');
+		assert.ok(body && sidebar && separator);
+		let width = 1000;
+		body.getBoundingClientRect = () => ({
+			width,
+			height: 600,
+			top: 20,
+			bottom: 620,
+			left: 100,
+			right: 100 + width,
+			x: 100,
+			y: 20,
+			toJSON: () => {}
+		});
+		dom.window.dispatchEvent(new dom.window.Event('resize'));
+		flushSync();
+
+		assert.equal(separator.getAttribute('aria-orientation'), 'vertical');
+		assert.equal(separator.getAttribute('aria-controls'), 'workbench-sidebar-slot');
+		assert.equal(separator.getAttribute('aria-valuemin'), '180');
+		assert.equal(separator.getAttribute('aria-valuemax'), '432');
+		separator.focus();
+		separator.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+		flushSync();
+		assert.equal(sidebar.style.flexBasis, '432px');
+		separator.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+		flushSync();
+		assert.equal(sidebar.style.flexBasis, '432px', 'keyboard movement stops at the remaining-workbench minimum');
+
+		let capturedPointer: number | null = null;
+		separator.setPointerCapture = (id) => { capturedPointer = id; };
+		separator.hasPointerCapture = (id) => capturedPointer === id;
+		separator.releasePointerCapture = (id) => { if (capturedPointer === id) capturedPointer = null; };
+		const PointerEventClass = Reflect.get(dom.window, 'PointerEvent') as typeof PointerEvent;
+		separator.dispatchEvent(new PointerEventClass('pointerdown', { pointerId: 41, button: 0, bubbles: true }));
+		separator.dispatchEvent(new PointerEventClass('pointermove', { pointerId: 41, clientX: 360, bubbles: true }));
+		flushSync();
+		assert.equal(sidebar.style.flexBasis, '260px', 'pointer position is measured from the workbench body origin');
+		separator.dispatchEvent(new PointerEventClass('pointerup', { pointerId: 41, bubbles: true }));
+		assert.equal(capturedPointer, null, 'pointerup releases capture');
+
+		width = 800;
+		dom.window.dispatchEvent(new dom.window.Event('resize'));
+		flushSync();
+		assert.equal(sidebar.style.flexBasis, '232px', 'window resize clamps the sidebar while preserving the main pane minimum');
+		assert.equal(separator.getAttribute('aria-valuemax'), '232');
+	} finally {
+		await unmount(instance);
+	}
+});
+
 test('pointer ownership ignores second pointer, releases capture cleanly, and cleans up on mid-drag narrow transition', async () => {
 	assert.ok(dom, 'DOM must be initialized');
 	const container = dom.window.document.getElementById('app');
@@ -535,7 +598,7 @@ test('pointer ownership ignores second pointer, releases capture cleanly, and cl
 	flushSync();
 
 	try {
-		const separator = container.querySelector<HTMLElement>('[role="separator"]');
+		const separator = container.querySelector<HTMLElement>('.workbench-editor-separator');
 		assert.ok(separator);
 		const panesContainer = container.querySelector<HTMLElement>('.workbench-panes');
 		assert.ok(panesContainer);
@@ -630,7 +693,8 @@ test('pointer ownership ignores second pointer, releases capture cleanly, and cl
 		harnessApi.setForceMode('narrow');
 		flushSync();
 
-		assert.equal(container.querySelector('[role="separator"]'), null, 'Separator must be destroyed in narrow mode');
+		assert.equal(container.querySelector('.workbench-editor-separator'), null, 'Editor/PDF separator must be destroyed in narrow mode');
+		assert.equal(container.querySelector('.workbench-sidebar-separator'), null, 'Sidebar separator must be destroyed in narrow mode');
 		assert.ok(releaseCalls.includes(30), 'releasePointerCapture must be called on mid-drag transition');
 	} finally {
 		await unmount(instance);

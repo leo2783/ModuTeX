@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { onDestroy, tick, untrack } from 'svelte';
+	import DragSeparator from './splitter/DragSeparator.svelte';
+	import { clampSplitterValue, splitterBounds } from './splitter/resize-logic.ts';
 	import { text, type Language } from '../i18n/text.ts';
 
 	let {
@@ -27,11 +29,14 @@
 	let isDragging = $state(false);
 	let activePointerId: number | null = null;
 	let capturedElement: HTMLElement | null = null;
+	let bodyContainer: HTMLElement | null = $state(null);
 	let panesContainer: HTMLElement | null = $state(null);
+	let sidebarWidth = $state(220);
+	let bodyWidth = $state(0);
 	let docTabButton: HTMLButtonElement | null = $state(null);
 	let pdfTabButton: HTMLButtonElement | null = $state(null);
-	let sidebarSlot: HTMLElement | null = null;
-	let separatorElement: HTMLElement | null = null;
+	let sidebarSlot: HTMLElement | null = $state(null);
+	let separatorElement: HTMLElement | null = $state(null);
 	let previousIsWide: boolean | null = null;
 	let pendingFocusRecovery: { readonly origin: HTMLElement } | null = null;
 	let disposed = false;
@@ -57,6 +62,11 @@
 	function clampRatio(ratio: number): number {
 		const { min, max } = getEffectiveBounds();
 		return Math.max(min, Math.min(max, ratio));
+	}
+
+	function getSidebarBounds() {
+		if (bodyWidth <= 0) return { min: 180, max: 420 };
+		return splitterBounds(bodyWidth, 180, 560, 8);
 	}
 
 	$effect(() => {
@@ -97,18 +107,26 @@
 		if (typeof window === 'undefined') return;
 
 		const handleResize = () => {
+			bodyWidth = bodyContainer?.getBoundingClientRect().width ?? bodyWidth;
 			splitRatio = clampRatio(splitRatio);
+			sidebarWidth = clampSplitterValue(sidebarWidth, getSidebarBounds());
+		};
+		const handleWindowResize = () => {
+			stopDragging();
+			handleResize();
 		};
 
 		let resizeObserver: ResizeObserver | null = null;
 		if (typeof ResizeObserver !== 'undefined' && panesContainer) {
 			resizeObserver = new ResizeObserver(handleResize);
 			resizeObserver.observe(panesContainer);
+			if (bodyContainer) resizeObserver.observe(bodyContainer);
 		}
-		window.addEventListener('resize', handleResize);
+		window.addEventListener('resize', handleWindowResize);
+		handleResize();
 
 		return () => {
-			window.removeEventListener('resize', handleResize);
+			window.removeEventListener('resize', handleWindowResize);
 			if (resizeObserver) resizeObserver.disconnect();
 		};
 	});
@@ -139,8 +157,9 @@
 		const wide = effectiveIsWide;
 		if (previousIsWide === true && !wide && typeof document !== 'undefined') {
 			const focused = document.activeElement;
+			const sidebarSeparator = bodyContainer?.querySelector('.workbench-sidebar-separator');
 			if (focused instanceof HTMLElement &&
-				(sidebarSlot?.contains(focused) || separatorElement?.contains(focused))) {
+				(sidebarSlot?.contains(focused) || separatorElement?.contains(focused) || sidebarSeparator?.contains(focused))) {
 				deferFocusRecovery(focused);
 			}
 		}
@@ -305,11 +324,22 @@
 		</div>
 	{/if}
 
-	<div class="workbench-body">
+	<div class="workbench-body" bind:this={bodyContainer}>
 		{#if effectiveIsWide}
-			<div class="workbench-sidebar-slot" bind:this={sidebarSlot}>
+			<div id="workbench-sidebar-slot" class="workbench-sidebar-slot" bind:this={sidebarSlot} style:flex-basis={`${sidebarWidth}px`}>
 				{@render sidebarContent()}
 			</div>
+			<DragSeparator
+				class="workbench-sidebar-separator"
+				value={sidebarWidth}
+				min={getSidebarBounds().min}
+				max={getSidebarBounds().max}
+				axis="vertical"
+				controls="workbench-sidebar-slot"
+				label={t('調整側欄寬度', 'Resize sidebar width')}
+				container={bodyContainer}
+				onChange={(value) => (sidebarWidth = value)}
+			/>
 		{/if}
 
 		<div
@@ -341,7 +371,7 @@
 					aria-valuenow={Math.round(splitRatio * 100)}
 					aria-valuemin={Math.round(getEffectiveBounds().min * 100)}
 					aria-valuemax={Math.round(getEffectiveBounds().max * 100)}
-					class="workbench-separator"
+					class="workbench-separator workbench-editor-separator"
 					bind:this={separatorElement}
 					class:dragging={isDragging}
 					onpointerdown={onPointerDown}
@@ -408,12 +438,11 @@
 		min-width: 0;
 	}
 	.workbench-sidebar-slot {
-		flex: 0 0 220px;
-		min-width: 180px;
-		max-width: 260px;
+		flex: 0 0 auto;
+		min-width: 0;
+		max-width: none;
 		display: flex;
 		flex-direction: column;
-		border-right: 1px solid var(--line);
 		background: var(--surface);
 	}
 	.workbench-panes {
@@ -448,13 +477,16 @@
 		display: none !important;
 	}
 	.workbench-separator {
-		width: 9px;
-		margin: 0 -4px;
+		width: 8px;
 		padding: 0;
 		border: none;
 		cursor: col-resize;
 		background: transparent;
-		position: relative;
+		position: absolute;
+		left: calc(var(--editor-width, 50%) - 4px);
+		top: 0;
+		bottom: 0;
+		flex: none;
 		z-index: 5;
 		touch-action: none;
 		user-select: none;
@@ -471,9 +503,9 @@
 		pointer-events: none;
 		transition: background-color 0.15s ease, transform 0.15s ease;
 	}
-	.workbench-separator:hover .separator-line,
-	.workbench-separator:focus-visible .separator-line,
-	.workbench-separator.dragging .separator-line {
+	.workbench-editor-separator:hover .separator-line,
+	.workbench-editor-separator:focus-visible .separator-line,
+	.workbench-editor-separator.dragging .separator-line {
 		transform: scaleX(3);
 		background: var(--accent);
 	}

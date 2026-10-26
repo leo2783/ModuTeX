@@ -1,0 +1,16 @@
+[[permission]]
+identifier = "allow-frontend-git"
+description = "Allows the trusted document window to query Git availability and use the narrow workspace Git commands."
+commands.allow = [
+  "frontend_git_availability",
+  "frontend_git_status",
+  "frontend_git_diff",
+  "frontend_git_log",
+  "frontend_git_show",
+  "frontend_git_init",
+  "frontend_git_stage",
+  "frontend_git_unstage",
+  "frontend_git_discard",
+  "frontend_git_commit",
+  "frontend_git_user_name",
+]

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { EditorState as VisualState } from 'prosemirror-state';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { projectVisual, visualPatches, advanceVisual, visualSchema, escapeVisualText } from '../../src/features/visual-editor/schema.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { createSourceState, sourceState, sourcePatchTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
@@ -34,7 +34,7 @@ test('continuous inline edits preserve wrappers, mixed EOL, surrounding bytes an
 	const original = source('\uFEFF% keep\r\nBefore \\textbf{bold\\%\r\ntext} after \\textit{italic}.');
 	let editor = createSourceState(original), projection = projectVisual(original, parseSource(original));
 	const beforeBytes = original.toBytes();
-	for (const [needle, inserted] of [['bold', 'bold &😀'], ['text', 'next'], ['italic', '斜體%'], ['Before', '前言']] as const) {
+	for (const [needle, inserted] of [['bold', 'bold &\ud840\udc00'], ['text', 'next'], ['italic', '斜體%'], ['Before', '前言']] as const) {
 		let position = -1;
 		projection.document.forEach((node, offset) => { const found = node.textContent.indexOf(needle); if (found >= 0 && node.type.name === 'source_block') position = offset + 1 + found; });
 		assert.ok(position >= 0);
@@ -50,7 +50,7 @@ test('continuous inline edits preserve wrappers, mixed EOL, surrounding bytes an
 		assert.ok(projection.document.eq(fresh.document));
 		assert.deepEqual(projection.segments, fresh.segments);
 	}
-	assert.equal(editor.field(sourceState).projection.document.read(), '% keep\r\n前言 \\textbf{bold \\&😀\\%\r\nnext} after \\textit{斜體\\%}.');
+	assert.equal(editor.field(sourceState).projection.document.read(), '% keep\r\n前言 \\textbf{bold \\&\ud840\udc00\\%\r\nnext} after \\textit{斜體\\%}.');
 	assert.equal(editor.field(sourceState).projection.document.profile.bom, true);
 	for (let i = 0; i < 4; i++) editor = historyTransaction(editor, 'undo')!.state;
 	assert.deepEqual(editor.field(sourceState).projection.document.toBytes(), beforeBytes);
@@ -62,7 +62,7 @@ test('ordinary transactions cannot silently change marks', () => {
 	assert.deepEqual(original.toBytes(), new TextEncoder().encode(original.read()));
 });
 test('cross-inline deletion/replacement commits separated patches without deleting TeX wrappers', () => {
-	for (const replacement of ['', '新%😀']) {
+	for (const replacement of ['', '新%\ud840\udc00']) {
 		const original = source('\uFEFFplain \\textbf{bold} tail \\textit{end}\r\n\\opaque{keep}% comment');
 		let editor = createSourceState(original), projection = projectVisual(original, parseSource(original));
 		const transaction = VisualState.create({ doc: projection.document }).tr.insertText(replacement, 3, 13);
@@ -113,7 +113,7 @@ test('multiple transaction steps use original coordinates and stale source recei
 test('empty formatted runs remain safely mapped and source-span shifts leave later styles editable', () => {
 	const original = source('X \\textbf{bold} Y \\textit{end}');
 	let editor = createSourceState(original), projection = projectVisual(original, parseSource(original));
-	for (const [from, to, text] of [[3, 7, ''], [3, 3, '😀%'], [9, 12, '新末尾']] as const) {
+	for (const [from, to, text] of [[3, 7, ''], [3, 3, '\ud840\udc00%'], [9, 12, '新末尾']] as const) {
 		const before = editor.field(sourceState).projection.document;
 		const transaction = VisualState.create({ doc: projection.document }).tr.insertText(text, from, to);
 		const patches = visualPatches(before, projection, transaction); editor = sourcePatchTransaction(editor, projection, patches).state;
@@ -122,7 +122,7 @@ test('empty formatted runs remain safely mapped and source-span shifts leave lat
 		assert.ok(projection.document.eq(projectVisual(next, parseSource(next)).document));
 	}
 	// A collapsed unmarked cursor uses the left visible run; the invisible empty wrapper stays intact.
-	assert.equal(editor.field(sourceState).projection.document.read(), 'X 😀\\%\\textbf{} Y \\textit{新末尾}');
+	assert.equal(editor.field(sourceState).projection.document.read(), 'X \ud840\udc00\\%\\textbf{} Y \\textit{新末尾}');
 	for (let i = 0; i < 3; i++) editor = historyTransaction(editor, 'undo')!.state;
 	assert.deepEqual(editor.field(sourceState).projection.document.toBytes(), original.toBytes());
 });

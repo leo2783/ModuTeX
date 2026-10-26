@@ -4,8 +4,8 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const REQUIRED_NODE = 'v24.19.0';
-const REQUIRED_NPM = '11.17.0';
+const REQUIRED_NODE = 'v24.22.1';
+const REQUIRED_NPM = '11.19.1';
 const REGISTRY = 'https://registry.npmjs.org/';
 const LOCKFILE_NAMES = new Set(['package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb']);
 const LIFECYCLE_NAMES = ['preinstall', 'install', 'postinstall', 'prepare'];
@@ -36,7 +36,21 @@ const PNPM_AUDIT_EXEMPT = new Set([
 	'docs/security/npm-dependency-review-2026-08-13.md',
 	'package-lock.json',
 	'scripts/verify-install-policy.mjs',
-	'scripts/tests/verify-install-policy.test.mjs'
+	// The Tauri packager lists forbidden package-manager lockfile names.
+	'scripts/verify-tauri-package.mjs',
+	'tests/scripts/verify-install-policy.test.mjs'
+]);
+// Exact repository-relative generated/output paths; similarly named source paths remain audited.
+const WALK_EXCLUDED_DIRECTORIES = new Set([
+	'.agents',
+	'.codex',
+	'.verification-artifacts',
+	'apps/desktop-tauri/target',
+	'apps/frontend/dist',
+	'apps/frontend/dist-tauri',
+	'landing/build',
+	'landing/.svelte-kit',
+	'landing/src/lib/paraglide',
 ]);
 
 const normalizeRelative = (value) => value.split(sep).join('/');
@@ -47,11 +61,19 @@ const inside = (parent, candidate) => {
 const readJson = async (path) => JSON.parse(await readFile(path, 'utf8'));
 const stableRecord = (value = {}) => Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
 
-async function walk(root, visit) {
+async function walk(root, visit, repositoryRoot = root) {
 	for (const entry of await readdir(root, { withFileTypes: true })) {
-		if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.worktrees') continue;
 		const path = resolve(root, entry.name);
-		if (entry.isDirectory()) await walk(path, visit);
+		const repositoryPath = normalizeRelative(relative(repositoryRoot, path));
+		if (
+			entry.name === '.git' ||
+			entry.name === 'node_modules' ||
+			entry.name === '.worktrees' ||
+			path === resolve(repositoryRoot, 'tests') ||
+			(entry.isDirectory() && WALK_EXCLUDED_DIRECTORIES.has(repositoryPath))
+		)
+			continue;
+		if (entry.isDirectory()) await walk(path, visit, repositoryRoot);
 		else if (entry.isFile()) await visit(path, entry.name);
 	}
 }
@@ -79,7 +101,16 @@ async function expandWorkspaceManifests(root, rootPackage, fail) {
 		}
 		try {
 			for (const entry of await readdir(basePath, { withFileTypes: true })) {
-				if (entry.isDirectory()) paths.add(`${base}/${entry.name}/package.json`);
+				if (!entry.isDirectory()) continue;
+				const manifestPath = `${base}/${entry.name}/package.json`;
+				try {
+					await lstat(resolve(root, manifestPath));
+					paths.add(manifestPath);
+				} catch (error) {
+					if (error?.code !== 'ENOENT') {
+						fail(`${manifestPath}: cannot read manifest (${error instanceof Error ? error.message : String(error)})`);
+					}
+				}
 			}
 		} catch (error) {
 			fail(`${base}: cannot enumerate workspace directory (${error instanceof Error ? error.message : String(error)})`);
@@ -291,8 +322,7 @@ export async function verifyInstallPolicy({
 	await walk(root, async (path, name) => {
 		const repositoryPath = normalizeRelative(relative(root, path));
 		if (LOCKFILE_NAMES.has(name)) foundLockfiles.push(repositoryPath);
-		if (!TEXT_EXTENSIONS.has(extname(name).toLowerCase()) || PNPM_AUDIT_EXEMPT.has(repositoryPath))
-			return;
+		if (!TEXT_EXTENSIONS.has(extname(name).toLowerCase()) || PNPM_AUDIT_EXEMPT.has(repositoryPath)) return;
 		if (/\bpnpm\b/i.test(await readFile(path, 'utf8'))) fail(`${repositoryPath}: stale pnpm reference is forbidden`);
 	});
 	foundLockfiles.sort();

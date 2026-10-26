@@ -1,14 +1,15 @@
 {
 	"name": "modutex-frontend",
-	"version": "0.2.1",
+	"version": "0.3.0",
 	"private": true,
 	"type": "module",
 	"license": "Apache-2.0",
 	"scripts": {
-		"build:shared": "npm run build --workspace=@modutex/document-core && npm run build --workspace=@modutex/frontend-contracts",
-		"predev": "npm run build:shared",
-		"prebuild": "npm run build:shared",
-		"pretest": "npm run build:shared",
+		"build:shared": "npm run build --workspace=@modutex/frontend-contracts",
+		"build:document-core": "node scripts/build-document-core.mjs",
+		"predev": "npm run build:shared && npm run build:document-core",
+		"prebuild": "npm run build:shared && npm run build:document-core",
+		"pretest": "npm run build:shared && npm run build:document-core",
 		"dev": "vite --host 127.0.0.1 --port 5174 --strictPort",
 		"build": "vite build",
 		"check": "svelte-check --tsconfig ./tsconfig.json",
@@ -16,25 +17,28 @@
 		"test:production": "vite build && node --test tests/production/*.test.mjs"
 	},
 	"dependencies": {
+		"@tauri-apps/api": "2.12.4",
+		"@tauri-apps/plugin-updater": "2.14.0",
 		"@codemirror/language": "6.12.3",
 		"@codemirror/language-data": "6.5.2",
 		"@codemirror/state": "6.7.0",
 		"@codemirror/view": "6.43.2",
 		"@lezer/highlight": "1.2.3",
-		"@modutex/document-core": "0.1.0",
-		"@modutex/frontend-contracts": "0.1.0",
+		"@modutex/frontend-contracts": "0.3.0",
 		"mathlive": "0.110.0",
 		"pdfjs-dist": "6.2.108",
 		"prosemirror-model": "1.25.12",
 		"prosemirror-state": "1.4.4",
 		"prosemirror-view": "1.42.6",
-		"svelte": "5.56.9"
+		"svelte": "5.56.9",
+		"@xterm/addon-fit": "0.10.0",
+		"@xterm/xterm": "5.5.0"
 	},
 	"devDependencies": {
 		"@sveltejs/vite-plugin-svelte": "7.3.0",
 		"jsdom": "29.1.1",
 		"svelte-check": "4.7.5",
 		"typescript": "6.0.3",
-		"vite": "8.2.1"
+		"vite": "8.3.5"
 	}
 }

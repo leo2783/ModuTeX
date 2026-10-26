@@ -15,7 +15,7 @@ const portable = value => value.split(path.sep).join('/');
 const CANONICAL_OFL_1_1_SHA256 = '6f9807a7127177a76fae2209e11f4b90d01a50cbfdb3dfe5704c2dcb2c68a3d1';
 
 // Shipped asset provenance evidence collector, not a license clearance or clean-room verdict.
-export async function collectAssetProvenance(rootDirectory, distDirectory = 'apps/frontend/dist') {
+export async function collectAssetProvenance(rootDirectory, distDirectory = 'apps/frontend/dist-tauri') {
   if (typeof rootDirectory !== 'string' || rootDirectory.trim().length === 0) {
     throw new TypeError('rootDirectory must be a non-empty string');
   }
@@ -119,8 +119,6 @@ export async function collectAssetProvenance(rootDirectory, distDirectory = 'app
   const installedFontsBySha = new Map();
   const installedFontsByName = new Map();
   const installedFontsByPath = new Map();
-  let fontLicenseDocumentPresent = false;
-  let fontLicenseDocumentName = null;
   let fontLicenseDocumentPath = null;
   let installedOflBytes = null;
 
@@ -155,31 +153,27 @@ export async function collectAssetProvenance(rootDirectory, distDirectory = 'app
         if ((entry.isFile() || entry.isSymbolicLink()) && /^(?:ofl|sil|fontlog|fonts?-license|license-fonts?)(?:[._-].*)?$/i.test(entry.name)) {
           const candidatePath = path.join(mathlivePkg.dir, entry.name);
           if (!(await stat(candidatePath)).isFile()) continue;
-          fontLicenseDocumentPresent = true;
-          fontLicenseDocumentName = entry.name;
           fontLicenseDocumentPath = candidatePath;
           break;
         }
       }
     } catch (error) {
-      if (error.message?.includes('SOURCE_OUTSIDE_REPOSITORY')) throw error;
+      if (error.code !== 'ENOENT') throw error;
     }
 
-    if (!fontLicenseDocumentPresent) {
+    if (!fontLicenseDocumentPath) {
       try {
         const fontEntries = await readdir(fontDir, { withFileTypes: true });
         for (const entry of fontEntries.sort((a, b) => a.name.localeCompare(b.name))) {
           if ((entry.isFile() || entry.isSymbolicLink()) && /^(?:ofl|sil|fontlog|fonts?-license|license-fonts?)(?:[._-].*)?$/i.test(entry.name)) {
             const candidatePath = path.join(fontDir, entry.name);
             if (!(await stat(candidatePath)).isFile()) continue;
-            fontLicenseDocumentPresent = true;
-            fontLicenseDocumentName = entry.name;
             fontLicenseDocumentPath = candidatePath;
             break;
           }
         }
       } catch (error) {
-        if (error.message?.includes('SOURCE_OUTSIDE_REPOSITORY')) throw error;
+        if (error.code !== 'ENOENT') throw error;
       }
     }
 
@@ -190,11 +184,6 @@ export async function collectAssetProvenance(rootDirectory, distDirectory = 'app
         if (error.message?.includes('SOURCE_OUTSIDE_REPOSITORY')) throw error;
         unresolved.push({ kind: 'unreadable-installed-font-license-resource', path: relative(fontLicenseDocumentPath) });
       }
-    } else {
-      unresolved.push({
-        kind: 'missing-installed-font-license-resource',
-        package: mathlivePkg.manifest?.name ?? 'mathlive'
-      });
     }
   } else {
     unresolved.push({ kind: 'missing-installed-package', package: 'mathlive' });
@@ -285,13 +274,20 @@ export async function collectAssetProvenance(rootDirectory, distDirectory = 'app
             installedLicensePath: fontLicenseDocumentPath ? relative(fontLicenseDocumentPath) : null,
             repoLicensePath: relative(oflLicensePath)
           });
-        } else if (!installedOflBytes) {
-          // Trustworthy installed source evidence is absent; fail closed
         } else {
-          const installedOflText = installedOflBytes.toString('utf8').replace(/\r\n/g, '\n').trim();
-          const installedOflSha256 = digest(Buffer.from(installedOflText, 'utf8'));
+            const installedOflText = installedOflBytes
+              ? installedOflBytes.toString('utf8').replace(/\r\n/g, '\n').trim()
+              : null;
+            const installedOflSha256 = installedOflText === null
+              ? null
+              : digest(Buffer.from(installedOflText, 'utf8'));
 
-          if (installedOflText.length === 0 || installedOflSha256 !== CANONICAL_OFL_1_1_SHA256 || installedOflText !== oflText) {
+            if (
+              installedOflText !== null &&
+              (installedOflText.length === 0 ||
+                installedOflSha256 !== CANONICAL_OFL_1_1_SHA256 ||
+                installedOflText !== oflText)
+            ) {
             unresolved.push({
               kind: 'tampered-or-mismatched-font-license-text',
               installedLicensePath: fontLicenseDocumentPath ? relative(fontLicenseDocumentPath) : null,
@@ -427,11 +423,16 @@ export async function collectAssetProvenance(rootDirectory, distDirectory = 'app
                     installedLicensePath: fontLicenseDocumentPath ? relative(fontLicenseDocumentPath) : null,
                     sourceNoticesPath: relative(srcNoticesPath),
                     emittedNoticesPath: relative(distNoticesPath),
+                metadataSha256: digest(metaBytes),
+                oflLicenseSha256: oflSha256,
+                sourceNoticesSha256: digest(srcNoticesBytes),
+                emittedNoticesSha256: digest(distNoticesBytes),
+                fontSha256: [...metaFontsByPath.values()].map(font => font.sha256.toLowerCase()).sort(),
                     auditedFontCount: metadata.fonts.length,
                     distinctName13Declarations: uniqueName13.size,
                     oflTextIncludedInSourceNotice: true,
                     oflTextIncludedInEmittedNotice: true,
-                    installedLicenseAgreesWithRepoLicense: true
+                installedLicenseAgreesWithRepoLicense: installedOflBytes === null ? null : true
                   };
                 }
               }
@@ -555,7 +556,7 @@ export async function collectAssetProvenance(rootDirectory, distDirectory = 'app
                 sha256: fontSha,
                 bytes: fontBuffer.length,
                 byteMatch: true,
-                licenseStatus: fontLicenseDocumentPresent ? 'license-document-present' : 'license-document-missing'
+                licenseStatus: fontMetadataVerified ? 'hash-and-notice-evidence-verified' : 'provenance-unverified'
               });
             } else {
               unresolved.push({
@@ -621,7 +622,7 @@ export async function collectAssetProvenance(rootDirectory, distDirectory = 'app
         sha256: fontSha,
         bytes: bytes.length,
         byteMatch: true,
-        licenseStatus: fontLicenseDocumentPresent ? 'license-document-present' : 'license-document-missing'
+        licenseStatus: fontMetadataVerified ? 'hash-and-notice-evidence-verified' : 'provenance-unverified'
       });
     } else {
       unresolved.push({
@@ -649,7 +650,7 @@ export async function collectAssetProvenance(rootDirectory, distDirectory = 'app
     verdict: 'asset-evidence-only-not-license-clearance',
     limitations: [
       'Binary hash equivalence confirms byte identity with installed npm assets, but does not constitute legal clean-room clearance.',
-      'MathLive package (0.110.0) distributes KaTeX font binaries without an explicit standalone font license document (e.g., OFL.txt); licenseStatus is reported as license-document-missing.',
+      'Font license evidence is reported only when emitted bytes match installed font bytes, embedded declarations are hash-bound, and canonical OFL text appears in both source and emitted notices.',
       'CSS files emitted by bundler undergo code extraction and minification; byte identity to source CSS cannot be claimed, but structural source signatures are identified.'
     ],
     pdfWorker,

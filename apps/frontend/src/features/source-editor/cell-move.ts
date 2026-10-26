@@ -1,5 +1,5 @@
 import type { EditorState } from '@codemirror/state';
-import { parseSource, type SourceSpan } from '@modutex/document-core';
+import { parseSource, type SourceSpan } from '../document-core/core.ts';
 import { projectVisual } from '../visual-editor/schema.ts';
 import { sourceState, sourcePatchTransaction } from './state.ts';
 
@@ -7,18 +7,28 @@ import { sourceState, sourcePatchTransaction } from './state.ts';
 export function cellMoveTransaction(state: EditorState, cells: readonly SourceSpan[], index: number, boundary: number) {
 	const source = state.field(sourceState).projection.document;
 	if (!Number.isInteger(index) || !Number.isInteger(boundary) || index < 0 || index >= cells.length || boundary < 0 || boundary > cells.length) throw new Error('CELL_MOVE_RANGE');
-	for (let i = 0; i < cells.length; i++) {
-		const span = cells[i]!;
-		if (span.documentId !== source.documentId || span.version !== source.version || span.from < 0 || span.to < span.from || span.to > source.length || i > 0 && cells[i - 1]!.to > span.from) throw new Error('STALE_CELL_MOVE');
+	const document = parseSource(source).nodes.find(node => node.kind === 'environment' && node.name === 'document');
+	const sorted = [...cells].sort((left, right) => left.from - right.from || left.to - right.to);
+	for (let i = 0; i < sorted.length; i++) {
+		const span = sorted[i]!;
+		if (span.documentId !== source.documentId || span.version !== source.version || span.from < 0 || span.to < span.from || span.to > source.length || i > 0 && sorted[i - 1]!.to > span.from) throw new Error('STALE_CELL_MOVE');
 	}
-	if (boundary === index || boundary === index + 1) return null;
-	const destination = boundary > index ? boundary - 1 : boundary;
-	const first = Math.min(index, destination), last = Math.max(index, destination);
+	const bodyIndexes = document?.content
+		? cells.flatMap((span, visualIndex) => span.from >= document.content!.from && span.to <= document.content!.to ? [visualIndex] : [])
+		: cells.map((_span, visualIndex) => visualIndex);
+	const bodyCells = bodyIndexes.map(visualIndex => cells[visualIndex]!);
+	if (bodyCells.some((span, i) => i > 0 && bodyCells[i - 1]!.to > span.from)) throw new Error('CELL_MOVE_BODY_ORDER');
+	const bodyIndex = bodyIndexes.indexOf(index);
+	if (bodyIndex < 0) throw new Error('CELL_MOVE_METADATA');
+	const bodyBoundary = bodyIndexes.filter(visualIndex => visualIndex < boundary).length;
+	if (bodyBoundary === bodyIndex || bodyBoundary === bodyIndex + 1) return null;
+	const destination = bodyBoundary > bodyIndex ? bodyBoundary - 1 : bodyBoundary;
+	const first = Math.min(bodyIndex, destination), last = Math.max(bodyIndex, destination);
 	const projected = projectVisual(source, parseSource(source)).document;
 	const paragraphs = new Set<string>(); projected.forEach(node => { if (node.type.name === 'source_block') paragraphs.add(`${node.attrs.from}:${node.attrs.to}`); });
-	const spans = cells.slice(first, last + 1), contents = spans.map(span => ({ text: source.read(span.from, span.to), paragraph: paragraphs.has(`${span.from}:${span.to}`) }));
-	const [moving] = contents.splice(index - first, 1); contents.splice(destination - first, 0, moving!);
-	let previousParagraph = first > 0 && paragraphs.has(`${cells[first - 1]!.from}:${cells[first - 1]!.to}`);
+	const spans = bodyCells.slice(first, last + 1), contents = spans.map(span => ({ text: source.read(span.from, span.to), paragraph: paragraphs.has(`${span.from}:${span.to}`) }));
+	const [moving] = contents.splice(bodyIndex - first, 1); contents.splice(destination - first, 0, moving!);
+	let previousParagraph = first > 0 && paragraphs.has(`${bodyCells[first - 1]!.from}:${bodyCells[first - 1]!.to}`);
 	const insert = contents.map((content, i) => {
 		// The original first paragraph has no \\par marker. When moved after text,
 		// supply that fence so two cells do not silently become one paragraph.

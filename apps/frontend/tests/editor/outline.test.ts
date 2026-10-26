@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Compartment, EditorState } from '@codemirror/state';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { sourceOutline } from '../../src/features/source-editor/outline.ts';
 import { createSourceState, sourceState, sourceNavigationTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
 
@@ -16,7 +16,7 @@ test('outline uses current parser spans, preserves hierarchy/order and ignores c
 });
 
 test('bounded outline title preview does not split Unicode scalars or interpret HTML', () => {
-	const source = SourceDocument.open(new TextEncoder().encode('\\section{' + 'a'.repeat(159) + '😀 <script>literal</script>}\n\\section{<img src=x>}'));
+	const source = SourceDocument.open(new TextEncoder().encode('\\section{' + 'a'.repeat(159) + '\ud840\udc00 <script>literal</script>}\n\\section{<img src=x>}'));
 	const entries = sourceOutline(source, parseSource(source));
 	assert.equal(entries[0]!.label, 'a'.repeat(159) + '…');
 	assert.equal(entries[1]!.label, '<img src=x>');

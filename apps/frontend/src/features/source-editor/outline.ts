@@ -1,4 +1,4 @@
-import { projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan } from '@modutex/document-core';
+import { projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan } from '../document-core/core.ts';
 
 export interface OutlineEntry { readonly label: string; readonly level: number; readonly span: SourceSpan }
 /** Read existing parser spans, never parse/serialize the source on each keystroke. */

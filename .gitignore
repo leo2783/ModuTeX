@@ -81,6 +81,8 @@ out
 # Nuxt.js build / generate output
 .nuxt
 dist
+apps/frontend/dist-tauri/
+apps/frontend/src/features/document-core/generated/
 .output
 
 # Gatsby files
@@ -167,15 +169,24 @@ electron/dist/
 electron/server-dist/
 roundtrip-diff/
 
-# Required source-controlled build and parser fixtures
-!build/
-build/*
-!build/license.txt
-!build/icons/
-!build/deb-after-install.tpl
-!apps/texpile-editor/tests/unit/lib/latex-log/fixtures/*.log
+# Local agent orchestration
+/scripts/agents/
+/tests/scripts/agents/
+/tests/scripts/luna-input.test.mjs
 
 # Local review configuration and disposable browser-test output.
 .cbmignore
 .impeccable/
 apps/frontend/.pdf-lifetime-*/
+docs/architecture/
+docs/design/
+docs/distribution/
+docs/AUDIT_REPORT_SECURITY_PERF_CI.md
+
+.agents/
+# Internal migration notes and review reports
+/apps/desktop-tauri/G1_PROBES.md
+/docs/licensing/tauri-origin.json
+/docs/*AUDIT*.md
+/docs/*REPORT*.md
+/docs/*PLAN*.md

@@ -1,0 +1,7 @@
+[[permission]]
+identifier = "allow-frontend-compile-config"
+description = "Allow the trusted document window to read and update persisted compile configuration."
+commands.allow = [
+    "frontend_get_compile_config",
+    "frontend_update_compile_config"
+]

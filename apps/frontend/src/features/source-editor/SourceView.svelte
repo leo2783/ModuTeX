@@ -1,14 +1,15 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
+	import { invoke, isTauri } from '@tauri-apps/api/core';
 	import type { ImageContext } from '../images/store.ts';
 	import { clipboardImage } from '../images/view.ts';
 	import { Compartment, EditorState } from '@codemirror/state';
 	import { EditorView, lineNumbers, highlightActiveLineGutter, keymap } from '@codemirror/view';
-	import type { SourceDocument, SourceProjection, SourceSpan, SourcePatch } from '@modutex/document-core';
+	import { type EditorProjection, type SourceDocument, type SourceProjection, type SourceSpan, type SourcePatch } from '../document-core/core.ts';
 	import { ParserClient } from '../parser/client.ts';
 	import { VisualEditor } from '../visual-editor/view.ts';
 	import 'prosemirror-view/style/prosemirror.css';
-	import { createSourceState, sourceState, sourcePatches, sourcePatchTransaction, historyTransaction, savedCheckpoint, insertionTarget, insertionTransaction, type InsertionTarget } from './state.ts';
+	import { createSourceState, sourceState, sourcePatches, sourcePatchTransaction, historyTransaction, savedCheckpoint, insertionTarget, insertionTransaction, metadataClearTransaction, type InsertionTarget } from './state.ts';
 	import { cellMoveTransaction } from './cell-move.ts';
 	import MathPanel from '../math/MathPanel.svelte';
 	import ToolbarIcon from '../../components/ToolbarIcon.svelte';
@@ -27,8 +28,10 @@
 	import { visualInsertionTransaction, paragraphInsertionTransaction } from './state.ts';
 	import { booktabsPlan, tableInsertionTransaction, withPackage, type PackagePlan } from '../tables/preamble.ts';
 	import { text, type Language } from '../../i18n/text.ts';
-	let { document, label, saving, savedVersion, active = true, fontSize = 14, showLineNumbers = true, wrapLines = false, navigation = null, diagnosticNavigation = null, locale = 'zh-Hant', imageContext = null, onChange, onRejected, onVisualRejected, onProjection, onParserFailure }: { document: SourceDocument; label: string;
+	let { document, label, saving, savedVersion, active = true, fontSize = 14, showLineNumbers = true, wrapLines = false, navigation = null, diagnosticNavigation = null, locale = 'zh-Hant', imageContext = null, formatWorkspaceId = null, viewMode = 'visual', onViewModeChange, onChange, onRejected, onVisualRejected, onProjection, onParserFailure }: { document: SourceDocument; label: string;
 		imageContext?: ((writing: boolean) => Promise<ImageContext>) | null;
+		formatWorkspaceId?: string | null;
+		viewMode?: 'source' | 'visual'; onViewModeChange?: (mode: 'source' | 'visual') => void;
 		active?: boolean; fontSize?: number; showLineNumbers?: boolean; wrapLines?: boolean; locale?: Language;
 		navigation?: { readonly span: SourceSpan; readonly sequence: number; readonly sourceOnly?: boolean } | null;
 		diagnosticNavigation?: DiagnosticNavigationRequest | null;
@@ -65,7 +68,22 @@
 	let visualTarget: HTMLDivElement;
 	let cellToolbarTarget: HTMLDivElement;
 	let visual = $state.raw<VisualEditor | null>(null);
-	let mode = $state<'source' | 'visual'>('visual');
+	let mode = $state<'source' | 'visual'>(untrack(() => viewMode));
+	$effect(() => {
+		const next = viewMode;
+		const changed = untrack(() => {
+			if (mode === next) return false;
+			mode = next;
+			return true;
+		});
+		if (changed && next === 'visual') untrack(() => syncVisualProjection());
+	});
+	function setMode(next: 'source' | 'visual') {
+		if (mode === next) return;
+		mode = next;
+		if (next === 'visual') syncVisualProjection();
+		onViewModeChange?.(next);
+	}
 	let visualStatus = $state<'ready' | 'updating'>('updating');
 	let parserFailed = $state(false);
 	let retryParser: (() => void) | null = null;
@@ -171,6 +189,37 @@
 	let parsed = $state.raw<SourceProjection | null>(null);
 	let pendingParagraph: { documentId: string; version: number; from: number } | null = null;
 	let pendingBlock: { documentId: string; version: number; to: number; kind: 'table_block' | 'math_block' } | null = null;
+	function syncVisualProjection() {
+		const view = editor, currentVisual = visual, projection = parsed;
+		if (mode !== 'visual' || !view || !currentVisual || !projection) return;
+		const current = view.state.field(sourceState).projection.document;
+		if (projection.documentId !== current.documentId || projection.version !== current.version) return;
+		currentVisual.sync(projection);
+		if (pendingParagraph) {
+			if (projection.documentId === pendingParagraph.documentId && projection.version === pendingParagraph.version) {
+				const from = pendingParagraph.from;
+				currentVisual.view.state.doc.forEach((node) => {
+					if (node.attrs.from === from && node.attrs.name === 'par') currentVisual.navigate({ documentId: projection.documentId, version: projection.version, from, to: node.attrs.to }, true);
+				});
+				pendingParagraph = null;
+			} else if (projection.documentId !== pendingParagraph.documentId || projection.version > pendingParagraph.version) {
+				pendingParagraph = null;
+			}
+		}
+		if (pendingBlock) {
+			if (projection.documentId === pendingBlock.documentId && projection.version === pendingBlock.version) {
+				let selected: SourceSpan | null = null;
+				const request = pendingBlock;
+				currentVisual.view.state.doc.forEach((node) => {
+					if (node.type.name === request.kind && node.attrs.to <= request.to) selected = { documentId: projection.documentId, version: projection.version, from: node.attrs.from, to: node.attrs.to };
+				});
+				if (selected) currentVisual.navigate(selected);
+				pendingBlock = null;
+			} else if (projection.documentId !== pendingBlock.documentId || projection.version > pendingBlock.version) {
+				pendingBlock = null;
+			}
+		}
+	}
 	function focusInsertedBlock(kind: 'table_block' | 'math_block') {
 		if (!editor || mode !== 'visual') return;
 		const projection = editor.state.field(sourceState).projection;
@@ -199,6 +248,240 @@
 	let handledDiagnosticNavigation = 0;
 	let scheduledDiagnosticNavigation = 0;
 	let disposed = false;
+	const FORMAT_SOURCE_MAX_BYTES = 5 * 1024 * 1024;
+	let sourceFormatting = $state(false);
+	let sourceFormatMessage = $state<string | null>(null);
+	let sourceFormatSequence = 0;
+	function boundedUtf8Length(value: string, maximum: number): number | null {
+		let bytes = 0;
+		for (let index = 0; index < value.length; index++) {
+			const code = value.charCodeAt(index);
+			if (code <= 0x7f) bytes++;
+			else if (code <= 0x7ff) bytes += 2;
+			else if (code >= 0xd800 && code <= 0xdbff && index + 1 < value.length) {
+				const next = value.charCodeAt(index + 1);
+				if (next >= 0xdc00 && next <= 0xdfff) { bytes += 4; index++; }
+				else bytes += 3;
+			} else bytes += 3;
+			if (bytes > maximum) return null;
+		}
+		return bytes;
+	}
+	function splitsSourceBoundary(value: string, offset: number): boolean {
+		if (offset <= 0 || offset >= value.length) return false;
+		const previous = value.charCodeAt(offset - 1), current = value.charCodeAt(offset);
+		return (previous >= 0xd800 && previous <= 0xdbff && current >= 0xdc00 && current <= 0xdfff) ||
+			(previous === 0x0d && current === 0x0a);
+	}
+	function minimalSourcePatch(before: string, after: string): SourcePatch | null {
+		if (before === after) return null;
+		const commonLength = Math.min(before.length, after.length);
+		let prefix = 0;
+		while (prefix < commonLength && before.charCodeAt(prefix) === after.charCodeAt(prefix)) prefix++;
+		if (splitsSourceBoundary(before, prefix) || splitsSourceBoundary(after, prefix)) prefix--;
+		let suffix = 0;
+		while (
+			suffix < before.length - prefix && suffix < after.length - prefix &&
+			before.charCodeAt(before.length - suffix - 1) === after.charCodeAt(after.length - suffix - 1)
+		) suffix++;
+		while (suffix > 0 &&
+			(splitsSourceBoundary(before, before.length - suffix) || splitsSourceBoundary(after, after.length - suffix))) suffix--;
+		const to = before.length - suffix, afterTo = after.length - suffix;
+		return { from: prefix, to, insert: after.slice(prefix, afterTo), expected: before.slice(prefix, to) };
+	}
+	function sourceFormatFailure(error: unknown): string {
+		const detail = typeof error === 'string' ? error : error instanceof Error ? error.message : '';
+		if (detail.includes('LATEXINDENT_NOT_FOUND')) {
+			return t('找不到 latexindent.exe。請安裝 TeX Live 或 MiKTeX，並將 latexindent.exe 加入 PATH。', 'latexindent.exe was not found. Install TeX Live or MiKTeX and add latexindent.exe to PATH.');
+		}
+		if (detail.includes('SOURCE_FORMAT_LIMIT')) {
+			return t('文件超過 5 MiB，未變更原始碼。', 'Source exceeds 5 MiB. The source was not changed.');
+		}
+		if (detail.includes('SOURCE_FORMAT_BUSY')) {
+			return t('格式化工具正在使用中，請稍後再試。', 'The formatter is busy. Try again shortly.');
+		}
+		return t('格式化失敗，原始碼未變更。', 'Formatting failed. The source was not changed.');
+	}
+	async function formatSource() {
+		const view = editor;
+		const workspaceId = formatWorkspaceId;
+		if (!view || !workspaceId || !isTauri() || mode !== 'source' || !active || saving ||
+			tool !== null || view.state.readOnly || sourceFormatting) return;
+		const source = view.state.field(sourceState).projection.document;
+		const sourceText = source.read();
+		const documentId = source.documentId;
+		const documentVersion = source.version;
+		const selection = view.state.selection.ranges.map((range) => [range.anchor, range.head] as const);
+		if (!Number.isSafeInteger(documentVersion) || documentVersion < 0 ||
+			boundedUtf8Length(sourceText, FORMAT_SOURCE_MAX_BYTES) === null) {
+			sourceFormatMessage = t('文件超過 5 MiB，未變更原始碼。', 'Source exceeds 5 MiB. The source was not changed.');
+			return;
+		}
+		const sequence = ++sourceFormatSequence;
+		sourceFormatting = true;
+		sourceFormatMessage = null;
+		try {
+			const receipt = await invoke<unknown>('frontend_format_latex', {
+				request: { workspaceId, text: sourceText, documentId, documentVersion }
+			});
+			if (disposed || sequence !== sourceFormatSequence) return;
+			if (typeof receipt !== 'object' || receipt === null || Array.isArray(receipt)) {
+				throw new Error('INVALID_FORMAT_RECEIPT');
+			}
+			const result = receipt as Record<string, unknown>;
+			if (result.documentId !== documentId || result.documentVersion !== documentVersion ||
+				typeof result.formatted !== 'string' ||
+				boundedUtf8Length(result.formatted, FORMAT_SOURCE_MAX_BYTES) === null) {
+				throw new Error('INVALID_FORMAT_RECEIPT');
+			}
+			const formatted = result.formatted.replace(/\r\n|\r|\n/g, source.profile.preferredLineEnding);
+			if (boundedUtf8Length(formatted, FORMAT_SOURCE_MAX_BYTES) === null) {
+				throw new Error('SOURCE_FORMAT_LIMIT');
+			}
+			const current = view.state.field(sourceState).projection.document;
+			const currentSelection = view.state.selection.ranges;
+			const selectionMatches = currentSelection.length === selection.length &&
+				currentSelection.every((range, index) =>
+					range.anchor === selection[index]?.[0] && range.head === selection[index]?.[1]);
+			if (editor !== view || document.documentId !== documentId || document.version !== documentVersion ||
+				current.documentId !== documentId || current.version !== documentVersion ||
+				formatWorkspaceId !== workspaceId ||
+				!selectionMatches || mode !== 'source' || !active || saving || tool !== null ||
+				view.state.readOnly || !isTauri()) {
+				sourceFormatMessage = t('內容或選取位置已變更，格式化結果未套用。', 'The source or selection changed. The formatting result was not applied.');
+				return;
+			}
+			const patch = minimalSourcePatch(sourceText, formatted);
+			if (patch) {
+				const transaction = sourcePatchTransaction(view.state, { documentId, version: documentVersion }, [{
+					...patch
+				}]);
+				view.dispatch(transaction);
+			}
+		} catch (error) {
+			if (!disposed && sequence === sourceFormatSequence && editor === view) {
+				sourceFormatMessage = sourceFormatFailure(error);
+			}
+		} finally {
+			if (!disposed && sequence === sourceFormatSequence) sourceFormatting = false;
+		}
+	}
+	interface CurrentMcpEditor {
+		readonly view: EditorView;
+		readonly projection: EditorProjection;
+		readonly source: SourceDocument;
+	}
+	function currentMcpEditor(
+		documentId: string,
+		documentVersion: number,
+		editable = false
+	): CurrentMcpEditor | null {
+		const view = editor;
+		if (!view || disposed || view !== editor) return null;
+		try {
+			const projection = view.state.field(sourceState).projection;
+			const current = projection.document;
+			if (document.documentId !== current.documentId || document.version !== current.version) return null;
+			if (current.documentId !== documentId || current.version !== documentVersion) return null;
+			if (editable && (!active || saving || tool !== null || view.state.readOnly)) return null;
+			return { view, projection, source: current };
+		} catch {
+			return null;
+		}
+	}
+	function sourceOffsetAtEditorPosition(
+		projection: EditorProjection,
+		position: number,
+		sourceLength: number
+	): number | null {
+		try {
+			const offset = projection.toSource(position);
+			return Number.isSafeInteger(offset) && offset >= 0 && offset <= sourceLength
+				? offset
+				: null;
+		} catch {
+			return null;
+		}
+	}
+	function sourceLineColumn(sourceText: string, offset: number): { readonly line: number; readonly column: number } | null {
+		if (!Number.isSafeInteger(offset) || offset < 0 || offset > sourceText.length) return null;
+		let line = 1;
+		let column = 1;
+		for (let index = 0; index < offset;) {
+			const code = sourceText.charCodeAt(index);
+			if (code === 0x0d) {
+				index += index + 1 < offset && sourceText.charCodeAt(index + 1) === 0x0a ? 2 : 1;
+				line++;
+				column = 1;
+			} else if (code === 0x0a) {
+				index++;
+				line++;
+				column = 1;
+			} else {
+				index++;
+				column++;
+			}
+		}
+		return Object.freeze({ line, column });
+	}
+	export function getEditorSelection(
+		documentId: string,
+		documentVersion: number
+	): {
+		readonly documentId: string;
+		readonly documentVersion: number;
+		readonly cursor: { readonly line: number; readonly column: number };
+		readonly selection: {
+			readonly start: { readonly line: number; readonly column: number };
+			readonly end: { readonly line: number; readonly column: number };
+		} | null;
+	} | null {
+		const current = currentMcpEditor(documentId, documentVersion);
+		if (!current) return null;
+		try {
+			const sourceText = current.source.read();
+			const selected = current.view.state.selection.main;
+			const cursorOffset = sourceOffsetAtEditorPosition(current.projection, selected.head, sourceText.length);
+			const cursor = cursorOffset === null ? null : sourceLineColumn(sourceText, cursorOffset);
+			if (!cursor) return null;
+			let selection: {
+				readonly start: { readonly line: number; readonly column: number };
+				readonly end: { readonly line: number; readonly column: number };
+			} | null = null;
+			if (!selected.empty) {
+				const anchor = sourceOffsetAtEditorPosition(current.projection, selected.anchor, sourceText.length);
+				const head = sourceOffsetAtEditorPosition(current.projection, selected.head, sourceText.length);
+				if (anchor === null || head === null) return null;
+				const start = sourceLineColumn(sourceText, Math.min(anchor, head));
+				const end = sourceLineColumn(sourceText, Math.max(anchor, head));
+				if (!start || !end) return null;
+				selection = Object.freeze({ start, end });
+			}
+			if (editor !== current.view || disposed) return null;
+			return Object.freeze({
+				documentId,
+				documentVersion,
+				cursor,
+				selection
+			});
+		} catch {
+			return null;
+		}
+	}
+	export function applySourcePatches(
+		identity: { readonly documentId: string; readonly version: number },
+		patches: readonly SourcePatch[]
+	): boolean {
+		if (!editor || disposed || saving || tool !== null) return false;
+		try {
+			const current = editor.state.field(sourceState).projection.document;
+			if (current.documentId !== identity.documentId || current.version !== identity.version) return false;
+			editor.dispatch(sourcePatchTransaction(editor.state, identity, patches, false, true));
+			return true;
+		} catch {
+			return false;
+		}
+	}
 	function completeDiagnosticNavigation(sequence: number) {
 		handledDiagnosticNavigation = Math.max(handledDiagnosticNavigation, sequence);
 	}
@@ -436,6 +719,14 @@
 			return;
 		}
 		if (action === 'delete') {
+			try {
+				const cleared = metadataClearTransaction(editor.state, span);
+				if (cleared.value && !window.confirm(t('確定要清除此欄位嗎？', 'Clear this field?'))) return false;
+				if (cleared.transaction) editor.dispatch(cleared.transaction);
+				toolError = null;
+				visual?.focus();
+				return true;
+			} catch (error) { if (error instanceof Error && error.message === 'METADATA_RANGE') { /* Not a metadata cell. */ } else { toolError = 'insert-stale'; return false; } }
 			const content = current.read(span.from, span.to);
 			const isNonEmpty = content.trim().length > 0 && content.trim() !== '\\par';
 			if (isNonEmpty && !window.confirm(t('確定要刪除此區塊嗎？', 'Delete this cell?'))) {
@@ -500,9 +791,9 @@
 		handledNavigation = navigation.sequence;
 		try {
 			editor.dispatch(sourceNavigationTransaction(editor.state, navigation.span));
-			if (navigation.sourceOnly) mode = 'source';
+			if (navigation.sourceOnly) setMode('source');
 			if (mode === 'source') editor.focus();
-			else if (!visual?.navigate(navigation.span)) { mode = 'source'; editor.focus(); }
+			else if (!visual?.navigate(navigation.span)) { setMode('source'); editor.focus(); }
 		} catch { toolError = 'navigation'; }
 	});
 	$effect(() => {
@@ -529,7 +820,7 @@
 				scrollIntoView: true,
 				userEvent: 'select.diagnostic'
 			}));
-			mode = 'source';
+			setMode('source');
 			toolError = null;
 			focusAfterDiagnostic(view, request);
 		} catch {
@@ -546,19 +837,12 @@
 			try {
 				return new ParserClient(new Worker(new URL('../parser/parser.worker.ts', import.meta.url), { type: 'module' }),
 					source, (projection) => {
-						parsed = projection; editor?.dispatch({ effects: foldProjection.of(projection) }); visual?.sync(projection); onProjection(projection);
-						if (pendingParagraph && projection.documentId === pendingParagraph.documentId && projection.version === pendingParagraph.version) {
-							const from = pendingParagraph.from;
-							visual?.view.state.doc.forEach((node) => { if (node.attrs.from === from && node.attrs.name === 'par') visual?.navigate({ documentId: projection.documentId, version: projection.version, from, to: node.attrs.to }, true); });
-							pendingParagraph = null;
-						}
-						if (pendingBlock && projection.documentId === pendingBlock.documentId && projection.version === pendingBlock.version) {
-							let selected: SourceSpan | null = null;
-							const request = pendingBlock;
-							visual?.view.state.doc.forEach((node) => { if (node.type.name === request.kind && node.attrs.to <= request.to) selected = { documentId: projection.documentId, version: projection.version, from: node.attrs.from, to: node.attrs.to }; });
-							if (selected) visual?.navigate(selected);
-							pendingBlock = null;
-						}
+						const current = editor?.state.field(sourceState).projection.document ?? initial;
+						if (projection.documentId !== current.documentId || projection.version !== current.version) return;
+						parsed = projection;
+						editor?.dispatch({ effects: foldProjection.of(projection) });
+						onProjection(projection);
+						syncVisualProjection();
 					}, failParser);
 			} catch { failParser(); return null; }
 		};
@@ -659,9 +943,12 @@
 <div class="source-view" style:--abstract-label={'"' + t('摘要', 'Abstract') + '"'}>
 	<div class="insert-bar">
 		<div class="modes" role="group" aria-label={t('編輯模式', 'Editing mode')}>
-			<button class="icon-tool" title={t('視覺化', 'Visual')} aria-label={t('視覺化', 'Visual')} aria-pressed={mode === 'visual'} onclick={() => { if (tool !== null) closeTool(); mode = 'visual'; visual?.focus(); }}><ToolbarIcon kind="visual" /></button>
-			<button class="icon-tool" title={t('原始碼', 'Source')} aria-label={t('原始碼', 'Source')} aria-pressed={mode === 'source'} onclick={() => { if (tool !== null) closeTool(); mode = 'source'; editor?.focus(); }}><ToolbarIcon kind="source" /></button>
+			<button class="icon-tool" title={t('視覺化', 'Visual')} aria-label={t('視覺化', 'Visual')} aria-pressed={mode === 'visual'} onclick={() => { if (tool !== null) closeTool(); setMode('visual'); visual?.focus(); }}><ToolbarIcon kind="visual" /></button>
+			<button class="icon-tool" title={t('原始碼', 'Source')} aria-label={t('原始碼', 'Source')} aria-pressed={mode === 'source'} onclick={() => { if (tool !== null) closeTool(); setMode('source'); editor?.focus(); }}><ToolbarIcon kind="source" /></button>
 		</div>
+		{#if mode === 'source' && formatWorkspaceId && isTauri()}
+			<button class="text-button" title={t('格式化 LaTeX', 'Format LaTeX')} aria-label={t('格式化 LaTeX', 'Format LaTeX')} onclick={() => void formatSource()} disabled={!active || saving || tool !== null || sourceFormatting}>{sourceFormatting ? t('格式化中', 'Formatting') : t('格式化 LaTeX', 'Format LaTeX')}</button>
+		{/if}
 		<div class="tool-group" role="group" aria-label={t('文字格式', 'Text format')}>
 			<details class="math-menu structure-menu">
 				<summary aria-label={t('文字層級', 'Text structure')} title={t('文字層級', 'Text structure')}>{t('文字層級', 'Text structure')}<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="m2 4 3 3 3-3" fill="none" stroke="currentColor" /></svg></summary>
@@ -699,6 +986,7 @@
 			<button class="icon-tool" title={t('程式碼區塊', 'Code block')} aria-label={t('程式碼區塊', 'Code block')} onclick={() => openCode()} disabled={!active || saving || tool !== null}><ToolbarIcon kind="code" /></button>
 		</div>
 	</div>
+	{#if sourceFormatMessage}<p class="tool-error" role="alert">{sourceFormatMessage}</p>{/if}
 	{#if mode !== 'visual'}<div class="table-edit"><button class="text-button" onclick={editEquation} disabled={!active || saving || tool !== null || !parsed}>{t('編輯游標所在公式', 'Edit equation at cursor')}</button><button class="text-button" onclick={editTable} disabled={saving || tool !== null}>{t('編輯游標所在表格', 'Edit table at cursor')}</button><button class="text-button" onclick={() => editor && foldCode(editor)} disabled={!active || saving || tool !== null || !parsed}>{t('折疊目前區段', 'Fold current section')}</button><button class="text-button" onclick={() => editor && unfoldAll(editor)} disabled={!active || tool !== null}>{t('展開全部', 'Unfold all')}</button></div>{/if}
 	{#if toolError}<p class="tool-error" role="alert">{toolMessage(toolError)}</p>{/if}
 	<div class="cell-actions-bar" bind:this={cellToolbarTarget} hidden={mode !== 'visual'}></div>
@@ -763,17 +1051,19 @@
 		min-height: 0;
 	}
 	.source-view { height: 100%; display: flex; flex-direction: column; min-height: 0; }
-	.insert-bar { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-	.tool-group { display: flex; gap: 4px; }
+	.insert-bar { height: 40px; min-height: 40px; flex: none; padding: 1px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+	.insert-bar:has(.math-menu[open]) { overflow: visible; }
+	.insert-bar > * { flex: none; }
+	.tool-group { display: flex; flex: none; align-items: center; gap: 4px; white-space: nowrap; }
 	.tool-group { padding-inline-start: 8px; border-inline-start: 1px solid var(--line); }
 	.structure-menu summary { gap: 12px; padding: 5px 8px; } .structure-options button { display: flex; align-items: center; gap: 12px; min-height: 36px; } .structure-mark { color: var(--muted); width: 24px; font-size: 12px; font-weight: 600; }
 	.visual :global(.source-block[data-source-role='abstract']) { max-width: 70ch; margin-inline: auto; padding-block: 8px; }
 	.visual :global(.source-block[data-source-role='abstract']::before) { content: var(--abstract-label); display: block; text-align: center; font-weight: 600; margin-bottom: 8px; }
 	.visual :global(.source-block[data-structure='title']) { text-align: center; font-size: 28px; }
-	.icon-tool { width: 36px; height: 36px; padding: 7px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border-color: transparent; }
+	.icon-tool { width: 36px; min-width: 36px; height: 36px; min-height: 36px; padding: 7px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border-color: transparent; }
 	.table-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--line); }
 	.parser-error { padding: 4px 12px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--ink); }
-	.modes { display: flex; flex-wrap: wrap; gap: 4px; }
+	.modes { display: flex; flex: none; flex-wrap: nowrap; gap: 4px; }
 	.modes [aria-pressed='true'] { background: var(--selection); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 	.editor-surfaces { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); }
 	.visual { min-height: 0; overflow: auto; padding: 24px; }

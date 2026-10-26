@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SourceDocument } from '@modutex/document-core';
+import { SourceDocument } from '../../src/features/document-core/core.ts';
 import { matrixSize, resizeMatrix, matrixSource, equationSource } from '../../src/features/math/source.ts';
 import { createSourceState, sourceState, insertionTarget, insertionTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
 

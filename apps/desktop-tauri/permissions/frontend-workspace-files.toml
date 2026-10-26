@@ -1,0 +1,19 @@
+[[permission]]
+identifier = "allow-frontend-workspace-files"
+description = "Allow owner-fenced native WorkspaceFiles operations for admitted workspaces."
+commands.allow = [
+    "frontend_workspace_files_tree",
+    "frontend_workspace_files_scan",
+    "frontend_workspace_files_search",
+    "frontend_workspace_files_cancel",
+    "frontend_workspace_files_stat",
+    "frontend_workspace_files_create_file",
+    "frontend_workspace_files_create_directory",
+    "frontend_workspace_files_move",
+    "frontend_workspace_files_rename",
+    "frontend_workspace_files_copy",
+    "frontend_workspace_files_recycle",
+    "frontend_workspace_files_delete",
+    "frontend_workspace_files_undo_delete",
+    "frontend_workspace_files_reveal",
+]

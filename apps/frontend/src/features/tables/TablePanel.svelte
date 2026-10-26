@@ -162,7 +162,7 @@
 				<button type="button" class="column-boundary" aria-label={t('調整第 ' + (index + 1) + ' 與第 ' + (index + 2) + ' 列的寬度', 'Adjust width between column ' + (index + 1) + ' and column ' + (index + 2))} title={t('拖曳調整欄寬；方向鍵每次調整 1%，Shift 調整 5%', 'Drag to resize column width; arrow keys adjust by 1%, Shift by 5%')}
 					style:left={percentages.slice(0, index + 1).reduce((sum, value) => sum + value, 0) + '%'}
 					onpointerdown={(event) => startDrag(event, index)} onpointermove={moveDrag} onpointerup={endDrag} onpointercancel={endDrag} onlostpointercapture={endDrag}
-					onkeydown={(event) => resizeKey(event, index)}><span aria-hidden="true"></span></button>
+					onkeydown={(event) => resizeKey(event, index)}><span aria-hidden="true"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 8h12M5 5L2 8l3 3M11 5l3 3-3 3" /></svg></span></button>
 			{/each}
 		</div>
 		<table class:full={table.style === 'full'} class:horizontal={table.style === 'horizontal'} class:three={table.style === 'three-line'} class:booktabs={table.rules === 'booktabs'} aria-label={t('表格儲存格文字', 'Table cell text')}>
@@ -199,7 +199,6 @@
 	.column-boundary { position: absolute; top: 0; width: 32px; height: 36px; transform: translateX(-50%); cursor: col-resize; touch-action: none; padding: 6px 14px; border: none; background: transparent; }
 	.column-boundary { padding: 6px 4px; }
 	.column-boundary span { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid var(--accent); border-radius: 4px; background: var(--surface); color: var(--accent); }
-	.column-boundary span::before { content: '↔'; font-size: 20px; line-height: 1; }
 	.column-boundary:hover span, .column-boundary:focus-visible span { background: var(--selection); outline: 2px solid var(--accent); }
 	table { width: 100%; min-width: 360px; border-collapse: collapse; table-layout: fixed; border-block: 1px solid var(--line); }
 	td { padding: 2px; }

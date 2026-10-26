@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SourceDocument } from '@modutex/document-core';
+import { SourceDocument } from '../../src/features/document-core/core.ts';
 import { createSourceState, sourceState, paragraphInsertionTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
 
 for (const eol of ['\n', '\r\n']) for (const beforeText of [false, true]) {

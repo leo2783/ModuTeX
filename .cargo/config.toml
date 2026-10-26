@@ -1,0 +1,3 @@
+[build]
+# Share dependency artifacts with native review crates invoked from this repo.
+target-dir = "apps/desktop-tauri/target"

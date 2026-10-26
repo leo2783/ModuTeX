@@ -1,7 +1,7 @@
 import { StateEffect, StateField, type EditorState, type Extension } from '@codemirror/state';
 import { codeFolding, foldGutter, foldKeymap, foldService } from '@codemirror/language';
 import { keymap, ViewPlugin } from '@codemirror/view';
-import { projectionIsCurrent, SourceError, type SourceProjection, type SyntaxNode } from '@modutex/document-core';
+import { projectionIsCurrent, SourceError, type SourceProjection, type SyntaxNode } from '../document-core/core.ts';
 import { sourceState } from './state.ts';
 
 interface FoldRange { readonly line: number; readonly from: number; readonly to: number }
