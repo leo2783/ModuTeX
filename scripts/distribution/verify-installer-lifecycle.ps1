@@ -51,6 +51,11 @@ $script:installationOwned = $false
 $script:ownerToken = [guid]::NewGuid().ToString('N')
 $script:sentinelPath = $null
 $script:sentinelSha256 = $null
+$script:webView2UserDataPolicyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\UserDataFolder'
+$script:webView2UserDataPolicyName = 'modutex-desktop-tauri.exe'
+$script:webView2UserDataPolicyValue = $null
+$script:webView2UserDataPolicyValueCreated = $false
+$script:webView2UserDataPolicyCreatedKeys = @()
 $script:step = 'preflight'
 $exitCode = 0
 
@@ -382,31 +387,250 @@ function Assert-InstalledIdentity {
   }
 }
 
-function Start-IsolatedInstalledApp {
-  $executable = Join-Path $script:installDirectory 'modutex-desktop-tauri.exe'
+function New-IsolatedInstalledAppProfile {
   $profile = Join-Path $script:scratchRoot 'profile'
   $userProfile = Join-Path $profile 'user'
-  $webViewData = Join-Path $profile 'webview2'
-  $appData = Join-Path $profile 'roaming'
-  $localAppData = Join-Path $profile 'local'
+  $appDataRoot = Join-Path $userProfile 'AppData'
+  $roamingAppData = Join-Path $appDataRoot 'Roaming'
+  $localAppData = Join-Path $appDataRoot 'Local'
   $temporary = Join-Path $profile 'temp'
+  $webViewData = Join-Path $profile 'webview2'
+
   Assert-ChildPath $userProfile $script:scratchRoot
   if (-not (Test-Path -LiteralPath $userProfile -PathType Container)) { throw 'Preflight user profile is missing' }
   Assert-NoReparseAncestors $userProfile
-  Assert-ChildPath $script:sentinelPath $script:scratchRoot
-  Assert-NoReparseAncestors $script:sentinelPath
-  Assert-Sentinel
-  foreach ($directory in @($appData, $localAppData, $temporary)) {
+  foreach ($directory in @($appDataRoot, $roamingAppData, $localAppData, $temporary)) {
     Assert-ChildPath $directory $script:scratchRoot
     if (Test-Path -LiteralPath $directory) { throw "Isolated profile path already exists: $directory" }
     [IO.Directory]::CreateDirectory($directory) | Out-Null
   }
+  Assert-ChildPath $webViewData $script:scratchRoot
+
+  return [pscustomobject]@{
+    UserProfile = $userProfile
+    RoamingAppData = $roamingAppData
+    LocalAppData = $localAppData
+    Temporary = $temporary
+    WebViewData = $webViewData
+  }
+}
+
+function Get-RegistryValueNames {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  if (-not (Test-Path -LiteralPath $Path)) { return @() }
+  return @((Get-Item -LiteralPath $Path -ErrorAction Stop).GetValueNames())
+}
+
+function Remove-TemporaryWebView2UserDataPolicy {
+  if ($script:webView2UserDataPolicyValueCreated -and
+    (Test-Path -LiteralPath $script:webView2UserDataPolicyPath)) {
+    $key = Get-Item -LiteralPath $script:webView2UserDataPolicyPath -ErrorAction Stop
+    if ($key.GetValueNames() -contains $script:webView2UserDataPolicyName) {
+      $value = [string]$key.GetValue(
+        $script:webView2UserDataPolicyName,
+        $null,
+        [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+      )
+      if ($key.GetValueKind($script:webView2UserDataPolicyName) -ne [Microsoft.Win32.RegistryValueKind]::String -or
+        -not [string]::Equals($value, $script:webView2UserDataPolicyValue, [StringComparison]::Ordinal)) {
+        throw "Refusing to remove changed WebView2 UserDataFolder policy at '$script:webView2UserDataPolicyPath'"
+      }
+      Remove-ItemProperty -LiteralPath $script:webView2UserDataPolicyPath `
+        -Name $script:webView2UserDataPolicyName -ErrorAction Stop
+    }
+  }
+  $script:webView2UserDataPolicyValueCreated = $false
+
+  for ($index = $script:webView2UserDataPolicyCreatedKeys.Count - 1; $index -ge 0; $index--) {
+    $path = $script:webView2UserDataPolicyCreatedKeys[$index]
+    if (-not (Test-Path -LiteralPath $path)) { continue }
+    $key = Get-Item -LiteralPath $path -ErrorAction Stop
+    if ($key.SubKeyCount -eq 0 -and $key.ValueCount -eq 0) {
+      Remove-Item -LiteralPath $path -Force -ErrorAction Stop
+    }
+  }
+  $script:webView2UserDataPolicyCreatedKeys = @()
+  $script:webView2UserDataPolicyValue = $null
+}
+
+function Set-TemporaryWebView2UserDataPolicy {
+  param([Parameter(Mandatory = $true)][string]$ProfilePath)
+  if ($script:webView2UserDataPolicyValueCreated -or $script:webView2UserDataPolicyCreatedKeys.Count -gt 0) {
+    throw 'A temporary WebView2 UserDataFolder policy is already tracked by this run'
+  }
+  $profilePath = Get-FullPath $ProfilePath
+  Assert-ChildPath $profilePath $script:scratchRoot
+  Assert-NoReparseAncestors (Split-Path -Parent $profilePath)
+  if (Test-Path -LiteralPath $profilePath) { throw 'WebView2 user-data path must be created by the installed application' }
+
+  $policyValuePaths = @(
+    $script:webView2UserDataPolicyPath,
+    'HKCU:\SOFTWARE\Policies\Microsoft\Edge\WebView2\UserDataFolder'
+  )
+  foreach ($path in $policyValuePaths) {
+    $names = @(Get-RegistryValueNames $path)
+    if ($names -contains '*') { throw "A wildcard WebView2 UserDataFolder policy is present at '$path'" }
+    if ($names -contains $script:webView2UserDataPolicyName) {
+      throw "An application-scoped WebView2 UserDataFolder policy already exists at '$path'"
+    }
+  }
+
+  $keyPaths = @(
+    'HKLM:\SOFTWARE\Policies\Microsoft\Edge',
+    'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2',
+    $script:webView2UserDataPolicyPath
+  )
+  $script:webView2UserDataPolicyCreatedKeys = @($keyPaths | Where-Object { -not (Test-Path -LiteralPath $_) })
+  $script:webView2UserDataPolicyValue = $profilePath
+  try {
+    New-Item -Path $script:webView2UserDataPolicyPath -Force -ErrorAction Stop | Out-Null
+    # Mark before writing so a partial registry write is still checked and rolled back.
+    $script:webView2UserDataPolicyValueCreated = $true
+    New-ItemProperty -LiteralPath $script:webView2UserDataPolicyPath `
+      -Name $script:webView2UserDataPolicyName -Value $profilePath -PropertyType String -ErrorAction Stop | Out-Null
+
+    $key = Get-Item -LiteralPath $script:webView2UserDataPolicyPath -ErrorAction Stop
+    $actualValue = [string]$key.GetValue(
+      $script:webView2UserDataPolicyName,
+      $null,
+      [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+    )
+    if ($key.GetValueKind($script:webView2UserDataPolicyName) -ne [Microsoft.Win32.RegistryValueKind]::String -or
+      -not [string]::Equals($actualValue, $profilePath, [StringComparison]::Ordinal)) {
+      throw 'Application-scoped WebView2 UserDataFolder policy did not verify as the expected REG_SZ'
+    }
+  } catch {
+    $setupFailure = $_
+    try {
+      Remove-TemporaryWebView2UserDataPolicy
+    } catch {
+      throw "WebView2 UserDataFolder policy setup failed ($($setupFailure.Exception.Message)); rollback failed: $($_.Exception.Message)"
+    }
+    throw $setupFailure
+  }
+}
+
+function New-BoundedProcessStreamCapture {
+  param(
+    [Parameter(Mandatory = $true)][IO.Stream]$Stream,
+    [ValidateRange(1, 65536)][int]$MaximumCharacters = 8192
+  )
+  $captureTypeName = 'ModuTeX.InstallerLifecycle.BoundedStreamCapture'
+  if (-not ($captureTypeName -as [type])) {
+    Add-Type -Language CSharp -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace ModuTeX.InstallerLifecycle {
+    public sealed class BoundedStreamCapture {
+        private readonly object sync = new object();
+        private readonly StringBuilder tail = new StringBuilder();
+        private readonly int maximumCharacters;
+        public Task Completion { get; private set; }
+
+        public BoundedStreamCapture(Stream stream, int maximumCharacters) {
+            if (stream == null || !stream.CanRead) throw new ArgumentException("A readable stream is required", "stream");
+            if (maximumCharacters < 1 || maximumCharacters > 65536) throw new ArgumentOutOfRangeException("maximumCharacters");
+            this.maximumCharacters = maximumCharacters;
+            Completion = Task.Run(() => CaptureAsync(stream));
+        }
+
+        private async Task CaptureAsync(Stream stream) {
+            using (var reader = new StreamReader(stream, Encoding.UTF8, true, 1024, true)) {
+                var chunk = new char[1024];
+                int count;
+                while ((count = await reader.ReadAsync(chunk, 0, chunk.Length).ConfigureAwait(false)) > 0) {
+                    lock (sync) {
+                        if (count >= maximumCharacters) {
+                            tail.Clear();
+                            tail.Append(chunk, count - maximumCharacters, maximumCharacters);
+                        } else {
+                            var excess = tail.Length + count - maximumCharacters;
+                            if (excess > 0) tail.Remove(0, excess);
+                            tail.Append(chunk, 0, count);
+                        }
+                    }
+                }
+            }
+        }
+
+        public string GetTail() {
+            lock (sync) return tail.ToString();
+        }
+    }
+}
+'@
+  }
+  $captureType = $captureTypeName -as [type]
+  if ($null -eq $captureType) { throw 'Bounded process stream capture type was not registered' }
+  return $captureType::new($Stream, $MaximumCharacters)
+}
+
+function Get-BoundedProcessOutput {
+  param(
+    [Parameter(Mandatory = $true)]$Capture,
+    [ValidateRange(0, 30000)][int]$DrainTimeoutMilliseconds = 5000
+  )
+  $completed = $false
+  $captureFailure = $null
+  try {
+    $completed = $Capture.Completion.Wait($DrainTimeoutMilliseconds)
+  } catch {
+    $captureFailure = $_.Exception.GetBaseException().Message
+  }
+  $tail = [string]$Capture.GetTail()
+  if ($captureFailure) {
+    return "[output capture failed: $captureFailure]`n$tail"
+  }
+  if (-not $completed) {
+    return "[output stream remained open after ${DrainTimeoutMilliseconds}ms; showing bounded tail]`n$tail"
+  }
+  return $tail
+}
+
+function Format-IsolatedAppDiagnostics {
+  param($StdoutCapture, $StderrCapture)
+  $stdout = if ($null -eq $StdoutCapture) { '' } else { Get-BoundedProcessOutput -Capture $StdoutCapture }
+  $stderr = if ($null -eq $StderrCapture) { '' } else { Get-BoundedProcessOutput -Capture $StderrCapture }
+  $stdoutText = if ([string]::IsNullOrWhiteSpace($stdout)) { '<empty>' } else { $stdout.TrimEnd() }
+  $stderrText = if ([string]::IsNullOrWhiteSpace($stderr)) { '<empty>' } else { $stderr.TrimEnd() }
+  return "Installed process output (stdout tail):`n$stdoutText`nInstalled process output (stderr tail):`n$stderrText"
+}
+
+function Assert-InstalledAppStillRunningDuringStartup {
+  param(
+    [Parameter(Mandatory = $true)][Diagnostics.Process]$Process,
+    $StdoutCapture,
+    $StderrCapture
+  )
+  $Process.Refresh()
+  if ($Process.HasExited) {
+    $diagnostics = Format-IsolatedAppDiagnostics -StdoutCapture $StdoutCapture -StderrCapture $StderrCapture
+    throw "Installed ModuTeX exited during startup with code $($Process.ExitCode).`n$diagnostics"
+  }
+}
+
+function Start-IsolatedInstalledApp {
+  $executable = Join-Path $script:installDirectory 'modutex-desktop-tauri.exe'
+  $profilePaths = New-IsolatedInstalledAppProfile
+  $userProfile = $profilePaths.UserProfile
+  $webViewData = $profilePaths.WebViewData
+  $appData = $profilePaths.RoamingAppData
+  $localAppData = $profilePaths.LocalAppData
+  $temporary = $profilePaths.Temporary
+  Assert-ChildPath $script:sentinelPath $script:scratchRoot
+  Assert-NoReparseAncestors $script:sentinelPath
+  Assert-Sentinel
 
   $start = [Diagnostics.ProcessStartInfo]::new()
   $start.FileName = $executable
   $start.WorkingDirectory = $script:installDirectory
   $start.UseShellExecute = $false
   $start.CreateNoWindow = $true
+  $start.RedirectStandardOutput = $true
+  $start.RedirectStandardError = $true
   $start.Environment['USERPROFILE'] = $userProfile
   $start.Environment['HOME'] = $userProfile
   $start.Environment['APPDATA'] = $appData
@@ -414,29 +638,53 @@ function Start-IsolatedInstalledApp {
   $start.Environment['TEMP'] = $temporary
   $start.Environment['TMP'] = $temporary
   $start.Environment['WEBVIEW2_USER_DATA_FOLDER'] = $webViewData
+  $start.Environment['RUST_BACKTRACE'] = '1'
   [void]$start.Environment.Remove('GH_TOKEN')
   [void]$start.Environment.Remove('GITHUB_TOKEN')
 
-  $process = [Diagnostics.Process]::Start($start)
-  if ($null -eq $process) { throw 'Failed to start the installed ModuTeX executable' }
+  $stdoutCapture = $null
+  $stderrCapture = $null
+  $process = $null
   $exitMethod = 'close-main-window'
   try {
-    if (-not (Test-PathEquals $process.MainModule.FileName $executable)) {
+    Set-TemporaryWebView2UserDataPolicy -ProfilePath $webViewData
+    $process = [Diagnostics.Process]::Start($start)
+    if ($null -eq $process) { throw 'Failed to start the installed ModuTeX executable' }
+    $stdoutCapture = New-BoundedProcessStreamCapture -Stream $process.StandardOutput.BaseStream
+    $stderrCapture = New-BoundedProcessStreamCapture -Stream $process.StandardError.BaseStream
+    Assert-InstalledAppStillRunningDuringStartup -Process $process `
+      -StdoutCapture $stdoutCapture -StderrCapture $stderrCapture
+    try {
+      $startedExecutable = $process.MainModule.FileName
+    } catch {
+      Assert-InstalledAppStillRunningDuringStartup -Process $process `
+        -StdoutCapture $stdoutCapture -StderrCapture $stderrCapture
+      throw
+    }
+    if (-not (Test-PathEquals $startedExecutable $executable)) {
       throw 'Started process does not belong to the owned installed executable'
     }
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
     while ([DateTime]::UtcNow -lt $deadline) {
-      $process.Refresh()
-      if ($process.HasExited) { throw "Installed ModuTeX exited during startup with code $($process.ExitCode)" }
+      Assert-InstalledAppStillRunningDuringStartup -Process $process `
+        -StdoutCapture $stdoutCapture -StderrCapture $stderrCapture
       if ($process.MainWindowHandle -ne [IntPtr]::Zero) { break }
       Start-Sleep -Milliseconds 250
     }
-    if ($process.MainWindowHandle -eq [IntPtr]::Zero) { throw 'Installed ModuTeX did not create a main window' }
+    Assert-InstalledAppStillRunningDuringStartup -Process $process `
+      -StdoutCapture $stdoutCapture -StderrCapture $stderrCapture
+    if ($process.MainWindowHandle -eq [IntPtr]::Zero) {
+      $diagnostics = Format-IsolatedAppDiagnostics -StdoutCapture $stdoutCapture -StderrCapture $stderrCapture
+      throw "Installed ModuTeX did not create a main window.`n$diagnostics"
+    }
     $profileDeadline = [DateTime]::UtcNow.AddSeconds(20)
     while (-not (Test-Path -LiteralPath $webViewData -PathType Container) -and [DateTime]::UtcNow -lt $profileDeadline) {
       Start-Sleep -Milliseconds 250
     }
-    if (-not (Test-Path -LiteralPath $webViewData -PathType Container)) { throw 'WebView2 did not use the isolated user-data directory' }
+    if (-not (Test-Path -LiteralPath $webViewData -PathType Container)) {
+      $diagnostics = Format-IsolatedAppDiagnostics -StdoutCapture $stdoutCapture -StderrCapture $stderrCapture
+      throw "WebView2 did not use the isolated user-data directory.`n$diagnostics"
+    }
     Assert-ChildPath $webViewData $script:scratchRoot
     $closeRequested = $process.CloseMainWindow()
     if (-not $process.WaitForExit(15000)) {
@@ -444,6 +692,8 @@ function Start-IsolatedInstalledApp {
       $exitMethod = 'owned-process-handle'
       if (-not $process.WaitForExit(10000)) { throw 'Owned ModuTeX process did not exit after direct termination' }
     }
+    $null = Get-BoundedProcessOutput -Capture $stdoutCapture
+    $null = Get-BoundedProcessOutput -Capture $stderrCapture
     return [pscustomobject]@{
       processId = $process.Id
       closeMainWindowRequested = $closeRequested
@@ -452,13 +702,14 @@ function Start-IsolatedInstalledApp {
       exited = $process.HasExited
     }
   } finally {
-    if (-not $process.HasExited) {
+    if ($null -ne $process -and -not $process.HasExited) {
       try {
         $process.Kill()
         [void]$process.WaitForExit(10000)
       } catch {}
     }
-    $process.Dispose()
+    if ($null -ne $process) { $process.Dispose() }
+    Remove-TemporaryWebView2UserDataPolicy
   }
 }
 
@@ -466,6 +717,39 @@ function Assert-Sentinel {
   if (-not (Test-Path -LiteralPath $script:sentinelPath -PathType Leaf)) { throw 'Owned document sentinel is missing' }
   $hash = (Get-FileHash -LiteralPath $script:sentinelPath -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($hash -ne $script:sentinelSha256) { throw 'Owned document sentinel changed' }
+}
+
+function New-OwnedUninstallerStartInfo {
+  param([Parameter(Mandatory = $true)][string]$UninstallerPath)
+  if ([string]::IsNullOrWhiteSpace($script:scratchRoot) -or [string]::IsNullOrWhiteSpace($script:installDirectory)) {
+    throw 'Owned scratch and install directories are required before preparing the uninstaller'
+  }
+  $sourcePath = Get-FullPath $UninstallerPath
+  Assert-ChildPath $sourcePath $script:installDirectory
+  Assert-NoReparseAncestors $sourcePath
+  if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) { throw 'Owned NSIS uninstaller is missing' }
+
+  $workerPath = Join-Path $script:scratchRoot 'uninstaller-worker.exe'
+  Assert-ChildPath $workerPath $script:scratchRoot
+  Assert-NoReparseAncestors $script:scratchRoot
+  if (Test-Path -LiteralPath $workerPath) { throw 'Owned scratch uninstaller worker already exists' }
+  $sourceHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+  Copy-Item -LiteralPath $sourcePath -Destination $workerPath -ErrorAction Stop
+  Assert-NoReparseAncestors $workerPath
+  $workerItem = Get-Item -LiteralPath $workerPath -Force
+  if ($workerItem.Attributes.HasFlag([IO.FileAttributes]::ReparsePoint) -or $workerItem.Extension -ine '.exe') {
+    throw 'Temporary NSIS uninstaller worker is not a regular executable file'
+  }
+  $workerHash = (Get-FileHash -LiteralPath $workerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($workerHash -ne $sourceHash) { throw 'Temporary NSIS uninstaller worker differs from the owned uninstaller' }
+
+  $start = [Diagnostics.ProcessStartInfo]::new()
+  $start.FileName = $workerPath
+  $start.WorkingDirectory = $script:scratchRoot
+  $start.UseShellExecute = $false
+  $start.CreateNoWindow = $true
+  $start.Arguments = "/S _?=$script:installDirectory"
+  return $start
 }
 
 function Invoke-OwnedUninstaller {
@@ -487,23 +771,29 @@ function Invoke-OwnedUninstaller {
   }
   Assert-ChildPath $uninstaller $script:installDirectory
   if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) { throw 'Owned uninstaller is missing' }
-  $start = [Diagnostics.ProcessStartInfo]::new()
-  $start.FileName = Get-FullPath $uninstaller
-  $start.WorkingDirectory = $script:installDirectory
-  $start.UseShellExecute = $false
-  $start.CreateNoWindow = $true
-  [void]$start.ArgumentList.Add('/S')
-  $process = [Diagnostics.Process]::Start($start)
-  if ($null -eq $process) { throw 'Failed to start the owned NSIS uninstaller' }
+  $start = New-OwnedUninstallerStartInfo -UninstallerPath $uninstaller
+  $workerPath = $start.FileName
+  $workerHash = (Get-FileHash -LiteralPath $workerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  $process = $null
   try {
+    $process = [Diagnostics.Process]::Start($start)
+    if ($null -eq $process) { throw 'Failed to start the owned NSIS uninstaller' }
     if (-not $process.WaitForExit(300000)) {
       $process.Kill()
-      [void]$process.WaitForExit(10000)
+      if (-not $process.WaitForExit(10000)) { throw 'Owned NSIS uninstaller did not exit after direct termination' }
       throw 'Owned NSIS uninstaller timed out'
     }
     if ($process.ExitCode -ne 0) { throw "Owned NSIS uninstaller failed with exit code $($process.ExitCode)" }
   } finally {
-    $process.Dispose()
+    $processExited = $null -eq $process -or $process.HasExited
+    if ($null -ne $process) { $process.Dispose() }
+    if ($processExited -and (Test-Path -LiteralPath $workerPath -PathType Leaf)) {
+      Assert-ChildPath $workerPath $script:scratchRoot
+      Assert-NoReparseAncestors $workerPath
+      $actualWorkerHash = (Get-FileHash -LiteralPath $workerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+      if ($actualWorkerHash -ne $workerHash) { throw 'Temporary NSIS uninstaller worker changed during execution' }
+      Remove-Item -LiteralPath $workerPath -Force -ErrorAction Stop
+    }
   }
   if (Test-Path -LiteralPath $script:installDirectory) {
     $files = @(Get-ChildItem -LiteralPath $script:installDirectory -File -Recurse -Force -ErrorAction Stop)
