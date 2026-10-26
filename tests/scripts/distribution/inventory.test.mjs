@@ -181,6 +181,44 @@ test('receipt hashes are checked when local artifacts exist and legal/signature 
 	assert.match(inventory.payloadReceipt.thirdPartySignatures[0].verificationStatus, /not cryptographically verified/);
 });
 
+for (const scenario of [
+	{ role: 'main-executable', expectedExecutable: 'app', accepted: true },
+	{ role: 'application-exe', expectedExecutable: 'app', accepted: true },
+	{ role: 'main-executable', expectedExecutable: 'compiler', accepted: false }
+]) {
+	test(`payload inventory distinguishes ${scenario.role} from bundled tools when expected hash belongs to ${scenario.expectedExecutable}`, (t) => {
+		const { root, shim } = fixture();
+		cleanup(t, root);
+		mkdirSync(join(root, 'dist'));
+		const payload = [
+			{ path: 'dist/modutex.exe', role: scenario.role, bytes: Buffer.from('MZapplication') },
+			{ path: 'dist/tectonic.exe', role: 'bundled-tectonic-executable', bytes: Buffer.from('MZcompiler') },
+			{ path: 'dist/WebView2Setup.exe', role: 'bundled-webview2-installer', bytes: Buffer.from('MZruntime installer') }
+		];
+		for (const item of payload) writeFileSync(join(root, item.path), item.bytes);
+		const installer = Buffer.from('MZinstaller');
+		writeFileSync(join(root, 'dist/setup.exe'), installer);
+		writeFileSync(join(root, 'payload-receipt.json'), JSON.stringify({
+			installerPath: 'dist/setup.exe',
+			installerSha256: sha(installer),
+			bundledExeSha256: sha(payload[scenario.expectedExecutable === 'app' ? 0 : 1].bytes),
+			files: payload.map(({ path, role, bytes }) => ({ path, role, sha256: sha(bytes), sizeBytes: bytes.length }))
+		}));
+		const result = run(root, shim, ['--payload-receipt', 'payload-receipt.json']);
+		const output = join(root, '.verification-artifacts/tauri/component-inventory.json');
+		if (scenario.accepted) {
+			assert.equal(result.status, 0, result.stderr);
+			const inventory = JSON.parse(readFileSync(output, 'utf8'));
+			assert.deepEqual(inventory.payloadReceipt.bundledExecutable.matchingFiles, ['dist/modutex.exe']);
+			assert.equal(inventory.payloadReceipt.bundledExecutable.fileHashStatus, 'verified against local file');
+		} else {
+			assert.notEqual(result.status, 0, 'a third-party tool hash cannot replace the declared main executable');
+			assert.match(result.stderr, /Declared application executable does not match bundledExeSha256/);
+			assert.equal(existsSync(output), false);
+		}
+	});
+}
+
 test('malformed npm lock removes stale output and exits unsuccessfully', (t) => {
 	const { root, shim } = fixture();
 	cleanup(t, root);

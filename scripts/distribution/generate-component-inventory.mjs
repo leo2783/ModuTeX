@@ -612,9 +612,10 @@ function artifactReceipt(root, value) {
 		fail('payload receipt', 'Installer file entry disagrees with installerSha256');
 	}
 	const explicitExe = files.filter((file) =>
-		/(application|bundled|built|desktop|app).*(exe|pe)|(exe|pe).*(application|bundled|built|desktop|app)/i.test(file.role ?? ''));
+		file.role === 'main-executable' || file.role === 'application-exe');
 	const fallbackExe = files.filter((file) =>
-		file.path.toLowerCase().endsWith('.exe') && file.path.toLowerCase() !== installerPath.toLowerCase());
+		file.role === null && file.path.toLowerCase().endsWith('.exe') &&
+		file.path.toLowerCase() !== installerPath.toLowerCase());
 	const exeCandidates = explicitExe.length ? explicitExe : fallbackExe;
 	const exeMatches = exeCandidates.filter((file) => file.sha256 === exeSha);
 	if (explicitExe.length && !exeMatches.length) {
