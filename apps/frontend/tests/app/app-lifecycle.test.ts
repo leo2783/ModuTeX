@@ -1620,7 +1620,7 @@ test('report template saves to a new TeX file through Save and subsequent saves 
 		workbench.pasteIntoSource('REPORT_SAVED_AGAIN');
 		await workbench.waitForSource('REPORT_SAVED_AGAIN');
 		workbench.findButton(label => label === 'Save' || label === '儲存')!.click();
-		await waitFor(() => workbench.lastWrite('saved-as.tex'), 10_000, workbench.flush);
+		await waitFor(() => fs.readFileSync(savedPath, 'utf8').includes('REPORT_SAVED_AGAIN') ? true : undefined, 10_000, workbench.flush);
 		assert.match(await fs.promises.readFile(savedPath, 'utf8'), /REPORT_SAVED_AGAIN/);
 	});
 });

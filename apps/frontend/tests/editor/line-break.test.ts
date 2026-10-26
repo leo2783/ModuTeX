@@ -15,8 +15,8 @@ test('Enter closes and reopens format wrappers around a real line break, retains
   Object.defineProperty(globalThis, key, {configurable:true,writable:true,value:key === 'getComputedStyle' ? dom.window.getComputedStyle.bind(dom.window) : dom.window[key]});
  }
  try {
-  for (const [opening, closing] of [['', ''], ['\\textbf{\\textit{\\underline{', '}}}'], ['\\textcolor[HTML]{B42318}{\\textbf{', '}}']]) {
-   const prefix = '\\begin{document}\r\n\\par', suffix = '\r\n\\end{document}\r\n';
+  for (const paragraphMarker of ['', '\\par']) for (const [opening, closing] of [['', ''], ['\\textbf{\\textit{\\underline{', '}}}'], ['\\textcolor[HTML]{B42318}{\\textbf{', '}}']]) {
+   const prefix = '\\begin{document}\r\n' + paragraphMarker, suffix = '\r\n\\end{document}\r\n';
    const original = SourceDocument.open(new TextEncoder().encode('\ufeff' + prefix + opening + '你知道嗎' + closing + suffix));
    let state = createSourceState(original), readonly = false;
    const view = new VisualEditor(dom.window.document.getElementById('editor')!, 'main.tex', {
@@ -37,9 +37,13 @@ test('Enter closes and reopens format wrappers around a real line break, retains
     press();
     const broken = state.field(sourceState).projection.document;
     assert.equal(broken.read(), prefix + opening + '你知道嗎' + closing + '\\\\' + opening + closing + suffix);
+    const input = new dom.window.InputEvent('beforeinput', {inputType:'insertText', data:'第二', bubbles:true, cancelable:true});
+    view.view.dom.dispatchEvent(input);
+    assert.equal(input.defaultPrevented, true, 'typing during parser acknowledgement is retained');
+    view.view.dispatch(view.view.state.tr.insertText('行'));
+    assert.equal(state.field(sourceState).projection.document, broken, 'queued input does not patch stale spans');
     view.sync(parseSource(broken));
     view.view.dom.blur();
-    view.view.dispatch(view.view.state.tr.insertText('第二行'));
     assert.equal(state.field(sourceState).projection.document.read(), prefix + opening + '你知道嗎' + closing + '\\\\' + opening + '第二行' + closing + suffix);
     state = historyTransaction(state, 'undo')!.state;
     state = historyTransaction(state, 'undo')!.state;

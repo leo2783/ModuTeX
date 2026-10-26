@@ -71,7 +71,7 @@ export class VisualEditor {
 	private disposed = false;
 	private pendingFocus = false;
 	private pendingMathDeletion: { documentId: string; version: number; position: number } | null = null;
-	private pendingLineBreak: { documentId: string; version: number; position: number; marks: readonly string[] } | null = null;
+	private pendingLineBreak: { documentId: string; version: number; position: number; marks: readonly string[]; text: string } | null = null;
 	private refreshedEditable: boolean | undefined;
 	private refreshedLabel: string | undefined;
 	private selectedCellIndex: number | null = null;
@@ -651,6 +651,12 @@ export class VisualEditor {
 		} } });
 		this.view = new EditorView(target, { state: EditorState.create({ schema: visualSchema, plugins: [notebookPlugin, equationPlugin] }),
 			handleDOMEvents: {
+				beforeinput: (_view, event) => {
+					const input = event as InputEvent;
+					if (!this.awaitingLineBreak() || input.inputType !== 'insertText' || input.data === null) return false;
+					this.pendingLineBreak!.text += input.data;
+					event.preventDefault(); return true;
+				},
 				copy: (view, event) => { if (!(view.state.selection instanceof NodeSelection)) return false; for (const [position, copy] of this.imageCopies) if (position() === view.state.selection.from) return copy(event as ClipboardEvent); return false; },
 				click: (view, event) => { this.clickCell(view, event as MouseEvent); return false; },
 				mousedown: (view, event) => {
@@ -660,7 +666,7 @@ export class VisualEditor {
 				}
 			},
 			attributes: { role: 'textbox', 'aria-multiline': 'true', 'aria-label': label + this.text(' 視覺編輯', ' visual editor') },
-			editable: () => this.editable(),
+			editable: () => this.editable() || this.awaitingLineBreak(),
 			nodeViews: { source_block: initial => {
 				const rendered = DOMSerializer.renderSpec(target.ownerDocument, initial.type.spec.toDOM!(initial));
 				return { ...rendered, update: next => next.type === initial.type &&
@@ -878,6 +884,11 @@ export class VisualEditor {
 	private editable(): boolean {
 		return !this.disposed && !this.options.readOnly() && this.projection?.documentId === this.options.source().documentId && this.projection.version === this.options.source().version;
 	}
+	private awaitingLineBreak(): boolean {
+		if (this.disposed || this.options.readOnly() || !this.pendingLineBreak) return false;
+		const source = this.options.source();
+		return this.pendingLineBreak.documentId === source.documentId && this.pendingLineBreak.version === source.version;
+	}
 	private insertLineBreak(): boolean {
 		if (!this.editable() || !this.projection) return false;
 		const state = this.view.state, selection = state.selection;
@@ -893,7 +904,7 @@ export class VisualEditor {
 		const source = this.options.source();
 		try {
 			const next = this.options.apply(this.projection, [{from: span.from, to: span.to, expected: source.read(span.from, span.to), insert}]);
-			this.pendingLineBreak = {documentId: next.documentId, version: next.version, position: selection.from + 1, marks: context.map(visualMarkName)};
+			this.pendingLineBreak = {documentId: next.documentId, version: next.version, position: selection.from + 1, marks: context.map(visualMarkName), text: ''};
 			this.pendingFocus = true;
 			this.refresh();
 		} catch { this.options.rejected(); }
@@ -944,15 +955,15 @@ export class VisualEditor {
 	refresh(): void {
 		this.refreshCellToolbar();
 		if (this.disposed || this.applying) return;
-		const editable = this.editable();
-		if (!editable) this.clearStoredMarks();
+		const editable = this.editable(), acceptsText = editable || this.awaitingLineBreak();
+		if (!acceptsText) this.clearStoredMarks();
 		const label = this.label + this.text(' 視覺編輯', ' visual editor');
-		if (editable !== this.refreshedEditable || label !== this.refreshedLabel) {
+		if (acceptsText !== this.refreshedEditable || label !== this.refreshedLabel) {
 			this.view.setProps({
-				editable: () => this.editable(),
+				editable: () => this.editable() || this.awaitingLineBreak(),
 				attributes: { role: 'textbox', 'aria-multiline': 'true', 'aria-label': label }
 			});
-			this.refreshedEditable = editable;
+			this.refreshedEditable = acceptsText;
 			this.refreshedLabel = label;
 		}
 		const rawText = this.text('編輯原始碼', 'Edit source');
@@ -1016,6 +1027,7 @@ export class VisualEditor {
 	invalidate(): void {
 		if (this.disposed) return;
 		this.projection = null;
+		this.pendingLineBreak = null;
 		this.selectedCellIndex = null;
 		this.cachedDecorations = null;
 		this.refresh();
@@ -1060,9 +1072,22 @@ export class VisualEditor {
 			const active = this.view.dom.ownerDocument.activeElement;
 			if (this.editable() && (!active || active === this.view.dom.ownerDocument.body || this.view.dom.contains(active))) this.view.focus();
 		}
+		if (currentBreak?.text && this.editable()) this.view.dispatch(this.view.state.tr.insertText(currentBreak.text));
 	}
 	private dispatch(transaction: Transaction): void {
 		if (this.disposed) return;
+		// IME/native DOM input can arrive without beforeinput while the worker acknowledges Enter.
+		if (transaction.docChanged && this.awaitingLineBreak() && transaction.before.eq(this.view.state.doc)) {
+			const start = transaction.before.content.findDiffStart(transaction.doc.content);
+			const end = transaction.before.content.findDiffEnd(transaction.doc.content);
+			if (start !== null && end?.a === start) {
+				const inserted = transaction.doc.slice(start, end.b);
+				if (inserted.openStart === 0 && inserted.openEnd === 0 && inserted.content.childCount === 1 && inserted.content.firstChild?.isText) {
+					this.pendingLineBreak!.text += inserted.content.firstChild.text!;
+					return;
+				}
+			}
+		}
 		if (!transaction.docChanged) {
 			this.view.updateState(this.view.state.apply(transaction));
 			if (transaction.selectionSet && !this.disposed && !this.equationDraft) {
