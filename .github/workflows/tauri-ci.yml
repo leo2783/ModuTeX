@@ -64,7 +64,7 @@ on:
         description: SHA256 digest of the uploaded executable artifact
         value: ${{ jobs.desktop-build.outputs.built_exe_artifact_digest }}
       built_exe_workflow_sha:
-        description: Workflow run source SHA containing the executable artifact
+        description: Workflow run head SHA containing the executable artifact
         value: ${{ jobs.desktop-build.outputs.built_exe_workflow_sha }}
       built_exe_source_commit:
         description: Verified source commit used to build the executable

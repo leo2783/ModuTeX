@@ -27,7 +27,7 @@ on:
         description: SHA256 digest of the uploaded executable artifact
         value: ${{ jobs.desktop-build.outputs.built_exe_artifact_digest }}
       built_exe_workflow_sha:
-        description: Workflow run source SHA containing the executable artifact
+        description: Workflow run head SHA containing the executable artifact
         value: ${{ jobs.desktop-build.outputs.built_exe_workflow_sha }}
       built_exe_source_commit:
         description: Verified source commit used to build the executable
@@ -163,7 +163,7 @@ jobs:
         env:
           EXPECTED_SOURCE_COMMIT: ${{ inputs.checkout_ref }}
           EXPECTED_PACKAGE_VERSION: ${{ inputs.package_version }}
-          WORKFLOW_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           CI_RUN_ID: ${{ github.run_id }}
         run: >
           $commit = (git rev-parse HEAD).Trim()
@@ -175,7 +175,7 @@ jobs:
           if ($env:EXPECTED_PACKAGE_VERSION -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.]+)?$') { throw 'Verified
           package version is invalid' }
 
-          if ($env:WORKFLOW_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Workflow source SHA is invalid' }
+          if ($env:WORKFLOW_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Workflow run head SHA is invalid' }
 
           $exe = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe'
 

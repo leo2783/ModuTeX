@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -420,6 +421,59 @@ export function validateTauriCiContract(wf) {
 
 test('expanded CI reusable-workflow graph preserves required checks and exact build-to-E2E provenance', async () => {
 	validateTauriCiContract(await workflow());
+});
+
+test('artifact identity distinguishes PR head from the checked-out merge commit', async () => {
+	const wf = await workflow();
+	const build = wf.children['desktop-build'].workflow.jobs['desktop-build'];
+	const identity = stepsOf(build).find((step) => step.id === 'exe_identity');
+	const fixture = await mkdtemp(join(tmpdir(), 'modutex-ci-identity-'));
+	const git = (...args) => execFileSync('git', args, { cwd: fixture, encoding: 'utf8', windowsHide: true }).trim();
+	try {
+		const binary = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe';
+		await mkdir(join(fixture, binary, '..'), { recursive: true });
+		await writeFile(join(fixture, binary), 'identity fixture bytes');
+		await writeFile(join(fixture, 'source.txt'), 'checked-out source');
+		git('init', '--quiet');
+		git('add', 'source.txt');
+		git('-c', 'user.name=ModuTeX CI', '-c', 'user.email=ci@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'fixture');
+		const sourceCommit = git('rev-parse', 'HEAD');
+		const prHead = '79794591024726df881cb89bea5b2159b35b9ba9';
+		for (const event of ['push', 'pull_request', 'workflow_dispatch', 'workflow_call']) {
+			const expectedWorkflowHead = event === 'push' ? sourceCommit : prHead;
+			const context = {
+				'github.sha': event === 'pull_request' ? sourceCommit : expectedWorkflowHead,
+				'github.event.pull_request.head.sha': event === 'pull_request' ? prHead : '',
+				'inputs.checkout_ref': sourceCommit,
+				'inputs.package_version': '0.3.0',
+				'github.run_id': '40277037566'
+			};
+			const environment = {};
+			for (const [name, expression] of Object.entries(identity.env)) {
+				assert(expression.startsWith('${{') && expression.endsWith('}}'));
+				const terms = expression.slice(3, -2).trim().split('||').map((term) => term.trim());
+				for (const term of terms) assert(Object.hasOwn(context, term), `Unsupported fixture context: ${term}`);
+				environment[name] = terms.map((term) => context[term]).find(Boolean) ?? '';
+			}
+			const outputPath = join(fixture, `${event}.out`);
+			execFileSync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command', identity.run], {
+				cwd: fixture, windowsHide: true, timeout: 15000,
+				env: { ...process.env, ...environment, GITHUB_OUTPUT: outputPath }
+			});
+			const output = Object.fromEntries((await readFile(outputPath, 'utf8')).trim().split(/\r?\n/).map((line) => {
+				const separator = line.indexOf('=');
+				return [line.slice(0, separator), line.slice(separator + 1)];
+			}));
+			assert.equal(output.workflow_sha, expectedWorkflowHead, `${event}: match artifact REST workflow_run.head_sha`);
+			assert.equal(output.source_commit, sourceCommit, `${event}: retain the actual checked-out source identity`);
+			assert.match(output.sha256, /^[0-9a-f]{64}$/);
+			assert.equal(output.package_version, '0.3.0');
+			if (event === 'pull_request') assert.notEqual(output.workflow_sha, output.source_commit);
+		}
+	} finally {
+		assert(fixture.startsWith(resolve(tmpdir()) + sep));
+		await rm(fixture, { recursive: true, force: true });
+	}
 });
 
 test('every CI Node job matches the package runtime and verifies bundled npm', async () => {
