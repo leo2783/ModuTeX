@@ -2860,7 +2860,14 @@ fn validate_profile_environment(
         let folded = key_text.to_ascii_uppercase();
         if matches!(
             folded.as_str(),
-            "PATH" | "TEMP" | "TMP" | "TECTONIC_CACHE_DIR" | "SYSTEMROOT" | "WINDIR"
+            "PATH"
+                | "TEMP"
+                | "TMP"
+                | "TECTONIC_CACHE_DIR"
+                | "SYSTEMROOT"
+                | "WINDIR"
+                | "FONTCONFIG_FILE"
+                | "FONTCONFIG_PATH"
         ) {
             return Err(CompileServiceError::InvalidConfiguration(
                 "profile environment overrides a host-controlled key",
@@ -3005,7 +3012,7 @@ fn build_process_environment(
         }
     }
     path_entries.extend(search_paths.iter().cloned());
-    path_entries.push(PathBuf::from(system_root).join("System32"));
+    path_entries.push(PathBuf::from(&system_root).join("System32"));
     let path = env::join_paths(path_entries)
         .map_err(|_| CompileServiceError::InvalidConfiguration("trusted PATH is invalid"))?;
     put("PATH", path);
@@ -3013,6 +3020,36 @@ fn build_process_environment(
     put("TMP", temporary_directory.as_os_str().to_owned());
     if let Some(cache) = tectonic_cache {
         put("TECTONIC_CACHE_DIR", cache.as_os_str().to_owned());
+        // The bundled Windows engine has no installed Fontconfig configuration.
+        // Keep its font discovery host-owned and isolated from workspace files.
+        let xml_path = |path: &Path| {
+            path.to_string_lossy()
+                .replace('\\', "/")
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+        };
+        let config_path = temporary_directory.join("fontconfig.xml");
+        let config = format!(
+            "<?xml version=\"1.0\"?><fontconfig><dir>{}</dir><cachedir>{}</cachedir></fontconfig>",
+            xml_path(&PathBuf::from(&system_root).join("Fonts")),
+            xml_path(&cache.join("fontconfig"))
+        );
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&config_path)
+            .map_err(|_| {
+                CompileServiceError::InvalidConfiguration(
+                    "private font configuration could not be created",
+                )
+            })?;
+        file.write_all(config.as_bytes()).map_err(|_| {
+            CompileServiceError::InvalidConfiguration(
+                "private font configuration could not be written",
+            )
+        })?;
+        put("FONTCONFIG_FILE", config_path.into_os_string());
     }
     for (key, value) in profile_environment {
         let key = key

@@ -5,6 +5,7 @@
 	import { readSourceBytes } from '../features/files/read.ts';
 	import { planPageMarginPatches, readPageMargins, type PageMarginsCm } from '../features/compile/page-margins.ts';
 	import { text, type Language } from '../i18n/text.ts';
+	import { readDocumentDate, planDocumentDatePatches, type DocumentDateMode } from '../features/compile/document-date.ts';
 
 	interface MarginDraft { top: string; bottom: string; left: string; right: string }
 	type MarginSnapshot =
@@ -45,6 +46,36 @@
 	let marginReadTicket = 0;
 	let observedMarginTarget = '';
 	let observedMarginSource = '';
+	let dateMode = $state<DocumentDateMode>('none');
+	let dateIssue = $state('');
+	let dateNote = $state('');
+	let dateBusy = $state(false);
+	let dateTouched = false;
+	let dateDocument = $state.raw<SourceDocument | null>(null);
+	function acceptDate(document: SourceDocument) {
+		dateDocument = document;
+		try { dateMode = readDocumentDate(document).mode; dateIssue = ''; }
+		catch { dateIssue = t('無法安全判讀日期設定，請在原始碼調整。', 'Date settings cannot be read safely. Edit the source.'); }
+	}
+	async function applyDate() {
+		const snapshot = marginSnapshot, document = dateDocument, port = desktop, owner = workspace;
+		if (!snapshot || !document || !port || !owner || dateMode === 'custom' || dateBusy || sourceCommandDisabled || marginStale || mainFile !== (config?.mainFile ?? '')) return;
+		dateBusy = true; dateIssue = ''; dateNote = '';
+		try {
+			const patches = planDocumentDatePatches(document,dateMode);
+			if (snapshot.kind === 'editor') {
+				if (!source || source.documentId !== document.documentId || source.version !== document.version || comparablePath(sourcePath) !== comparablePath(snapshot.path)) throw new Error('STALE_SOURCE');
+				if (patches.length && !onApplySourcePatches({documentId:document.documentId,version:document.version},patches)) throw new Error('STALE_SOURCE');
+			} else if (patches.length) {
+				const updated = document.apply({expectedVersion:document.version,patches}).document;
+				await port.writeFile({workspaceId:owner.id,path:snapshot.path,bytes:updated.toBytes(),expectedRevision:snapshot.receipt.revision,documentId:updated.documentId,documentVersion:updated.version});
+			}
+			dateNote = t('日期設定已套用至主文件；儲存並重新編譯後生效。', 'Date settings applied to the main file. Save and recompile.');
+			dateTouched = false;
+			await loadPageMargins(snapshot.path,source,!!source && comparablePath(sourcePath) === comparablePath(snapshot.path));
+		} catch { dateIssue = t('日期未套用。文件可能已變更，請重新載入後再試。', 'Date was not applied. The file may have changed. Reload and try again.'); }
+		finally { dateBusy = false; }
+	}
 
 	function comparablePath(value: string): string {
 		return value.replaceAll('\\', '/').replace(/^(?:\.\/)+/, '').replace(/\/{2,}/g, '/').toLowerCase();
@@ -84,6 +115,7 @@
 		marginIssue = '';
 		marginNote = '';
 		if (!owner || !port || !path) {
+			dateDocument = null;
 			marginSnapshot = null;
 			marginNote = t('請先選擇工作區主 TeX 文件。', 'Choose a main TeX file first.');
 			marginBusy = false;
@@ -96,6 +128,7 @@
 				marginSnapshot = { kind: 'editor', workspaceId: owner.id, path,
 					documentId: selectedSource.documentId, version: selectedSource.version };
 				acceptMarginReading(reading);
+				if (!dateTouched) acceptDate(selectedSource);
 			} else {
 				const receipt = await port.readFile({ workspaceId: owner.id, path });
 				if (ticket !== marginReadTicket || workspace?.id !== owner.id ||
@@ -107,6 +140,7 @@
 				const reading = readPageMargins(document.read());
 				marginSnapshot = { kind: 'disk', workspaceId: owner.id, path, receipt };
 				acceptMarginReading(reading);
+				if (!dateTouched) acceptDate(document);
 			}
 		} catch (error) {
 			if (ticket !== marginReadTicket) return;
@@ -127,6 +161,7 @@
 		const targetKey = `${ownerId}|${comparablePath(path)}`;
 		const sourceKey = isSelectedSource && selectedSource ? `${selectedSource.documentId}|${selectedSource.version}` : '';
 		if (targetKey !== observedMarginTarget) {
+			dateTouched = false; dateDocument = null; dateNote = '';
 			observedMarginTarget = targetKey;
 			observedMarginSource = sourceKey;
 			marginTouched = false;
@@ -150,6 +185,7 @@
 	}
 
 	function reloadMargins() {
+		dateTouched = false;
 		marginTouched = false;
 		marginStale = false;
 		void loadPageMargins(activeMainPath(), source,
@@ -343,7 +379,7 @@
 									<option value="custom" disabled={config ? !config.canSetCommand : true}>{t('使用者授權自訂命令', 'User-authorized custom command')}</option>
 								</select>
 							</label>
-						</div>
+		</div>
 						<label for="compile-output-dir" class="form-field">
 							<span class="field-label">{t('輸出目錄（必須已存在於工作區內）', 'Output directory (must already exist in the workspace)')}</span>
 							<input id="compile-output-dir" bind:value={outputDir} autocomplete="off" spellcheck="false" />
@@ -369,6 +405,26 @@
 				<footer class="settings-actions">
 					<button type="button" class="primary" onclick={save} disabled={busy || !config}>{t('儲存工作區編譯設定', 'Save workspace compile settings')}</button>
 					<button type="button" onclick={load} disabled={busy}>{t('重新載入設定', 'Reload configuration')}</button>
+				</footer>
+			</section>
+			<section class="settings-section" aria-labelledby="document-date-heading">
+				<h3 id="document-date-heading">{t('文件日期', 'Document date')}</h3>
+				<p>{t('自動日期會在每次編譯時更新。數字格式不依介面或文件語言變更；新模板預設不顯示日期。', 'Automatic dates update on each compilation. Numeric formats are independent of interface and document language. New templates hide dates by default.')}</p>
+				<label class="form-field" for="document-date-mode"><span class="field-label">{t('自動帶入日期', 'Automatic date')}</span>
+					<select id="document-date-mode" value={dateMode} onchange={event => { dateMode = event.currentTarget.value as DocumentDateMode; dateTouched = true; dateNote = ''; }} disabled={!dateDocument || marginBusy || dateBusy || !!dateIssue}>
+						<option value="none">{t('不顯示日期', 'Hide date')}</option>
+						<option value="iso">{t('自動日期：YYYY-MM-DD', 'Automatic: YYYY-MM-DD')}</option>
+						<option value="slash">{t('自動日期：YYYY/MM/DD', 'Automatic: YYYY/MM/DD')}</option>
+						<option value="day-first">{t('自動日期：DD/MM/YYYY', 'Automatic: DD/MM/YYYY')}</option>
+						<option value="document">{t('自動日期：依文件設定', 'Automatic: document format')}</option>
+						{#if dateMode === 'custom'}<option value="custom" disabled>{t('保留現有自訂日期', 'Keep existing custom date')}</option>{/if}
+					</select>
+				</label>
+				{#if dateIssue}<p role="alert" class="settings-alert">{dateIssue}</p>{/if}
+				{#if dateNote}<p role="status" class="settings-status">{dateNote}</p>{/if}
+				<footer class="settings-actions">
+					<button type="button" class="primary" onclick={applyDate} disabled={!dateDocument || !marginSnapshot || marginBusy || dateBusy || busy || marginStale || sourceCommandDisabled || dateMode === 'custom' || !!dateIssue || mainFile !== (config?.mainFile ?? '')}>{t('套用日期設定', 'Apply date settings')}</button>
+					<button type="button" onclick={reloadMargins} disabled={marginBusy || dateBusy}>{t('重新載入', 'Reload')}</button>
 				</footer>
 			</section>
 			<section class="settings-section margin-settings" aria-labelledby="page-margins-heading">

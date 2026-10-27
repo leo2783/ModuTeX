@@ -262,12 +262,16 @@ test('title-only documents expose a body placeholder for formulas without changi
  try {
   view.sync(parseSource(original));
   const bodyEnd = text.indexOf('\\end{document}');
-  const dateCaret = text.indexOf('\\date{}') + 6;
-  let datePosition = -1;
-  view.view.state.doc.forEach((node, offset) => { if (node.attrs.name === 'date') datePosition = offset + 1; });
-  assert.ok(datePosition >= 0);
-  view.view.dispatch(view.view.state.tr.setSelection(TextSelection.create(view.view.state.doc, datePosition)));
-  assert.equal(view.toolInsertionSelection(true)?.span.from, dateCaret, 'inline math can still edit metadata');
+  const titleCaret = text.indexOf('\\title{') + 7;
+  let titlePosition = -1;
+  view.view.state.doc.forEach((node, offset) => {
+   assert.notEqual(node.attrs.name, 'date', 'empty date must not reserve a visual cell');
+   assert.notEqual(node.attrs.name, 'author', 'empty author must not reserve a visual cell');
+   if (node.attrs.name === 'title') titlePosition = offset + 1;
+  });
+  assert.ok(titlePosition >= 0);
+  view.view.dispatch(view.view.state.tr.setSelection(TextSelection.create(view.view.state.doc, titlePosition)));
+  assert.equal(view.toolInsertionSelection(true)?.span.from, titleCaret, 'inline math can still edit metadata');
   assert.equal(view.toolInsertionSelection(false)?.span.from, bodyEnd, 'block math belongs in the document body');
   assert.equal(view.cellInsertionBoundary()?.from, bodyEnd);
   assert.equal(view.navigate(sourceSpan(original, bodyEnd)), true, 'a title-only document needs an editable body cell');

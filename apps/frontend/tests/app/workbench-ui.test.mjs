@@ -143,7 +143,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			const box = await content.boundingBox(), math = await field.boundingBox();
 			assert.ok(Math.abs(box.x + box.width / 2 - math.x - math.width / 2) < 2);
 			assert.equal(await field.evaluate(el => getComputedStyle(el).fontSize), '22px');
-			await content.locator('math-field').click();
+			await content.click();
 			const input = page.locator('.inline-equation-input'), draft = input.locator('math-field');
 			await draft.waitFor({ state: 'visible' });
 			const parent = await input.boundingBox(), editor = await draft.boundingBox();
@@ -156,7 +156,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 		});
 		await t.test('formula cells edit in the document, cancel unchanged, and commit with Enter', async () => {
 			const before = await sourceEditor.textContent();
-			await page.locator('.visual-math-content math-field').first().click();
+			await page.locator('.visual-math-content').first().click();
 			const draft = page.locator('.inline-equation-draft math-field');
 			await draft.waitFor({ state: 'visible' });
 			await page.keyboard.press('Control+A'); await page.keyboard.type('z');
@@ -464,8 +464,12 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			} finally { await session.detach(); }
 			await page.keyboard.press('Enter'); await page.keyboard.insertText('下一行');
 			await page.waitForFunction(() => document.querySelector('.ProseMirror')?.textContent.includes('下一行'));
+			await page.getByRole('button', { name: '原始碼', exact: true }).click();
+			await page.waitForFunction(() => document.querySelector('.source-view .source .cm-content')?.textContent.includes('下一行'));
 			assert.equal(await page.getByText('這次編輯未套用，請重新選取內容後再試。', { exact: true }).count(), 0);
-			assert.match(await sourceEditor.evaluate(node => [...node.querySelectorAll('.cm-line')].map(line => line.textContent).join('\n')), /起始文字我\s*\n\s*下一行/);
+			assert.match(await sourceEditor.evaluate(node => [...node.querySelectorAll('.cm-line')].map(line => line.textContent).join('\n')), /起始文字我\\\\下一行/);
+			await page.getByRole('button', { name: '視覺化', exact: true }).click();
+			await page.locator('.source-block').filter({ hasText: '下一行' }).click(); await page.keyboard.press('End');
 			await page.keyboard.press('Enter');
 			const long = '中文 English 123 '.repeat(60) + 'LongUnbrokenIdentifier'.repeat(20);
 			await page.keyboard.insertText(long);
@@ -487,6 +491,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			await page.getByRole('button', { name: '原始碼', exact: true }).click(); await sourceEditor.click(); await page.keyboard.press('Control+A');
 			await page.keyboard.insertText('\\documentclass{article}\n\\begin{document}\nImage document\n\\end{document}\n');
 			await page.getByRole('button', { name: '視覺化', exact: true }).click();
+			await page.locator('.source-block').filter({ hasText: 'Image document' }).click(); await page.keyboard.press('End');
 			const png = await page.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = 120; canvas.height = 80; const context = canvas.getContext('2d'); context.fillStyle = '#3d617b'; context.fillRect(0, 0, 120, 80); return canvas.toDataURL('image/png').split(',')[1]; });
 			await page.getByLabel('選擇圖片', { exact: true }).setInputFiles({ name: 'test.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
 			await page.waitForFunction(() => document.querySelector('.visual-image img')?.naturalWidth === 120);
@@ -585,7 +590,7 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
             const original = await sourceEditor.innerText();
             await page.getByRole('button', { name: '視覺化', exact: true }).click();
             await page.locator('.source-block[data-structure="title"]').waitFor();
-            await page.locator('.source-block[data-structure="date"]').click();
+            await page.locator('.source-block[data-structure="title"]').click();
             await page.locator('summary[aria-label="數學"]').click();
             await page.getByRole('button', { name: '公式儲存格', exact: true }).click();
             const draft = page.locator('.inline-equation-draft math-field');

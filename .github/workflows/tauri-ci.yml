@@ -1,15 +1,11 @@
 name: Tauri CI
 on:
   push:
-    branches:
-      - main
-      - dev
-      - refactor/tauri-apache-migration
+    paths-ignore:
+      - docs/**
   pull_request:
-    branches:
-      - main
-      - dev
-      - refactor/tauri-apache-migration
+    paths-ignore:
+      - docs/**
   workflow_dispatch:
     inputs:
       prior_installer_url:

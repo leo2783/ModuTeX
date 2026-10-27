@@ -5,6 +5,12 @@ import { SourceDocument, parseSource } from '../../src/features/document-core/co
 import { sourceOutline } from '../../src/features/source-editor/outline.ts';
 import { createSourceState, sourceState, sourceNavigationTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
 
+test('report and book headings retain part/chapter hierarchy including starred headings', () => {
+	const source = SourceDocument.open(new TextEncoder().encode('\\begin{document}\\part{Book}\\chapter*{Intro}\\section{Scope}\\subsection{Details}\\chapter{Next}\\end{document}'));
+	assert.deepEqual(sourceOutline(source, parseSource(source)).map(({label, level}) => [label, level]),
+		[['Book', 0], ['Intro', 1], ['Scope', 2], ['Details', 3], ['Next', 1]]);
+});
+
 test('outline uses current parser spans, preserves hierarchy/order and ignores comments/literal bodies', () => {
 	const source = SourceDocument.open(new TextEncoder().encode('\\title{Preamble}\n\\begin{document}\n% \\section{Comment}\n\\section*{First}\r\n\\subsection{Second}\n\\begin{verbatim}\n\\section{Literal}\n\\end{verbatim}\n\\subsubsection{Third}\n\\end{document}'));
 	const projection = parseSource(source), entries = sourceOutline(source, projection);

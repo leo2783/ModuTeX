@@ -419,6 +419,17 @@ export function validateTauriCiContract(wf) {
 	validatePackageAndLifecycle(wf, gates);
 }
 
+test('automatic CI covers every branch and skips only docs-only changes', async () => {
+	const { on: triggers } = (await workflow()).workflow;
+	for (const event of ['push', 'pull_request']) {
+		const filters = triggers[event];
+		assert.equal(filters.branches, undefined, `${event} must not restrict CI to named development branches`);
+		assert.equal(filters['branches-ignore'], undefined, `${event} must include documentation branches with code changes`);
+		assert.equal(filters.paths, undefined, `${event} must not allowlist source paths`);
+		assert.deepEqual(filters['paths-ignore'], ['docs/**'], `${event} skips only changes confined to docs/`);
+	}
+});
+
 test('expanded CI reusable-workflow graph preserves required checks and exact build-to-E2E provenance', async () => {
 	validateTauriCiContract(await workflow());
 });

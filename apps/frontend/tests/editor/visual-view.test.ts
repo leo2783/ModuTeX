@@ -126,6 +126,9 @@ test('actual EditorView DOM, source transaction, keyboard undo, stale gate and t
 		view.view.dom.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true, cancelable: true }));
 		view.sync(parseSource(editor.field(sourceState).projection.document));
 		assert.deepEqual(editor.field(sourceState).projection.document.toBytes(), original.toBytes());
+		assert.equal(view.view.hasFocus(), true, 'keyboard undo restores focus after parser reprojection');
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		view.view.dom.blur(); // Keep the following layout-free jsdom mutation check separate from native focus acceptance.
 		// Exercise real MutationObserver/DOM parsing, not a fake view or source callback.
 		const heading = target.querySelector('h2'); heading.firstChild.nodeValue = 'Edited';
 		await new Promise((resolve) => setTimeout(resolve, 30));

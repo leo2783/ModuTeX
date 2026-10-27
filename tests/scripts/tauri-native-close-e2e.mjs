@@ -96,7 +96,7 @@ try {
     const secondClose = requestNativeClose();
     void secondClose.catch(() => {});
     await closeDialog.waitFor({state: 'visible', timeout: 10000});
-    await closeDialog.getByRole('button', {name: /^(捨棄變更並關閉|Discard changes and close)$/}).click();
+    await closeDialog.getByRole('button', {name: /^(不儲存|Don't save)$/}).click();
     await secondClose;
     await Promise.race([
         app.exitCode !== null ? Promise.resolve() : new Promise(accept => app.once('exit', accept)),
