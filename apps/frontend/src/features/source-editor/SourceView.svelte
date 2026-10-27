@@ -5,12 +5,13 @@
 	import { clipboardImage } from '../images/view.ts';
 	import { Compartment, EditorState } from '@codemirror/state';
 	import { EditorView, lineNumbers, highlightActiveLineGutter, keymap } from '@codemirror/view';
-	import { type EditorProjection, type SourceDocument, type SourceProjection, type SourceSpan, type SourcePatch } from '../document-core/core.ts';
+	import { parseSource, type EditorProjection, type SourceDocument, type SourceProjection, type SourceSpan, type SourcePatch } from '../document-core/core.ts';
 	import { ParserClient } from '../parser/client.ts';
 	import { VisualEditor } from '../visual-editor/view.ts';
 	import 'prosemirror-view/style/prosemirror.css';
 	import { createSourceState, sourceState, sourcePatches, sourcePatchTransaction, historyTransaction, savedCheckpoint, insertionTarget, insertionTransaction, metadataClearTransaction, type InsertionTarget } from './state.ts';
 	import { cellMoveTransaction } from './cell-move.ts';
+	import { structureTransaction, type TextStructure } from './structure.ts';
 	import MathPanel from '../math/MathPanel.svelte';
 	import ToolbarIcon from '../../components/ToolbarIcon.svelte';
 	import CodePanel from '../code/CodePanel.svelte';
@@ -189,6 +190,15 @@
 	let parsed = $state.raw<SourceProjection | null>(null);
 	let pendingParagraph: { documentId: string; version: number; from: number } | null = null;
 	let pendingBlock: { documentId: string; version: number; to: number; kind: 'table_block' | 'math_block' } | null = null;
+	/** Worker replies and structural commits publish through the same version gate. */
+	function acceptProjection(projection: SourceProjection) {
+		const current = editor?.state.field(sourceState).projection.document ?? document;
+		if (projection.documentId !== current.documentId || projection.version !== current.version) return;
+		parsed = projection;
+		editor?.dispatch({ effects: foldProjection.of(projection) });
+		onProjection(projection);
+		syncVisualProjection();
+	}
 	function syncVisualProjection() {
 		const view = editor, currentVisual = visual, projection = parsed;
 		if (mode !== 'visual' || !view || !currentVisual || !projection) return;
@@ -558,17 +568,17 @@
 			toolError = null; if (!useVisual) editor.focus(); else visual?.focus();
 		} catch { toolError = 'format'; }
 	}
-	function applyStructure(kind: string) {
+	function applyStructure(kind: TextStructure) {
 		if (!editor || !active || saving || tool !== null || mode !== 'visual') return;
 		const selected = visual?.textStructureSelection();
 		if (!selected) { toolError = 'format'; return; }
-		const { span, content } = selected;
-		const value = kind === 'abstract' ? '\\begin{abstract}\n' + content + '\n\\end{abstract}'
-			: kind === 'title' ? '\\title{' + content + '}\n\\maketitle'
-			: kind === 'paragraph' ? content : '\\' + kind + '{' + content + '}';
 		try {
-			const source = editor.state.field(sourceState).projection.document;
-			editor.dispatch(sourcePatchTransaction(editor.state, span, [{ from: span.from, to: span.to, insert: '\n' + value + '\n\n', expected: source.read(span.from, span.to) }]));
+			const { transaction, cell } = structureTransaction(editor.state, selected, kind);
+			editor.dispatch(transaction);
+			// Structural commands need their new cell immediately, even while the
+			// worker is acknowledging older typing. Ordinary typing stays incremental.
+			acceptProjection(parseSource(editor.state.field(sourceState).projection.document));
+			visual?.selectChangedCell(cell);
 			toolError = null;
 		} catch { toolError = 'format'; }
 	}
@@ -836,14 +846,7 @@
 			parserFailed = false;
 			try {
 				return new ParserClient(new Worker(new URL('../parser/parser.worker.ts', import.meta.url), { type: 'module' }),
-					source, (projection) => {
-						const current = editor?.state.field(sourceState).projection.document ?? initial;
-						if (projection.documentId !== current.documentId || projection.version !== current.version) return;
-						parsed = projection;
-						editor?.dispatch({ effects: foldProjection.of(projection) });
-						onProjection(projection);
-						syncVisualProjection();
-					}, failParser);
+					source, acceptProjection, failParser);
 			} catch { failParser(); return null; }
 		};
 		let parser = startParser(initial);

@@ -24,3 +24,5 @@ npm run tauri
 桌面、前端、共用契約及 Rust 核心使用 0.3.0。版本更新使用 `npm run set-version -- 0.3.0`。
 
 [CI](../../.github/workflows/tauri-ci.yml) 按 Markdown、前端、Rust、安全、原生 E2E 與打包驗證拆分。[發布流程](../../.github/workflows/tauri-release.yml) 使用 CI 驗證過的執行檔處理簽章與更新產物。
+
+[儲存格結構切換修復與測試報告（2026-10-27）](../reports/cell-transitions-2026-10-27.md)

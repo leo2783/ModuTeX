@@ -241,11 +241,20 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 			if (marker) { attrs.to += marker[0].length; titleMarkers.add(node.span.to + marker[0].indexOf('\\maketitle')); }
 		}
 		if (node.name === 'abstract' && content && ['raw', 'environment'].includes(node.kind)) {
-			const offset = content.from;
+			// One source line break frames each environment delimiter. Keep explicit
+			// TeX line breaks and user whitespace inside the editable content intact.
+			const value = source.read(content.from, content.to);
+			const leading = /^(?:\r\n|\r|\n)/.exec(value)?.[0].length ?? 0;
+			const trailing = /(?:\r\n|\r|\n)$/.exec(value.slice(leading))?.[0].length ?? 0;
+			const offset = content.from + leading, end = content.to - trailing;
 			const shift = (item: SyntaxNode): SyntaxNode => ({ ...item, span: { ...item.span, from: item.span.from + offset, to: item.span.to + offset }, content: item.content && { ...item.content, from: item.content.from + offset, to: item.content.to + offset }, children: item.children.map(shift) });
-			const children = parseSource({ read: () => source.read(content.from, content.to), documentId: source.documentId, version: source.version }).nodes.map(shift);
+			const children = parseSource({ read: () => source.read(offset, end), documentId: source.documentId, version: source.version }).nodes.map(shift);
 			const inline = decodeInline(source, children);
-			if (inline) { boundaries.push(null); segments.push(inline.segments); blocks.push(visualSchema.nodes.source_block!.create({ ...attrs, role: 'abstract' }, inline.content)); return; }
+			if (inline) {
+				boundaries.push(inline.content.size ? null : Object.freeze([0]));
+				segments.push(inline.content.size ? inline.segments : null);
+				blocks.push(visualSchema.nodes.source_block!.create({ ...attrs, editFrom: offset, editTo: end, role: 'abstract' }, inline.content)); return;
+			}
 		}
 		if (node.kind === 'math' && node.content && node.content.to - node.content.from <= 65536 && ['$', '$$', '(', '['].includes(node.name)) {
 			boundaries.push(null); segments.push(null);
@@ -315,7 +324,7 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 			}
 		}
 		const from = plainNodes[0]!.span.from, to = plainNodes.at(-1)!.span.to;
-		if (paragraphMarker && plainNodes.every(node => node.kind === 'text') && !source.read(from, to).trim()) {
+		if (paragraphMarker && plainNodes.every(node => node.kind === 'text') && /^[ \t\r\n]*$/.test(source.read(from, to))) {
 			// TeX source separators are not empty lines typed into the new cell.
 			const marker = paragraphMarker;
 			add(marker);
@@ -323,7 +332,7 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 			blocks.push(empty.type.create({...empty.attrs,to,editFrom:to,editTo:to},empty.content));
 			paragraphMarker = null; plainNodes = []; return;
 		}
-		if (!paragraphMarker && plainNodes.every(node => node.kind === 'text') && !source.read(from, to).trim()) { plainNodes = []; return; }
+		if (!paragraphMarker && plainNodes.every(node => node.kind === 'text') && /^[ \t\r\n]*$/.test(source.read(from, to))) { plainNodes = []; return; }
 		const attrs = { from: paragraphMarker?.span.from ?? from, to, editFrom: from, editTo: to, name: paragraphMarker ? 'par' : '' };
 		paragraphMarker = null;
 		if (plainNodes.some((node) => node.kind === 'format' || node.kind === 'math')) {
