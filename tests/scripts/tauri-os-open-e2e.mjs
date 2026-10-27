@@ -13,6 +13,9 @@ import {createNativeCdpConfig} from './helpers/native-cdp-config.mjs';
 import {realPdf} from '../../apps/frontend/tests/helpers/pdf-fixture.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
+const diagnosticStartedAt = performance.now();
+const trace = stage => console.error(`[os-open +${Math.round(performance.now() - diagnosticStartedAt)}ms] ${stage}`);
+trace('prepare sandbox and source identity');
 const evidence = join(root, '.verification-artifacts/tauri');
 const releaseDirectory = join(root, 'apps/desktop-tauri/target/release');
 const exe = resolve(root, process.env.MODUTEX_TEST_EXE ?? join(releaseDirectory, 'modutex-desktop-tauri.exe'));
@@ -21,9 +24,11 @@ const sandbox = await mkdtemp(join(tmpdir(), 'modutex-os-open-e2e-'));
 const git = args => new Promise((ok, fail) => execFile('git', args, {cwd: root, windowsHide: true},
     (error, stdout) => error ? fail(error) : ok(stdout.trim())));
 const sourceGitCommit = await git(['rev-parse', 'HEAD']);
+trace('read working tree status');
 assert(/^[a-f0-9]{40}$/.test(sourceGitCommit));
 const workingTreeDirty = (await git(['status', '--porcelain', '--untracked-files=no'])).length > 0;
 await mkdir(evidence, {recursive: true});
+trace('reserve native CDP port');
 const nativeCdp = await createNativeCdpConfig(join(sandbox, 'webview'));
 const firstFile=join(sandbox,basename(sandbox)+'-first.tex');
 const secondFile=join(sandbox,basename(sandbox)+'-second.tex');
@@ -34,9 +39,11 @@ await writeFile(firstFile,firstSource);
 if(verifyFormatting)await writeFile(join(sandbox,'localSettings.yaml'),'x'.repeat(128*1024+1));
 await writeFile(secondFile,'Second OS document.\n');
 await writeFile(pdfFile,new Uint8Array(realPdf()));
+trace('inspect existing application processes');
 const existing=await new Promise((accept,reject)=>execFile('pwsh.exe',['-NoProfile','-Command',"@(Get-Process -Name modutex-desktop-tauri -ErrorAction SilentlyContinue).Count"],{windowsHide:true},(error,stdout)=>error?reject(error):accept(Number(stdout.trim()))));
 assert.equal(existing,0,'System-open acceptance requires no existing user ModuTeX process');
 const spawnedAt = performance.now();
+trace('spawn native application');
 const app = spawn(exe, [firstFile], {
     cwd: root,
     windowsHide: true,
@@ -51,23 +58,28 @@ const receipt = {createdAt: new Date().toISOString(), sourceGitCommit, workingTr
     scope: 'actual CLI startup file and second-instance handoff preserve an unsaved first document',
     status: 'running', checks: []};
 const watchdog = setTimeout(() => {
+    trace(`watchdog fired: stage=${stage}, pid=${app.pid}, exitCode=${app.exitCode}`);
     if (app.pid) execFile('taskkill.exe', ['/PID', String(app.pid), '/T', '/F'],
         {windowsHide: true, timeout: 10000}, () => process.exit(1));
 }, 120000);
 try {
+    trace('wait for owned native CDP endpoint');
     await waitNativeCdp({app, port:nativeCdp.port, evidence, lane: 'os-open', stderr: () => stderr, launchError: () => launchError});
+    trace('connect to native CDP endpoint');
     browser=await chromium.connectOverCDP('http://127.0.0.1:'+nativeCdp.port,{timeout:10000});
     page=browser.contexts().flatMap(context=>context.pages())[0];
     assert(page);
     const pageErrors=[];receipt.pageErrors=pageErrors;
     page.on('pageerror',error=>pageErrors.push(error.message));
     stage='startup argv opens the file';
+    trace(stage);
     await page.getByRole('button',{name:/^(原始碼|Source)$/}).click({timeout:15000});
     const editor=page.locator('.cm-content').first();
     await editor.waitFor({state:'visible'});
     assert((await editor.innerText()).includes('Initial OS document.'));
     if(verifyFormatting){
         stage='native formatter updates source with shared undo';
+        trace(stage);
         const before=await editor.innerText();
         const format=page.getByRole('button',{name:/^(格式化 LaTeX|Format LaTeX)$/});
         await format.click();
@@ -82,6 +94,7 @@ try {
     await page.keyboard.insertText('\nUNSAVED_FIRST_WINDOW\n');
     receipt.checks.push('Startup argv opens the actual owned file');
     stage='second instance hands off without losing dirty content';
+    trace(stage);
     const oldPages=new Set(browser.contexts().flatMap(context=>context.pages()));
     await new Promise((accept,reject)=>execFile(exe,[secondFile],{cwd:root,windowsHide:true,timeout:15000},error=>error?reject(error):accept()));
     let next;
@@ -96,6 +109,7 @@ try {
     assert((await editor.innerText()).includes('UNSAVED_FIRST_WINDOW'));
     assert.equal(await readFile(firstFile,'utf8'),firstSource,'Opening another file must not silently save the first');
     stage='second-instance PDF handoff renders the selected file';
+    trace(stage);
     const beforePdf=new Set(browser.contexts().flatMap(context=>context.pages()));
     await new Promise((accept,reject)=>execFile(exe,[pdfFile],{cwd:root,windowsHide:true,timeout:15000},error=>error?reject(error):accept()));
     let pdfPage;
@@ -115,6 +129,7 @@ try {
     receipt.checks.push('Second instance opens its file and preserves unsaved content in the original window');
     receipt.status='passed';
 } catch (error) {
+    trace(`failure: stage=${stage}, error=${String(error)}`);
     receipt.status = 'failed';
     receipt.stage = stage;
     receipt.error = String(error);
@@ -145,6 +160,7 @@ try {
     ]);
     process.exitCode = 1;
 } finally {
+    trace('cleanup recent file entries');
     clearTimeout(watchdog);
     if (page && !page.isClosed()) {
         await page.evaluate(async names => {
@@ -158,12 +174,17 @@ try {
             process.exitCode = 1;
         });
     }
+    trace('write acceptance receipt');
     await writeFile(join(evidence, 'native-os-open-e2e.json'), JSON.stringify(receipt, null, 2));
+    trace('terminate owned application process tree');
     if (app.exitCode === null && app.pid) await new Promise(ok =>
         execFile('taskkill.exe', ['/PID', String(app.pid), '/T', '/F'], {windowsHide: true, timeout: 10000}, ok));
+    trace('close CDP connection');
     await browser?.close().catch(() => {});
     assert.equal(dirname(resolve(sandbox)), resolve(tmpdir()));
     assert(basename(sandbox).startsWith('modutex-os-open-e2e-'));
+    trace('remove owned sandbox');
     await rm(sandbox, {recursive: true, force: true, maxRetries: 5, retryDelay: 200});
+    trace('completed');
     console.log(JSON.stringify(receipt));
 }
