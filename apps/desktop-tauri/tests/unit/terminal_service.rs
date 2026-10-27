@@ -328,9 +328,13 @@ mod reviewer_supervision_tests {
         let owner = OwnerId::from_label("main").unwrap();
         let sink = Arc::new(BoundedEventSink::new(256, 1024 * 1024));
         let service = TerminalService::new(sink.clone());
-        let script = r#"const cp=require('child_process');const c=cp.spawn(process.execPath,['-e','console.log("GRANDCHILD_NODE_UTF8_終端𠀀_READY_"+process.pid);setInterval(()=>{},3000);'],{stdio:'inherit'});console.log("LEADER_NODE_PID_"+process.pid+"_CHILD_"+c.pid);setTimeout(()=>{process.exit(0);},400);"#;
-        let shell =
-            TrustedShellConfig::new(node_exe, vec![OsString::from("-e"), OsString::from(script)]);
+        let script_path = path.join("terminal-node-tree.cjs");
+        fs::write(
+            &script_path,
+            include_str!("../fixtures/terminal-node-tree.cjs"),
+        )
+        .unwrap();
+        let shell = TrustedShellConfig::new(node_exe, vec![script_path.into_os_string()]);
         let spec = TerminalSpawnSpec::new(
             owner.clone(),
             WorkspaceId::parse("ws-node-leader-exit").unwrap(),
@@ -392,6 +396,9 @@ mod reviewer_supervision_tests {
             "grandchild process handle must be openable"
         );
 
+        // Release only after the PTY has delivered both markers and the test owns
+        // both process handles. CI load must not race a fixed leader lifetime.
+        fs::write(path.join("release-leader"), b"exit").unwrap();
         let drain_deadline = Instant::now() + Duration::from_secs(6);
         while Instant::now() < drain_deadline && job.active_processes().unwrap_or(1) > 0 {
             for _ in sink.drain_for_owner(&owner) {}
