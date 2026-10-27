@@ -115,7 +115,7 @@ try {
     }));
     await closeDialog.waitFor({state:'visible'});
     const closed=childPage.waitForEvent('close',{timeout:10000});
-    await closeDialog.getByRole('button',{name:/^(捨棄變更並關閉|Discard changes and close)$/}).click();
+    await closeDialog.getByRole('button',{name:/^(不儲存|Don't save)$/}).click();
     await closed;
     assert(!page.isClosed(),'Closing the child window must preserve the main window');
     assert((await editor.innerText()).includes(marker),'Main unsaved document must survive child close');
