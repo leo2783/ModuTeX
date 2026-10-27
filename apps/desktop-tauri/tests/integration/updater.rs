@@ -4,7 +4,7 @@
 
 use std::{
     io::{Read, Write},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
     thread,
     time::{Duration, Instant},
 };
@@ -14,6 +14,26 @@ use tauri_plugin_updater::UpdaterExt;
 const PUBLIC_KEY: &str = include_str!("../fixtures/updater/public-key.txt");
 const SIGNATURE: &str = include_str!("../fixtures/updater/payload.bin.sig");
 const PAYLOAD: &[u8] = include_bytes!("../fixtures/updater/payload.bin");
+
+fn read_fixture_request(stream: &mut TcpStream) -> Vec<u8> {
+    // Windows can inherit the listener's nonblocking mode on accepted sockets.
+    // Poll accept only; request reads use the bounded blocking timeout below.
+    stream.set_nonblocking(false).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let mut request = Vec::new();
+    let mut chunk = [0_u8; 512];
+    while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+        let count = stream.read(&mut chunk).unwrap();
+        if count == 0 {
+            break;
+        }
+        request.extend_from_slice(&chunk[..count]);
+        assert!(request.len() <= 8192, "fixture request limit");
+    }
+    request
+}
 
 async fn download_fixture(version: &str, corrupt: bool) -> tauri_plugin_updater::Result<Vec<u8>> {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -43,19 +63,7 @@ async fn download_fixture(version: &str, corrupt: bool) -> tauri_plugin_updater:
                 }
                 Err(error) => panic!("fixture accept failed: {error}"),
             };
-            stream
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .unwrap();
-            let mut request = Vec::new();
-            let mut chunk = [0_u8; 512];
-            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
-                let count = stream.read(&mut chunk).unwrap();
-                if count == 0 {
-                    break;
-                }
-                request.extend_from_slice(&chunk[..count]);
-                assert!(request.len() <= 8192, "fixture request limit");
-            }
+            let request = read_fixture_request(&mut stream);
             let body = if request.starts_with(b"GET /latest.json ") {
                 manifest.as_bytes()
             } else {
@@ -99,6 +107,27 @@ async fn download_fixture(version: &str, corrupt: bool) -> tauri_plugin_updater:
     .await;
     server.join().unwrap();
     outcome
+}
+
+#[test]
+fn fixture_reads_delayed_fragmented_headers_from_nonblocking_connection() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut stream, _) = listener.accept().unwrap();
+    stream.set_nonblocking(true).unwrap();
+    assert_eq!(
+        stream.read(&mut [0_u8; 1]).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    let server = thread::spawn(move || read_fixture_request(&mut stream));
+    thread::sleep(Duration::from_millis(25));
+    client.write_all(b"GET /latest.json HTTP/1.1\r\n").unwrap();
+    thread::sleep(Duration::from_millis(25));
+    client.write_all(b"Host: localhost\r\n\r\n").unwrap();
+    assert_eq!(
+        server.join().unwrap(),
+        b"GET /latest.json HTTP/1.1\r\nHost: localhost\r\n\r\n"
+    );
 }
 
 #[tokio::test]

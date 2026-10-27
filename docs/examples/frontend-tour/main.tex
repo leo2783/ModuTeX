@@ -1,0 +1,30 @@
+\documentclass{article}
+\usepackage[margin=2cm]{geometry}
+\usepackage{amsmath,amssymb,listings,xcolor}
+\title{From an idea to a PDF}
+\author{ModuTeX workspace tour}
+\date{}
+\begin{document}
+\maketitle
+\section{Keep the document in view}
+Write a short research note, then check the compiled PDF beside it.
+\par
+Visual editing and LaTeX source share the same document and undo history.
+\[\frac{\partial f}{\partial x}=2x+y\]
+\section{Compare results}
+\begin{center}
+\begin{tabular}{p{\dimexpr0.266667\linewidth-2\tabcolsep\relax}p{\dimexpr0.266667\linewidth-2\tabcolsep\relax}p{\dimexpr0.266667\linewidth-2\tabcolsep\relax}}
+\hline
+\textbf{Method} & \textbf{Samples} & \textbf{Score} \\
+\hline
+Baseline & 120 & 0.82 \\
+Refined & 80 & 0.91 \\
+\hline
+\end{tabular}
+\end{center}
+\section{Show the calculation}
+\begin{lstlisting}[language=Python,name=python,xleftmargin=\parindent]
+def mean(values):
+    return sum(values) / len(values)
+\end{lstlisting}
+\end{document}
