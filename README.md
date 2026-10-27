@@ -3,10 +3,19 @@
 <p align="center">Visual LaTeX editing with a built-in compiler.</p>
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-TW.md">繁體中文</a></p>
 
-ModuTeX combines visual editing, LaTeX source editing, and PDF preview in a unified desktop workspace powered by Tauri 2 and Svelte.
-Write text, build equations and tables, and compile documents locally with the bundled Tectonic engine.
+ModuTeX 0.3.0 is an open-source LaTeX editor for Windows x64, built with Tauri 2 and Svelte.
+Switch the editor between visual drafting and LaTeX source while keeping the compiled PDF in view on the right.
+
+Your document stays in a plain-text `.tex` file. Use visual mode to write text, equations, and tables, then click **Compile PDF** to build with the bundled Tectonic engine.
+Visual mode is a working draft; check the PDF for final fonts, spacing, and page breaks. The first compilation may need to download TeX resources.
 
 ![Visual editing and compiled PDF side by side](docs/images/workbench-en.png)
+
+## See it in use
+
+[Step-by-step guide](docs/user/FRONTEND_TOUR.md) · [Example document](docs/examples/frontend-tour/main.tex) · [Video recording guide](docs/media/RECORDING.md)
+
+Follow the same document through editing, switching to source, setting the title date, and compiling to PDF.
 
 ## Screenshots
 
@@ -14,18 +23,18 @@ Switch to LaTeX source while keeping the PDF in view.
 
 ![LaTeX source editor and PDF preview](docs/images/source-editor-en.png)
 
-Choose the main document, compiler profile, and output paths for each workspace.
+Choose the main document and compiler profile, and set whether the document title includes a date.
 
 ![Workspace compile settings](docs/images/compile-settings-en.png)
 
 ## Features
 
-- **Visual and source editing:** Edit rich content directly with synchronized undo/redo, or switch to LaTeX source for custom macros and packages.
-- **Notebook cells:** Organize text, headings, and sections into draggable notebook-style cells.
-- **Equations and matrices:** Visual template palettes for fractions, limits, calculus, and matrix structures.
-- **Tables, code and images:** Manage table geometries, code blocks with syntax highlighting, and embedded images.
-- **Integrated PDF preview:** Live side-by-side compilation with error diagnostics and fallback to the last successful render.
-- **Dual language support:** English and Traditional Chinese interface.
+- **Two editing modes:** Switch between visual drafting and LaTeX source, with a shared undo/redo history.
+- **Notebook cells:** Organize text and headings into cells that you can insert, move, and edit.
+- **Equations, tables, and code:** Build formulas and matrices from templates, edit table rows and columns, and insert code blocks or images.
+- **Local compilation:** Click **Compile PDF** to run the bundled Tectonic engine. Missing TeX resources may require an internet connection.
+- **PDF preview and diagnostics:** Review the compiled output beside the editor. Failed builds show diagnostics and retain the last successful PDF.
+- **Templates, dates, and language:** Save a template as `.tex`, choose a title-date format, and use the interface in English or Traditional Chinese.
 
 ## Usage
 

@@ -3,10 +3,19 @@
 <p align="center">內建編譯器的視覺化 LaTeX 編輯器。</p>
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-TW.md">繁體中文</a></p>
 
-ModuTeX 以 Tauri 2 與 Svelte 架構打造，將視覺化編輯、LaTeX 原始碼編輯與 PDF 預覽整合在單一桌面工作區。
-可直接撰寫文字、建立公式與表格，並透過內建的 Tectonic 引擎本機編譯。
+ModuTeX 0.3.0 是適用於 Windows x64 的開源 LaTeX 編輯器，使用 Tauri 2 與 Svelte 開發。
+左側編輯區可在「視覺化」與「原始碼」之間切換，右側保留編譯後的 PDF，方便對照內容與排版。
+
+文件以純文字 `.tex` 檔案儲存。你可以在視覺模式撰寫內文、公式與表格，再點選「編譯 PDF」，透過內建 Tectonic 引擎產生文件。
+視覺區是編輯草稿，最終字型、間距與分頁請看 PDF；首次編譯可能需要連線下載 TeX 資源。
 
 ![視覺編輯與編譯後的 PDF 並列](docs/images/workbench.png)
+
+## 操作示範
+
+[逐步導覽](docs/user/FRONTEND_TOUR.zh-TW.md) · [示範文件](docs/examples/frontend-tour/main.tex) · [影片錄製流程](docs/media/RECORDING.md)
+
+跟著同一份文件練習編輯、切換原始碼、設定標題日期，以及編譯並檢查 PDF。
 
 ## 介面預覽
 
@@ -14,18 +23,18 @@ ModuTeX 以 Tauri 2 與 Svelte 架構打造，將視覺化編輯、LaTeX 原始�
 
 ![LaTeX 原始碼編輯器與 PDF 預覽](docs/images/source-editor.png)
 
-為每個工作區選擇主文件、編譯引擎與輸出路徑。
+為工作區選擇主文件與編譯引擎，並設定文件標題是否顯示日期。
 
 ![工作區編譯設定](docs/images/compile-settings.png)
 
 ## 主要功能
 
-- **視覺與原始碼雙模式**：直接編輯格式化內容並共用復原記錄，亦可切換至原始碼模式編輯進階 LaTeX 巨集。
-- **Notebook 儲存格**：透過可拖曳的區塊結構組織標題、摘要與內文段落。
-- **公式與矩陣**：視覺化數學模板庫，涵蓋分數、極限、微積分及各類矩陣排版。
-- **表格、程式碼與圖片**：自訂欄寬與行列結構、程式碼語法標亮，以及圖片插入。
-- **整合式 PDF 預覽**：並列即時編譯與診斷日誌，編譯失敗時自動保留前次成功畫面。
-- **雙語介面**：可以選擇繁體中文或英文。
+- **兩種編輯模式**：在視覺草稿與 LaTeX 原始碼之間切換，兩者共用復原與重做紀錄。
+- **Notebook 儲存格**：用可插入、移動與編輯的儲存格，組織文字與章節標題。
+- **公式、表格與程式碼**：從模板建立公式與矩陣，調整表格行列，或插入程式碼區塊與圖片。
+- **本機編譯**：點選「編譯 PDF」執行內建 Tectonic；缺少 TeX 資源時可能需要網路連線。
+- **PDF 預覽與診斷**：在編輯區旁檢查編譯結果。失敗時顯示診斷，並保留前一次成功的 PDF。
+- **範本、日期與語言**：將範本另存為 `.tex`，選擇標題日期格式，並以繁體中文或英文操作介面。
 
 ## 使用說明
 
@@ -67,5 +76,5 @@ npm run frontend:test
 
 ## 授權條款
 
-ModuTeX 原始碼採用 [Apache-2.0](LICENSE) 授權。
+目前 Tauri 應用程式的原創程式碼採用 [Apache-2.0](LICENSE) 授權。
 各模組範圍與第三方聲明請參閱 [LICENSING.md](LICENSING.md)。
