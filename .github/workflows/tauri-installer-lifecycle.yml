@@ -94,7 +94,7 @@ jobs:
 
           New-Item -ItemType Directory -Path $downloadRoot -ErrorAction Stop | Out-Null
 
-          gh run download $env:GITHUB_RUN_ID --name $env:INSTALLER_ARTIFACT_NAME --dir $downloadRoot
+          & ./tests/scripts/helpers/download-workflow-artifact.ps1 -RunId $env:GITHUB_RUN_ID -ArtifactName $env:INSTALLER_ARTIFACT_NAME -Destination $downloadRoot
 
           if ($LASTEXITCODE -ne 0) { throw 'Failed to download the package-gate installer from this workflow run' }
 

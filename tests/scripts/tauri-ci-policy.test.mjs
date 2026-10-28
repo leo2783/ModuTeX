@@ -244,8 +244,8 @@ function validatePackageAndLifecycle(wf, gates) {
 
 	const nativeJob = expandedJob(wf, gates.e2e).job;
 	const nativeCommands = commands(nativeJob);
-	assert.match(nativeCommands, /gh run download \$env:GITHUB_RUN_ID/);
-	assert.match(nativeCommands, /gh run download \$env:EXE_ARTIFACT_RUN_ID/);
+	assert.match(nativeCommands, /download-workflow-artifact\.ps1 -RunId \$env:GITHUB_RUN_ID/);
+	assert.match(nativeCommands, /download-workflow-artifact\.ps1 -RunId \$env:EXE_ARTIFACT_RUN_ID/);
 	assert.match(nativeCommands, /CURRENT_RUN_ID/);
 	assert.match(nativeCommands, /Get-FileHash/);
 	assert.doesNotMatch(nativeCommands, /cargo build|frontend:build/);
@@ -263,7 +263,7 @@ function validatePackageAndLifecycle(wf, gates) {
 	);
 	assert.equal(lifecycle.job.strategy['fail-fast'], false);
 	const lifecycleCommands = commands(lifecycle.job);
-	assert.match(lifecycleCommands, /gh run download \$env:GITHUB_RUN_ID/);
+	assert.match(lifecycleCommands, /download-workflow-artifact\.ps1 -RunId \$env:GITHUB_RUN_ID/);
 	assert.match(lifecycleCommands, /INSTALLER_SHA256/);
 	assert.match(lifecycleCommands, /ExpectedInstallerSha256/);
 	assert.match(lifecycleCommands, /ExpectedExecutableSha256/);
@@ -406,7 +406,7 @@ export function validateTauriCiContract(wf) {
 	assert.match(laneStep.run, /\$LASTEXITCODE/, 'native E2E failures must stop the lane');
 	assert.match(JSON.stringify(laneStep.env), /MODUTEX_TEST_PERIODIC_WATCH/, 'compile lane must verify periodic watch');
 	assert.doesNotMatch(JSON.stringify(e2eJob), /MODUTEX_TEST_SOURCE_FORMAT/, 'OS-open CI must not depend on a user-installed formatter');
-	assert.match(e2eCommand, /gh run download/, 'native E2E must consume build artifact');
+	assert.match(e2eCommand, /download-workflow-artifact\.ps1/, 'native E2E must consume build artifact');
 	assert.match(e2eCommand, /Get-FileHash/, 'native E2E must verify executable bytes');
 	assert.match(JSON.stringify(e2eJob), /built_exe_sha256/, 'native E2E must bind expected build SHA');
 	assert.doesNotMatch(e2eCommand, /cargo build|frontend:build/, 'native E2E cannot rebuild the accepted app');
@@ -683,7 +683,7 @@ test('clean runners prepare real WASM bindings and frontend artifacts before dep
 		const download = steps.findIndex(step => /Download source-matched Tauri frontend assets/.test(step.name ?? ''));
 		const compile = steps.findIndex(step => /cargo (clippy|test)\b/.test(step.run ?? ''));
 		assert(download >= 0 && download < compile, `${id} must download assets before Cargo compiles the app`);
-		assert.match(steps[download].run, /gh run download \$env:GITHUB_RUN_ID/);
+		assert.match(steps[download].run, /download-workflow-artifact\.ps1 -RunId \$env:GITHUB_RUN_ID/);
 		assert.match(steps[download].env.FRONTEND_ARTIFACT_NAME, /github.run_id.*github.run_attempt/);
 		assert.match(steps[download].run, /index\.html/);
 	}

@@ -238,7 +238,7 @@ jobs:
           $destDir = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release'
           if (Test-Path -LiteralPath $destDir) { Remove-Item -LiteralPath $destDir -Recurse -Force }
           New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-          gh run download $env:EXE_ARTIFACT_RUN_ID --name $env:EXE_ARTIFACT_NAME --dir $destDir
+          & ./tests/scripts/helpers/download-workflow-artifact.ps1 -RunId $env:EXE_ARTIFACT_RUN_ID -ArtifactName $env:EXE_ARTIFACT_NAME -Destination $destDir
           if ($LASTEXITCODE -ne 0) { throw 'Failed to download the exact CI-tested release executable artifact' }
           $destExe = Join-Path $destDir 'modutex-desktop-tauri.exe'
           if (-not (Test-Path -LiteralPath $destExe -PathType Leaf)) {
@@ -724,7 +724,7 @@ jobs:
           if ([string]$artifact.workflow_run.id -ne $env:RELEASE_ARTIFACT_RUN_ID) { throw 'Final release artifact workflow run mismatch' }
           if ($artifact.workflow_run.head_sha -ne $env:RELEASE_ARTIFACT_WORKFLOW_SHA) { throw 'Final release artifact workflow head SHA mismatch' }
           New-Item -ItemType Directory -Force -Path dist-release | Out-Null
-          gh run download $env:RELEASE_ARTIFACT_RUN_ID --name $env:RELEASE_ARTIFACT_NAME --dir dist-release
+          & ./tests/scripts/helpers/download-workflow-artifact.ps1 -RunId $env:RELEASE_ARTIFACT_RUN_ID -ArtifactName $env:RELEASE_ARTIFACT_NAME -Destination dist-release
           if ($LASTEXITCODE -ne 0) { throw 'gh run download failed for verified release artifact' }
 
       - name: Verify release artifact provenance, signing policy, and remote tag identity

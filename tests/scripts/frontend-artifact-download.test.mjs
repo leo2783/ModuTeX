@@ -21,7 +21,7 @@ const consumers=[];
 for(const workflow of (await readdir(new URL('../../.github/workflows/',import.meta.url))).filter(name=>name.endsWith('.yml'))){
   const document=yaml.load(await readFile(new URL(`../../.github/workflows/${workflow}`,import.meta.url),'utf8'));
   for(const [job,definition] of Object.entries(document.jobs??{})){
-    if(definition.steps?.some(step=>typeof step.run==='string'&&step.run.includes('gh run download')&&step.env?.FRONTEND_ARTIFACT_NAME)) consumers.push([workflow,job]);
+    if(definition.steps?.some(step=>typeof step.run==='string'&&step.run.includes('download-workflow-artifact.ps1')&&step.env?.FRONTEND_ARTIFACT_NAME)) consumers.push([workflow,job]);
   }
 }
 assert(consumers.length>0,'Frontend artifact consumers must be discovered from the real workflow graph');
@@ -30,12 +30,14 @@ for(const [workflow,job] of consumers){
     const document=yaml.load(await readFile(new URL(`../../.github/workflows/${workflow}`,import.meta.url),'utf8'));
     const target=document.jobs[job];
     assert(target,`Missing real job ${job}`);
-    const step=target.steps.find(step=>typeof step.run==='string'&&step.run.includes('gh run download')&&step.env?.FRONTEND_ARTIFACT_NAME);
+    const step=target.steps.find(step=>typeof step.run==='string'&&step.run.includes('download-workflow-artifact.ps1')&&step.env?.FRONTEND_ARTIFACT_NAME);
     assert(step,'The real download step must be present');
     const directory=await mkdtemp(join(tmpdir(),'modutex-artifact-download-'));
     const checkout=join(directory,'checkout'), runner=join(directory,'runner');
     try{
       await mkdir(join(checkout,'apps/frontend'),{recursive:true});await mkdir(runner);
+      await mkdir(join(checkout,'tests/scripts/helpers'),{recursive:true});
+      await writeFile(join(checkout,'tests/scripts/helpers/download-workflow-artifact.ps1'),await readFile(new URL('./helpers/download-workflow-artifact.ps1',import.meta.url)));
       await writeFile(join(checkout,'LICENSE'),'Original checkout license\n');
       for(const file of notices.filter(file=>file!=='LICENSE')){
         await mkdir(dirname(join(checkout,file)),{recursive:true});
