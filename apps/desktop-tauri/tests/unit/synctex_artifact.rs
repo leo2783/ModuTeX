@@ -336,18 +336,19 @@ fn real_tectonic_normalized_artifact_preserves_entry_include_and_pdf_locations()
         paths[1].as_str()
     )).unwrap();
     fs::write(input.join(paths[1].as_str()), b"Included source line.\n").unwrap();
-    let existing_cache = std::env::var_os("TECTONIC_CACHE_DIR");
-    let cache = existing_cache
-        .clone()
-        .unwrap_or_else(|| directory.path().join("cache").into_os_string());
+    let cache = directory.path().join("cache").into_os_string();
     let mut arguments: Vec<OsString> = ["--untrusted", "--keep-logs", "--synctex"]
         .into_iter()
         .map(OsString::from)
         .collect();
-    if existing_cache.is_some() {
-        arguments.push("--only-cached".into());
-    }
     arguments.extend([
+        OsString::from("--only-cached"),
+        OsString::from("--bundle"),
+        OsString::from(
+            tauri::Url::from_file_path(crate::services::test_bundle::verified_path())
+                .expect("absolute local test bundle")
+                .as_str(),
+        ),
         OsString::from("--outdir"),
         output.clone().into_os_string(),
         OsString::from("main.tex"),

@@ -1,0 +1,1472 @@
+{
+	"source_url": "https://data1b.fullyjustified.net/tlextras-2022.0r0.tar",
+	"source_bundle_digest": "6ffe055852f8faf66c0acbe1a7fb27f87b869a90bad1204f3bf4d9683f597c7c",
+	"bundle_digest": "f965561a5764b990e74a4d375f29a847f87945c9200e9006c1cec9ff1a8270ee",
+	"archive_sha256": "ee245adea88005bc83f404c47cfd90f7e936bc382435339427ebcc45768dc1db",
+	"files": [
+		{
+			"name": "article.cls",
+			"offset": 143732224,
+			"length": 20144,
+			"sha256": "988fb3e599df7e5b545e4253829dab11f0c7bd7827b79d32c2aaadfb52db6f6c"
+		},
+		{
+			"name": "atbegshi-ltx.sty",
+			"offset": 143758336,
+			"length": 3034,
+			"sha256": "815582a920087c3a3c7dbf4d357b22db05e087f87b7fdcadf606d9f1fe750cb4"
+		},
+		{
+			"name": "atbegshi.sty",
+			"offset": 16098304,
+			"length": 24708,
+			"sha256": "a73003b4bb2dc8a814533ddbd31600e6626827799c2a465d03ef42e7a33fa71b"
+		},
+		{
+			"name": "atveryend-ltx.sty",
+			"offset": 143761920,
+			"length": 2462,
+			"sha256": "5cf523f1f8f87a365b9b2d16d79e62e0363a833dfdfa889e99f5251064661e83"
+		},
+		{
+			"name": "atveryend.sty",
+			"offset": 58731520,
+			"length": 19336,
+			"sha256": "a62143db8b3bf1e52082c32e3feb7450bc90c000c6c48a38fa51cf96a6075eae"
+		},
+		{
+			"name": "CaseFolding.txt",
+			"offset": 12869120,
+			"length": 84688,
+			"sha256": "a566cd48687b2cd897e02501118b2413c14ae86d318f9abbbba97feb84189f0f"
+		},
+		{
+			"name": "ckx.map",
+			"offset": 346417152,
+			"length": 1289,
+			"sha256": "52859584f1baa4aea9e5c6318ded82b1b5bfa713dcdc945bda7e26b206c8bdc4"
+		},
+		{
+			"name": "cmex10.tfm",
+			"offset": 362266624,
+			"length": 992,
+			"sha256": "0890bccea1dd4d27f001ac30e86c63af35bc803e0557c35aafb1903c8d208e92"
+		},
+		{
+			"name": "cmmi10.tfm",
+			"offset": 362276864,
+			"length": 1528,
+			"sha256": "e442c5487f84df70218ff37f775c87060856f5b6e04c011b6cadbbadfcf46645"
+		},
+		{
+			"name": "cmmi5.tfm",
+			"offset": 362280960,
+			"length": 1508,
+			"sha256": "8839e40838381a0a3c976bdd5becf72afd60bde5a965c3d9b985c3479c6cf75e"
+		},
+		{
+			"name": "cmmi7.tfm",
+			"offset": 362285056,
+			"length": 1528,
+			"sha256": "ce55681703aae565f17286d800ea9780223132589bdbaeda1751b869aba26a38"
+		},
+		{
+			"name": "cmr10.tfm",
+			"offset": 362293248,
+			"length": 1296,
+			"sha256": "87f2d8981927644cbecaf3d639e96e348ea4e7be49d8804468bd8ba9ff3f5244"
+		},
+		{
+			"name": "cmr5.tfm",
+			"offset": 362299392,
+			"length": 1220,
+			"sha256": "581be818f67bd11a1792d05e129abe3ea30c5cbdfce3bed8da7c5fb50f5ba95b"
+		},
+		{
+			"name": "cmr7.tfm",
+			"offset": 362303488,
+			"length": 1300,
+			"sha256": "28f9f4d237bdae4babef4a59d90f17686a09d6f9df0b2c3c23b2ba15f20eee82"
+		},
+		{
+			"name": "cmsy10.tfm",
+			"offset": 362348032,
+			"length": 1124,
+			"sha256": "0ca13d421ac7133271aed7c935099ecf3d1d08ac9e15f81acb34a16564ab8a46"
+		},
+		{
+			"name": "cmsy5.tfm",
+			"offset": 362350080,
+			"length": 1112,
+			"sha256": "6b7dc18cba9ca8996d7b146f1ed78d9227577b26248083310fec227692198ca5"
+		},
+		{
+			"name": "cmsy7.tfm",
+			"offset": 362354176,
+			"length": 1120,
+			"sha256": "4f59bbf683e947c807158641621982dc83f55fec042fea7963d8ce9f9da98256"
+		},
+		{
+			"name": "dehyphn-x-2022-03-16.pat",
+			"offset": 22424576,
+			"length": 273989,
+			"sha256": "72e371729891000698d0e29b5514625733e5529ca5d619bc706f69c81778052f"
+		},
+		{
+			"name": "dehyphn-x-2022-03-16.tex",
+			"offset": 22699520,
+			"length": 4964,
+			"sha256": "2909d9b18ab2a94854c5c8270eae7b51788d0edb849985fd04fa602d7aa0adc6"
+		},
+		{
+			"name": "dehypht-x-2022-03-16.pat",
+			"offset": 22705152,
+			"length": 272152,
+			"sha256": "063c15918921ad5d4a95a73853453929a14df34ced1bd8b9ae1113fc34831e12"
+		},
+		{
+			"name": "dehypht-x-2022-03-16.tex",
+			"offset": 22978048,
+			"length": 4964,
+			"sha256": "a25d30636a6b342c6dfd41bde80ab38e500e28236166fc8f1a061a0a4e9f709d"
+		},
+		{
+			"name": "dumyhyph.tex",
+			"offset": 1632256,
+			"length": 419,
+			"sha256": "99d210320228a242478c36c0dfde48c7513e4495d4feea7fe3997aab27582dfc"
+		},
+		{
+			"name": "expl3-code.tex",
+			"offset": 141933568,
+			"length": 1204757,
+			"sha256": "496aa058ffd3c379d77df9d842ae931575f1ea12db5f806cbeea1634d505b6a1"
+		},
+		{
+			"name": "expl3.ltx",
+			"offset": 143142912,
+			"length": 5015,
+			"sha256": "5a61e07f882337465d24c17e9d3865d1849e3baf37a12e2b7956af4dacf745ab"
+		},
+		{
+			"name": "fontmath.cfg",
+			"offset": 144095232,
+			"length": 1983,
+			"sha256": "d3f100870b4ddd3f7b31fc799d01fbfb3bfa125d6fc473e64ce273901555b0c4"
+		},
+		{
+			"name": "fontmath.ltx",
+			"offset": 144097792,
+			"length": 24949,
+			"sha256": "f16b8c352292d9bb9ae82fa6764651e7f61d21e7bb5fdb039c18dca704700855"
+		},
+		{
+			"name": "fonttext.cfg",
+			"offset": 144123392,
+			"length": 1983,
+			"sha256": "2d7fcaf04dba33fb4344c3f8b0be1f200379f8f08fbe14b412a461c1d3578736"
+		},
+		{
+			"name": "fonttext.ltx",
+			"offset": 144125952,
+			"length": 3304,
+			"sha256": "adb63677a08ed1904346996fa43c165f6c2ed2a869661b37f24ead11c23e0dad"
+		},
+		{
+			"name": "glyphlist.txt",
+			"offset": 360083968,
+			"length": 77146,
+			"sha256": "1d090feeb2cef487186d67f42d0b106bf09abf67e2cd94ab99e238d57c561d56"
+		},
+		{
+			"name": "hyph-af.tex",
+			"offset": 5544448,
+			"length": 80741,
+			"sha256": "9c413b121d989ad8f0c95c0a4e4fa3bb78d412404919e04b71f609e10a85099f"
+		},
+		{
+			"name": "hyph-as.tex",
+			"offset": 7786496,
+			"length": 3156,
+			"sha256": "c0d23a0364983038ee73fdc9ee54dc8faa23d38111991b7c5c2b31833f22a050"
+		},
+		{
+			"name": "hyph-be.tex",
+			"offset": 5727744,
+			"length": 36788,
+			"sha256": "ce0c69d86e03c40bdd0ab9f4535cee2503fe2894590380e45a99974f029cea6f"
+		},
+		{
+			"name": "hyph-bg.tex",
+			"offset": 5765120,
+			"length": 106100,
+			"sha256": "d37886f8cecea60bf829e4dd9dc1107aea8e8ee3eb92425423534bafac5f59b0"
+		},
+		{
+			"name": "hyph-bn.tex",
+			"offset": 7790592,
+			"length": 3152,
+			"sha256": "b44ca65373a702020d5ffbf1acdffa78f5b4d3259b4f18a12a88b2a71ae2445d"
+		},
+		{
+			"name": "hyph-ca.tex",
+			"offset": 5872128,
+			"length": 8076,
+			"sha256": "153b51e2a9f8afdd87a8848f73f4462a902c58d597aa55c66506af65c5596e7a"
+		},
+		{
+			"name": "hyph-cop.tex",
+			"offset": 6027264,
+			"length": 11833,
+			"sha256": "e66cbaa15da902f47cf955bd654f2eb0afe2abe5d1c819db1fd8186b98c7bb40"
+		},
+		{
+			"name": "hyph-cs.tex",
+			"offset": 6051840,
+			"length": 22983,
+			"sha256": "37b16173109c9c1a34d04c87eeb4ea8206d55e636c380dbcd72e912b4ca5033a"
+		},
+		{
+			"name": "hyph-cu.tex",
+			"offset": 5887488,
+			"length": 138901,
+			"sha256": "f4636573f2e35ac367159d286bf4b8f65fb68d3bc2712b3e763ad53d498a56ca"
+		},
+		{
+			"name": "hyph-cy.tex",
+			"offset": 8989184,
+			"length": 45634,
+			"sha256": "22c4d441e790c035bd208c4cccbe9a8254ab81c3da0ca0a8b062f8ed34f3e14c"
+		},
+		{
+			"name": "hyph-da.tex",
+			"offset": 6075392,
+			"length": 8454,
+			"sha256": "23e0a50f0c20d632be06f973e700323463961eac737bb14f6c3787675a4f5575"
+		},
+		{
+			"name": "hyph-de-1901.tex",
+			"offset": 6421504,
+			"length": 259355,
+			"sha256": "0ddaf40840131da550564a606d9f806f001ca3e72e67475ef3c4f79a1ab1e9c9"
+		},
+		{
+			"name": "hyph-de-1996.tex",
+			"offset": 6681600,
+			"length": 261255,
+			"sha256": "162ae879d2e61112bf7ab37b2bf47027e3df409f2641fb9b8cd6e6388c6d547d"
+		},
+		{
+			"name": "hyph-de-ch-1901.tex",
+			"offset": 6943744,
+			"length": 254924,
+			"sha256": "8ec39fd63d22fc935fe2a2839dd73c88d061b51225e7218a6b90e67be7c2f937"
+		},
+		{
+			"name": "hyph-el-monoton.tex",
+			"offset": 7199232,
+			"length": 8327,
+			"sha256": "abfd086443070d6c7e89710dc87429dce51bda1b55a6afd03e43f1d1cd04ff4a"
+		},
+		{
+			"name": "hyph-el-polyton.tex",
+			"offset": 7208448,
+			"length": 19750,
+			"sha256": "716cc8bd2e46a52e66a5d86ebe2f886a222d1ce0941378c7a5ab56bd8eee43f7"
+		},
+		{
+			"name": "hyph-en-gb.tex",
+			"offset": 6172672,
+			"length": 58474,
+			"sha256": "e95bb4ab350f620c41c231c4785d7bdb4f91949d3e631b30e08b3ead3c340a52"
+		},
+		{
+			"name": "hyph-en-us.tex",
+			"offset": 6232064,
+			"length": 34128,
+			"sha256": "f4ffcd96c5cbc886bdad23f95dcae8edc3cd3620eae62f7946eceda97c4e68f8"
+		},
+		{
+			"name": "hyph-eo.tex",
+			"offset": 6266880,
+			"length": 17045,
+			"sha256": "6892e3758fd35a1cb509556bb06fcb008eda3e975a867ee87eb828f204460d18"
+		},
+		{
+			"name": "hyph-es.tex",
+			"offset": 8746496,
+			"length": 42602,
+			"sha256": "6a2e5f39a991a23d1cd8a23dbd0f6fe96a9f07561a6695f4f3320f47030e236c"
+		},
+		{
+			"name": "hyph-et.tex",
+			"offset": 6284800,
+			"length": 25785,
+			"sha256": "617abc528446e33c1690a3d13ae7629292d2f00557b1b4ec96cb2a1d790ac090"
+		},
+		{
+			"name": "hyph-eu.tex",
+			"offset": 5722112,
+			"length": 4646,
+			"sha256": "e080a1e42ac443d8451df46d9d6628e64e8317aa53d826f99099652aaba613d0"
+		},
+		{
+			"name": "hyph-fi-x-school.tex",
+			"offset": 6324224,
+			"length": 2456,
+			"sha256": "264a2ba2ab5237246f0bd902c7b3f111b03662ddd55c4dab03a9897e47e5491c"
+		},
+		{
+			"name": "hyph-fi.tex",
+			"offset": 6327296,
+			"length": 4820,
+			"sha256": "cf68be5eb003d299f85f2b7185f31d8ff5799c19dfad3f0300eaf9843e9cc8d3"
+		},
+		{
+			"name": "hyph-fr.tex",
+			"offset": 6332928,
+			"length": 30353,
+			"sha256": "526cad6fe8f52fcd3caa3fcaf667cb1740cfc14bca198680e00dc343a84594de"
+		},
+		{
+			"name": "hyph-fur.tex",
+			"offset": 6364160,
+			"length": 5290,
+			"sha256": "1987a744179d443677258f9ac0ef941fd2673e235aa576c20da64e352c95f6aa"
+		},
+		{
+			"name": "hyph-ga.tex",
+			"offset": 7843328,
+			"length": 46868,
+			"sha256": "7856cb341fd978b910c3807aa6918b39791e2f507d803253daccb5c71bbc02c6"
+		},
+		{
+			"name": "hyph-gl.tex",
+			"offset": 6370304,
+			"length": 22745,
+			"sha256": "a0756f747765a075edd1ee7d2be8fcf9ff8068f554166a79f5a760659307fde3"
+		},
+		{
+			"name": "hyph-grc.tex",
+			"offset": 5625856,
+			"length": 82082,
+			"sha256": "dee55cf442ba4f4c5655622571ee796bede243a65ef2286858b28db7f1b40d78"
+		},
+		{
+			"name": "hyph-gu.tex",
+			"offset": 7794688,
+			"length": 3078,
+			"sha256": "7b9f11a5fb0ab27bad7ed3a0b9dbb1ef33d67050069610cc7630de35d2a34cda"
+		},
+		{
+			"name": "hyph-hi.tex",
+			"offset": 7798784,
+			"length": 3088,
+			"sha256": "a55a2766d7e1c2d36991f4fccfef639016721b41593029043c2d13bc340ef632"
+		},
+		{
+			"name": "hyph-hr.tex",
+			"offset": 6040064,
+			"length": 10761,
+			"sha256": "69d684289c626c2576678112699c960d5821b52e7addbd473c0e8d0ef0c1694e"
+		},
+		{
+			"name": "hyph-hsb.tex",
+			"offset": 8976896,
+			"length": 11583,
+			"sha256": "0b961d89317523960f41b2f32742abf807a253717200d9756b8d69c12f895fcf"
+		},
+		{
+			"name": "hyph-hu.tex",
+			"offset": 7228928,
+			"length": 529279,
+			"sha256": "c6f02d2b6f49d5068035f7bbc91aaeefd0b691ff806c17539a033a716c374692"
+		},
+		{
+			"name": "hyph-hy.tex",
+			"offset": 5708800,
+			"length": 12797,
+			"sha256": "a132d1fdfafbc601da8540c3bc8419335dde455369b80c3a0a8ce06116eec449"
+		},
+		{
+			"name": "hyph-ia.tex",
+			"offset": 7838208,
+			"length": 4412,
+			"sha256": "c2e570831d02831f2c2c26e17ebe68d81c02a1c2cfbf4ac9d182610d6a0c6e3d"
+		},
+		{
+			"name": "hyph-id.tex",
+			"offset": 7834112,
+			"length": 3389,
+			"sha256": "95bb9f56044f5f4bcceb838224a13d560df0188f0d91543c8d3b4c9a2abfc032"
+		},
+		{
+			"name": "hyph-is.tex",
+			"offset": 7758848,
+			"length": 27097,
+			"sha256": "2707969ebe34a9ddfd861aaef40619e75ac78453718a56401aed91c5cbdcfcec"
+		},
+		{
+			"name": "hyph-it.tex",
+			"offset": 7890944,
+			"length": 5011,
+			"sha256": "6ce56ed6ed2ca7c0688838e366e6595e0429f984f4fc6e96ec045cebb1e76a47"
+		},
+		{
+			"name": "hyph-ka.tex",
+			"offset": 6393856,
+			"length": 26863,
+			"sha256": "8044f2b27b802b996209cdbf8594f4c2fbf6f7a3cbb142eb529ddf2a50bc1e3b"
+		},
+		{
+			"name": "hyph-kmr.tex",
+			"offset": 7896576,
+			"length": 2635,
+			"sha256": "2299d69ff2e093291338275b20fa85a35c62abc156835647d5d91a9dfad476eb"
+		},
+		{
+			"name": "hyph-kn.tex",
+			"offset": 7802880,
+			"length": 3117,
+			"sha256": "2f88ea093e99239f7c22a2b26455fcebec7a9dbcbfbfd73683582ea3af5fc99c"
+		},
+		{
+			"name": "hyph-la-x-classic.tex",
+			"offset": 7900160,
+			"length": 219137,
+			"sha256": "68257e2ce6ee077f635e38c700734ede7d1ebb4f4708546b878a0bee68bd7d8f"
+		},
+		{
+			"name": "hyph-la-x-liturgic.tex",
+			"offset": 8120320,
+			"length": 19389,
+			"sha256": "60fea9390492d86bf701f77da8ac818a027da7ea9badb2965e9889ddeb95a5d0"
+		},
+		{
+			"name": "hyph-la.tex",
+			"offset": 8140288,
+			"length": 9443,
+			"sha256": "84e0be1877beaf6d1d7a83d5639fb65a0e0645cd2447b0dbccfa5e63565abdfd"
+		},
+		{
+			"name": "hyph-lt.tex",
+			"offset": 8236544,
+			"length": 11601,
+			"sha256": "6162b566620367abb827ba1457567e7a79680596919886a7138e48b346e983d1"
+		},
+		{
+			"name": "hyph-lv.tex",
+			"offset": 8150528,
+			"length": 85396,
+			"sha256": "209e0a5b09aaf68517724a2cecc7b7bbd278355ffdd918051ce23110687e3d3c"
+		},
+		{
+			"name": "hyph-mk.tex",
+			"offset": 8248832,
+			"length": 6582,
+			"sha256": "3cd8cf3ad015adec006523ba0c087069ee262f06625275ad4a332d3051f655fd"
+		},
+		{
+			"name": "hyph-ml.tex",
+			"offset": 7806976,
+			"length": 3257,
+			"sha256": "b37b1446d79587003d85887731df822aa01afea2f6d8cc5728d55e00a92edb8d"
+		},
+		{
+			"name": "hyph-mn-cyrl-x-lmc.tex",
+			"offset": 8256000,
+			"length": 5462,
+			"sha256": "fd41a62b83e0229b188756eb0afe27555bf425f94354a8adeadc23406676c238"
+		},
+		{
+			"name": "hyph-mn-cyrl.tex",
+			"offset": 8262144,
+			"length": 16059,
+			"sha256": "22903e12e25e5348d7c2285f8d3173215540296e1b47f38515936618993988fa"
+		},
+		{
+			"name": "hyph-mr.tex",
+			"offset": 7811072,
+			"length": 3112,
+			"sha256": "dd033b789f381081fbf05a976e34790b566f40ddcd276790f581b15b62eca844"
+		},
+		{
+			"name": "hyph-mul-ethi.tex",
+			"offset": 6311424,
+			"length": 12004,
+			"sha256": "df702eec647db16b37056d7850b066fb7e006a0c9753006e2cd761f19f642bff"
+		},
+		{
+			"name": "hyph-nb.tex",
+			"offset": 8279040,
+			"length": 1664,
+			"sha256": "b111264f46d59089d4cf96691c66b637166f5aae5b86719a5b9fe32737cc0169"
+		},
+		{
+			"name": "hyph-nl.tex",
+			"offset": 6084608,
+			"length": 87546,
+			"sha256": "c3749c79c435edc8273b701148462dc3751f38f4d4e4381f7850ae4432a0a5f4"
+		},
+		{
+			"name": "hyph-nn.tex",
+			"offset": 8281600,
+			"length": 1547,
+			"sha256": "f217dca0e815443bc9feac27d9eb48cf795b3f4f222afacf7f87fb6c2b0e196e"
+		},
+		{
+			"name": "hyph-no.tex",
+			"offset": 8284160,
+			"length": 196495,
+			"sha256": "05a2ac5fbf88bdc78c580e5cb8a158e6aa760d13756604f9523aa99feec3ec65"
+		},
+		{
+			"name": "hyph-oc.tex",
+			"offset": 8481280,
+			"length": 4216,
+			"sha256": "0a968a3588697da7c0ef13f219f45973fc75c08e8ee9253ff1a4bf567167c8fb"
+		},
+		{
+			"name": "hyph-or.tex",
+			"offset": 7815168,
+			"length": 3054,
+			"sha256": "a028fb9f5554f709cbc3f073873e5771b2b669e3725c9888d917c38152d8ea0b"
+		},
+		{
+			"name": "hyph-pa.tex",
+			"offset": 7818752,
+			"length": 3062,
+			"sha256": "7582a5ac2e6959d64c13b3f2cee41222c810f1e0ed6b29c870da657fee09442a"
+		},
+		{
+			"name": "hyph-pi.tex",
+			"offset": 7822336,
+			"length": 2568,
+			"sha256": "d27f9141dc55bfff0a00a204fd8af2031a1fd23ead83836ffec61debf4eb9033"
+		},
+		{
+			"name": "hyph-pl.tex",
+			"offset": 8492032,
+			"length": 34118,
+			"sha256": "83ddbbd21bc06a44bc4f4a4c49c38782e809cff5f026b764c044daa29e818843"
+		},
+		{
+			"name": "hyph-pms.tex",
+			"offset": 8486400,
+			"length": 4794,
+			"sha256": "a5af2db65a7bc27318c3d0300d1a3ef332997a6d447a572aa728e0710ac3243e"
+		},
+		{
+			"name": "hyph-pt.tex",
+			"offset": 8526848,
+			"length": 4547,
+			"sha256": "59fe5ef9929d5f82fb6fff2df4119ba30fcbb9c6a119953f8561679193e3c53d"
+		},
+		{
+			"name": "hyph-quote-af.tex",
+			"offset": 5532160,
+			"length": 120,
+			"sha256": "80a2d5493c62f62f9df6959d4b7867d5a8158efc958d252235e00db81836b0e2"
+		},
+		{
+			"name": "hyph-quote-be.tex",
+			"offset": 5533184,
+			"length": 548,
+			"sha256": "9a055ed4d781da3111e6522862ac51d50f6670de7cf823de646f1b3bf1676b9f"
+		},
+		{
+			"name": "hyph-quote-fr.tex",
+			"offset": 5534720,
+			"length": 768,
+			"sha256": "708975d63ba0777eed42b57046d4514c88170c1c924ec714837870d753bd794d"
+		},
+		{
+			"name": "hyph-quote-fur.tex",
+			"offset": 5536256,
+			"length": 282,
+			"sha256": "6d50da6af4bb9aaf13d4bb26692421056c7af508d71f5e9940eb5b85959182f5"
+		},
+		{
+			"name": "hyph-quote-it.tex",
+			"offset": 5537280,
+			"length": 250,
+			"sha256": "063fe294c0389c1b17383135a2d109fef2bb9bdc8e018e18113ae615576a60bd"
+		},
+		{
+			"name": "hyph-quote-oc.tex",
+			"offset": 5538304,
+			"length": 250,
+			"sha256": "063fe294c0389c1b17383135a2d109fef2bb9bdc8e018e18113ae615576a60bd"
+		},
+		{
+			"name": "hyph-quote-pms.tex",
+			"offset": 5539328,
+			"length": 252,
+			"sha256": "bbdf4a6a82ffcb11fd4e155c132250bad1815bdd1958f65b0ce8a8b16faeb941"
+		},
+		{
+			"name": "hyph-quote-rm.tex",
+			"offset": 5540352,
+			"length": 298,
+			"sha256": "3af69b37f4b4b0f524d92fbe51262b9983fb4b3ecd62bdabdc4ea70c85167f76"
+		},
+		{
+			"name": "hyph-quote-uk.tex",
+			"offset": 5541376,
+			"length": 2400,
+			"sha256": "e41dcb8e394702c3958128cbfe5a9e50ffd22a4a3de72809720fba5b6f8fe73e"
+		},
+		{
+			"name": "hyph-rm.tex",
+			"offset": 8537600,
+			"length": 5169,
+			"sha256": "c413cce7a61040348c271775786c63005050a716b69b11d2483a379d1cf44726"
+		},
+		{
+			"name": "hyph-ro.tex",
+			"offset": 8531968,
+			"length": 4958,
+			"sha256": "6f09c53cc65cb6fcf4435396371c49bf50aaa88e40af7931a9e6bccc405f1fab"
+		},
+		{
+			"name": "hyph-ru.tex",
+			"offset": 8543744,
+			"length": 68421,
+			"sha256": "ce988fcc66e5e29d7474df5ab5b489d3f52a50ebccf570997f992d84221b922a"
+		},
+		{
+			"name": "hyph-sa.tex",
+			"offset": 8612864,
+			"length": 10621,
+			"sha256": "7f895b18be9ef598dfbc490ed19a24200712652eb0c5068f5c6fd88c363759c8"
+		},
+		{
+			"name": "hyph-sh-cyrl.tex",
+			"offset": 8624128,
+			"length": 32824,
+			"sha256": "9b0f8f489868d3f98d4dec8a5d71f465ad5a70afde6857c6c2d79ec0344618fc"
+		},
+		{
+			"name": "hyph-sh-latn.tex",
+			"offset": 8657920,
+			"length": 23036,
+			"sha256": "5aea49c845df3c21b95e417abfc28349909a4c9565523702055a122153486a4a"
+		},
+		{
+			"name": "hyph-sk.tex",
+			"offset": 8715264,
+			"length": 20919,
+			"sha256": "a3d18dada329f0893c55d56b456877472234304ce9c63480325dfe9ce211e257"
+		},
+		{
+			"name": "hyph-sl.tex",
+			"offset": 8736768,
+			"length": 9070,
+			"sha256": "27da982d03b881fe84f1c4fb42ba0948f33e01a3a44eaa5ebd07e01d20c72691"
+		},
+		{
+			"name": "hyph-sv.tex",
+			"offset": 8790016,
+			"length": 31706,
+			"sha256": "102253382bd91cdb7535de5c20744254c9ac9aaa4ca12ed420eb835e5004c0b3"
+		},
+		{
+			"name": "hyph-ta.tex",
+			"offset": 7825920,
+			"length": 3201,
+			"sha256": "7154ee4519ae5fcebbb2c1d05fd7f19820b53db8b84dbaea34e6a6f6a8fd4642"
+		},
+		{
+			"name": "hyph-te.tex",
+			"offset": 7830016,
+			"length": 3112,
+			"sha256": "101a8f1664ea5a7520e06f07f0275c9bdf6ad3de63d6f74c4f44fd1369396ccd"
+		},
+		{
+			"name": "hyph-th.tex",
+			"offset": 8822272,
+			"length": 86109,
+			"sha256": "2d59071f549c68419362e9489044f67cc94bd395c004479afce9dc37338fc0c5"
+		},
+		{
+			"name": "hyph-tk.tex",
+			"offset": 8915968,
+			"length": 15831,
+			"sha256": "801ef59c14dab4fec0a9ae178632e63b8ef9f0362dcea74f4a3689a4a7908690"
+		},
+		{
+			"name": "hyph-tr.tex",
+			"offset": 8909312,
+			"length": 5744,
+			"sha256": "9243b6fc1426b07dae71c6136bd7d4a907e01a36ab6326f349ee6c310e6bb2b5"
+		},
+		{
+			"name": "hyph-uk.tex",
+			"offset": 8932352,
+			"length": 43691,
+			"sha256": "05fdacf5a771f5c528dd65f6f67b63fedb6f6caf768902c24ec81676e500966f"
+		},
+		{
+			"name": "hyph-zh-latn-pinyin.tex",
+			"offset": 5880832,
+			"length": 5845,
+			"sha256": "c007e61bd59a16a00e12603b9a97968d730b955627d1aed5d856c5e425f7970e"
+		},
+		{
+			"name": "hyphen.cfg",
+			"offset": 16514560,
+			"length": 6424,
+			"sha256": "b68e6ae011a0a15c12f6ab72b70a0b6e3893be885a00ef3853c67fd989c9975c"
+		},
+		{
+			"name": "hyphen.tex",
+			"offset": 1633280,
+			"length": 27860,
+			"sha256": "2c18acdc04c1a066aeb1759905e7ca449f0616c314b5ed6aebe55b9d4a89b8d4"
+		},
+		{
+			"name": "ibyhyph.tex",
+			"offset": 1710080,
+			"length": 28651,
+			"sha256": "b12db81b0c101b38b5570c21a560e71236dc16ea5540012394a6f700f9b9d59d"
+		},
+		{
+			"name": "kanjix.map",
+			"offset": 346419200,
+			"length": 11946,
+			"sha256": "a71059fc7213517c40d9d9ee353b107dc5b8dc20e5b4c10fb0c7414879c8a1ed"
+		},
+		{
+			"name": "l3backend-xetex.def",
+			"offset": 736256,
+			"length": 37437,
+			"sha256": "47e2f4fc8bda65ba3f5d295145da3f7bb783b71f2a07f11a4038e84b2fd5cd13"
+		},
+		{
+			"name": "language.dat",
+			"offset": 1451520,
+			"length": 6593,
+			"sha256": "a8a8e36e120beb9a19ffc2ca7c83445a1308ac9602a50cab1128deac14f5bee9"
+		},
+		{
+			"name": "latex.ltx",
+			"offset": 774656,
+			"length": 540518,
+			"sha256": "70ba1d0d113a986e4966e5a7ebb5afa3fbb17843ec4395bd0187d2aa266b5646"
+		},
+		{
+			"name": "latex2e-first-aid-for-external-files.ltx",
+			"offset": 110763008,
+			"length": 6545,
+			"sha256": "1519a32708089df30c05e2ecbb61584dcb6bd325a485e4bfb90b79b46f097a27"
+		},
+		{
+			"name": "lcircle10.tfm",
+			"offset": 503751168,
+			"length": 820,
+			"sha256": "f5aaff47e226ff644ae94765b8d6012e0ffb6d62956993acac2f2dd4ad589929"
+		},
+		{
+			"name": "lcirclew10.tfm",
+			"offset": 503752704,
+			"length": 820,
+			"sha256": "7906e4c5d770db4002740cba4d8194281b06d6fe7edd9d9949b60a291b753646"
+		},
+		{
+			"name": "line10.tfm",
+			"offset": 503760384,
+			"length": 748,
+			"sha256": "250200d9efa885fecff118d72e5239adacd0783ccb00c4fb96fa677708ce5217"
+		},
+		{
+			"name": "linew10.tfm",
+			"offset": 503761920,
+			"length": 748,
+			"sha256": "925de632e8afb641692c58bf6c464fb1aa79782212523532590dd6b91b78c40f"
+		},
+		{
+			"name": "lmroman10-regular.otf",
+			"offset": 2024429056,
+			"length": 111536,
+			"sha256": "1aa18cfefa58132c52ce5de70db1fd1154201c19cd2b2cdaffba4906a33e6852"
+		},
+		{
+			"name": "load-unicode-data.tex",
+			"offset": 15965696,
+			"length": 7054,
+			"sha256": "399edc983618f5e9dfa2877ec9f99b6c3b082358f278a492f8178243aa2f11ed"
+		},
+		{
+			"name": "loadhyph-af.tex",
+			"offset": 2406400,
+			"length": 1231,
+			"sha256": "a5aad224dd2c22e9e7d001c212b0a8684903efc6cf7860516614aca10afc42ce"
+		},
+		{
+			"name": "loadhyph-as.tex",
+			"offset": 2470912,
+			"length": 1227,
+			"sha256": "417ff8e76faddd7154db8f9360b3244c091216d9003ee8527cc8045ec2c66f7e"
+		},
+		{
+			"name": "loadhyph-be.tex",
+			"offset": 2414592,
+			"length": 1239,
+			"sha256": "a019fb953181b941c4ff71f04c86ff9d0e3e178f7b2e7ccfa111b48370a2659a"
+		},
+		{
+			"name": "loadhyph-bg.tex",
+			"offset": 2416640,
+			"length": 1176,
+			"sha256": "840416a612b28a8c7e7487dc12c81328c9133a51a86f86f01c925041354ea98f"
+		},
+		{
+			"name": "loadhyph-bn.tex",
+			"offset": 2472960,
+			"length": 1223,
+			"sha256": "34718be2d55b622cb30614f3730073386bf319403b05e52420ec615a95e54d05"
+		},
+		{
+			"name": "loadhyph-ca.tex",
+			"offset": 2418688,
+			"length": 1164,
+			"sha256": "175daa786bb191aef9312d53d47bd93edf44e5df6dd0cb0cb15736ad42c41444"
+		},
+		{
+			"name": "loadhyph-cop.tex",
+			"offset": 2424832,
+			"length": 1217,
+			"sha256": "81035bc2f5e9599b8bc50ba9d5bcd41240b948eb320b9b5c24b80c74e58f66b3"
+		},
+		{
+			"name": "loadhyph-cs.tex",
+			"offset": 2428928,
+			"length": 1156,
+			"sha256": "cf224cb3f26a9af859e3cb0b0c4ead28313bb33b2d94f618516d65e3e6804b7d"
+		},
+		{
+			"name": "loadhyph-cu.tex",
+			"offset": 2422784,
+			"length": 1509,
+			"sha256": "b39d8195b52b2dffcf1a88eb81a79f6191b691c90511beda29a2e5b14b81ea6b"
+		},
+		{
+			"name": "loadhyph-cy.tex",
+			"offset": 2564096,
+			"length": 1156,
+			"sha256": "b7c20c72b80d07f2f99571c952c3e51b68013492cd7d5fb0a8ff1f41c4c53914"
+		},
+		{
+			"name": "loadhyph-da.tex",
+			"offset": 2430976,
+			"length": 1160,
+			"sha256": "5e57a6f6d2ab2bbbf34ea213487ae1e76031516427c5a9ef8d15fa54c5c9d50d"
+		},
+		{
+			"name": "loadhyph-de-1901.tex",
+			"offset": 2456576,
+			"length": 1327,
+			"sha256": "dd90647d1078f6de0dd48228518f531fddd0414658333996c889137257b3ce3d"
+		},
+		{
+			"name": "loadhyph-de-1996.tex",
+			"offset": 2458624,
+			"length": 1319,
+			"sha256": "0ad838f07ef23416d4b8ced7f4c230563f3a0959f0b6f81cfd66e88a2c675733"
+		},
+		{
+			"name": "loadhyph-de-ch-1901.tex",
+			"offset": 2460672,
+			"length": 1293,
+			"sha256": "2c5757bab22bdbf1e82a33b79d47784f179e6961bea445a994c1867133d21d22"
+		},
+		{
+			"name": "loadhyph-el-monoton.tex",
+			"offset": 2462720,
+			"length": 1479,
+			"sha256": "ed2fbc731e08e263959548008e9c39288c93bde48a39ab3f8613c74b55f8ff65"
+		},
+		{
+			"name": "loadhyph-el-polyton.tex",
+			"offset": 2464768,
+			"length": 1481,
+			"sha256": "f64a7db14ed565fcfbec6acad4dee8faac4cc5a3f8197f9229715547cb69820e"
+		},
+		{
+			"name": "loadhyph-en-gb.tex",
+			"offset": 2435072,
+			"length": 632,
+			"sha256": "f79b49f8146271eab67a01e568262ebe0d817bfc13f8aec25ce311d6177b624f"
+		},
+		{
+			"name": "loadhyph-en-us.tex",
+			"offset": 2436608,
+			"length": 636,
+			"sha256": "fc9ed1c52e4e909a31d0a42c0c0f423c9e7b622ae7878ed47f1883e48ac53d21"
+		},
+		{
+			"name": "loadhyph-eo.tex",
+			"offset": 2438144,
+			"length": 1176,
+			"sha256": "5e7c2ccef97aecd22dd3deb4c677912de6678da05764d4ba4e3ccf06e3a49068"
+		},
+		{
+			"name": "loadhyph-es.tex",
+			"offset": 2549760,
+			"length": 1164,
+			"sha256": "503984db3fd0c1a8167aebf6cde8de8dadb6d5a24c153963cae5f8138e6c24ad"
+		},
+		{
+			"name": "loadhyph-et.tex",
+			"offset": 2440192,
+			"length": 1168,
+			"sha256": "c766f3e9cbb65ad0b11f7beb3c84c02115f7c4686dad3be08332874f4eaa8fbb"
+		},
+		{
+			"name": "loadhyph-eu.tex",
+			"offset": 2412544,
+			"length": 1160,
+			"sha256": "eccbeaaad617afff54fad6bb35c3294982ff4ac3720b06c4c66d577adc174d99"
+		},
+		{
+			"name": "loadhyph-fi-x-school.tex",
+			"offset": 2444288,
+			"length": 1239,
+			"sha256": "8affc6e962e8ec85a08e478e31ac503ddcb7b8a75dcaf7fb2cf48400b2c94465"
+		},
+		{
+			"name": "loadhyph-fi.tex",
+			"offset": 2446336,
+			"length": 1164,
+			"sha256": "6ee635777b5ce280e323aeaef1fac8be8fb4f6492f4d5faa5b08d6a4252bb7c9"
+		},
+		{
+			"name": "loadhyph-fr.tex",
+			"offset": 2448384,
+			"length": 1204,
+			"sha256": "a6180a6456b37c37fd80e5fed6c8366c7694c0816f75b71464ddad5e062bed05"
+		},
+		{
+			"name": "loadhyph-fur.tex",
+			"offset": 2450432,
+			"length": 1213,
+			"sha256": "6540ab775fb5fccb2bcfe490ec1d2a5e0a77bc4d506ec05d04d7b505651bae81"
+		},
+		{
+			"name": "loadhyph-ga.tex",
+			"offset": 2498560,
+			"length": 1156,
+			"sha256": "73ebe8a7770b2d7862e96c588f656f78699b9ada41d79a64c0ecfa4579e632d1"
+		},
+		{
+			"name": "loadhyph-gl.tex",
+			"offset": 2452480,
+			"length": 1168,
+			"sha256": "5d99aee8b934fe80ee6bdfb227ddff0051959fa4742300061f90eb7e1e8bdb39"
+		},
+		{
+			"name": "loadhyph-grc.tex",
+			"offset": 2408448,
+			"length": 1402,
+			"sha256": "08c7932549bf7f6c6fd2913feb6772706575824b24616f546afeabfc1f492ac6"
+		},
+		{
+			"name": "loadhyph-gu.tex",
+			"offset": 2475008,
+			"length": 1227,
+			"sha256": "453f8ae9517d7f19de52f69ca7873e595be14cec8f2f92f3c596566bca4df2f6"
+		},
+		{
+			"name": "loadhyph-hi.tex",
+			"offset": 2477056,
+			"length": 1215,
+			"sha256": "b5e50dcef1a49ff2acb8cc57f046ce34817bcf9789011147af86ca7dd6b7dcc1"
+		},
+		{
+			"name": "loadhyph-hr.tex",
+			"offset": 2426880,
+			"length": 1168,
+			"sha256": "0baadea799304f1b80dfa08c97a99d5cf58293b625293846080f94343ca0538f"
+		},
+		{
+			"name": "loadhyph-hsb.tex",
+			"offset": 2562048,
+			"length": 1191,
+			"sha256": "bd15223abf31b7729286a4ffc70d5c0a5414abbed054a91bdb6f7a38c01519fd"
+		},
+		{
+			"name": "loadhyph-hu.tex",
+			"offset": 2466816,
+			"length": 1172,
+			"sha256": "ed49bb9f763b55360c671b9619a43c207e8c2e36710d21ee55e739fdaece3f3e"
+		},
+		{
+			"name": "loadhyph-hy.tex",
+			"offset": 2410496,
+			"length": 1227,
+			"sha256": "9c74e9b56b27cdfeb01537becfddf881882e72753e54f76bf7c7aefdb29a1209"
+		},
+		{
+			"name": "loadhyph-ia.tex",
+			"offset": 2497024,
+			"length": 624,
+			"sha256": "cd3b533cf647edafde5bdeedb193003cdd8b2c1480a5a1785bc75664db34589c"
+		},
+		{
+			"name": "loadhyph-id.tex",
+			"offset": 2495488,
+			"length": 618,
+			"sha256": "435ddde8c3f95e986035e27247c630415d7c9176c28b116d16c65b702b41d62d"
+		},
+		{
+			"name": "loadhyph-is.tex",
+			"offset": 2468864,
+			"length": 1172,
+			"sha256": "82e2a9411d09cdd8086b810f630aff051bb2b9bd13af92eccb6a42254b5f4729"
+		},
+		{
+			"name": "loadhyph-it.tex",
+			"offset": 2500608,
+			"length": 1183,
+			"sha256": "9e1497131da40926e9a1b5b70635bf6dccaea012509c8dbc0245489cd3df48b7"
+		},
+		{
+			"name": "loadhyph-ka.tex",
+			"offset": 2454528,
+			"length": 1172,
+			"sha256": "af388325534fb4fd9f43dbd93e104afb1003b35b6df57ce4183031244e7fac48"
+		},
+		{
+			"name": "loadhyph-kmr.tex",
+			"offset": 2502656,
+			"length": 1172,
+			"sha256": "3fc2dcc231fdcf1fbea89dd678cefccc2c7446cd1a56358aa36d298bc888b841"
+		},
+		{
+			"name": "loadhyph-kn.tex",
+			"offset": 2479104,
+			"length": 1223,
+			"sha256": "feb851c91571c86b264f5206f78591fea29be7086b13008a0917ece05f18e11b"
+		},
+		{
+			"name": "loadhyph-la-x-classic.tex",
+			"offset": 2504704,
+			"length": 1318,
+			"sha256": "ecd5b7d5572a0032cea6ff682be89169fed4eab8b9db97709ff176b47b661d9c"
+		},
+		{
+			"name": "loadhyph-la-x-liturgic.tex",
+			"offset": 2506752,
+			"length": 1218,
+			"sha256": "9fbeb42d27f532d77a8841f22a62f6a11f7a9cf865447cae2fecf6eb3f85aed9"
+		},
+		{
+			"name": "loadhyph-la.tex",
+			"offset": 2508800,
+			"length": 1156,
+			"sha256": "71ff015d8acdab67451e3cc2322f756b30eedf0dd9bb42857f52f9c09e350a98"
+		},
+		{
+			"name": "loadhyph-lt.tex",
+			"offset": 2512896,
+			"length": 1180,
+			"sha256": "912c29539d3298e221a1c68b8348dbe772be79570b2a193bc1131f46423e5e70"
+		},
+		{
+			"name": "loadhyph-lv.tex",
+			"offset": 2510848,
+			"length": 1168,
+			"sha256": "64f4b0d5fb8101b7611d5d5e52608616ff934cf4141239eb7006b0844cb2ea9d"
+		},
+		{
+			"name": "loadhyph-mk.tex",
+			"offset": 2514944,
+			"length": 1239,
+			"sha256": "3ef5c3ca2fd9a65b3f69d535d06ec5f13cfc4f74e3effe3b774e62a584419714"
+		},
+		{
+			"name": "loadhyph-ml.tex",
+			"offset": 2481152,
+			"length": 1231,
+			"sha256": "2f778adae962bd27184780ebc8f075a22f0d5d9b8235089fdad4ab6f04cc1142"
+		},
+		{
+			"name": "loadhyph-mn-cyrl-x-lmc.tex",
+			"offset": 2516992,
+			"length": 1223,
+			"sha256": "365268856ade0363c499273fd3585f1d5fe9cdd0fb4705ed4bdd0c4d21f539a0"
+		},
+		{
+			"name": "loadhyph-mn-cyrl.tex",
+			"offset": 2519040,
+			"length": 1214,
+			"sha256": "93d1eddd54976804afc9f8ceb4d9bd472955cc3445f47031ecfe3ffc3af7e2df"
+		},
+		{
+			"name": "loadhyph-mr.tex",
+			"offset": 2483200,
+			"length": 1223,
+			"sha256": "b22f6ba8e4e25b58eb0641ec54f398e9f11e3f394f923d986484a5c7ad4d6f23"
+		},
+		{
+			"name": "loadhyph-mul-ethi.tex",
+			"offset": 2442240,
+			"length": 1259,
+			"sha256": "98122d76bbf7597db51c8d34557d678de5cead25eb55d17a4736596be027b284"
+		},
+		{
+			"name": "loadhyph-nb.tex",
+			"offset": 2521088,
+			"length": 1190,
+			"sha256": "3391a46e9a38de1c515df413627ba5578c3fd330fe970192612a5652a12e5f41"
+		},
+		{
+			"name": "loadhyph-nl.tex",
+			"offset": 2433024,
+			"length": 1156,
+			"sha256": "bcb8585191394743e5a391a211ef520b59ebdcc99846a4c0bfab7cf99070f1ef"
+		},
+		{
+			"name": "loadhyph-nn.tex",
+			"offset": 2523136,
+			"length": 1194,
+			"sha256": "c2bbeb64f76afcf813ea2bc81da05137e02975623e01bae7fbf5b8ee3f1367dc"
+		},
+		{
+			"name": "loadhyph-oc.tex",
+			"offset": 2525184,
+			"length": 1208,
+			"sha256": "1a316945c723748b56d74a44d6d656750c83185407fb5e66f3b0f684401862e5"
+		},
+		{
+			"name": "loadhyph-or.tex",
+			"offset": 2485248,
+			"length": 1215,
+			"sha256": "940d94d70e19ca0403a5311f7c5b3ef834542025915766b9abdf15c5788488ee"
+		},
+		{
+			"name": "loadhyph-pa.tex",
+			"offset": 2487296,
+			"length": 1223,
+			"sha256": "e742577a3ab4fed70d0dd972d1890ff7f75659e844ffa7b99a20951b4e88da5f"
+		},
+		{
+			"name": "loadhyph-pi.tex",
+			"offset": 2489344,
+			"length": 1211,
+			"sha256": "cf13042fa65c08101e4cb6b4cbfc5da94db0d84cd4f4147979cfc9b2ed9c3ce4"
+		},
+		{
+			"name": "loadhyph-pl.tex",
+			"offset": 2529280,
+			"length": 1160,
+			"sha256": "6a0d24ab87f1b6da2d5ec92d48f26a6e9847d49c8d4b158040feef0e860831b0"
+		},
+		{
+			"name": "loadhyph-pms.tex",
+			"offset": 2527232,
+			"length": 1204,
+			"sha256": "3825f71105f9b7b51b2c4e000204970622ea6755326759867079bab74d233024"
+		},
+		{
+			"name": "loadhyph-pt.tex",
+			"offset": 2531328,
+			"length": 1191,
+			"sha256": "87c3428d0bae37568adc07479dacbea5a4ba0bb422d52ab82fc3c8823d7c5eb8"
+		},
+		{
+			"name": "loadhyph-rm.tex",
+			"offset": 2535424,
+			"length": 1183,
+			"sha256": "14fff5ecc58d1a7e1fa644bc79a72465821716e8afed9de7afe67a239dffae1b"
+		},
+		{
+			"name": "loadhyph-ro.tex",
+			"offset": 2533376,
+			"length": 1168,
+			"sha256": "2688729d0648204273954d5ee044fe37aa0388414c1d49918727457db2749a0f"
+		},
+		{
+			"name": "loadhyph-ru.tex",
+			"offset": 2537472,
+			"length": 1324,
+			"sha256": "c98ac4dfaed22d86afb806bf876641db4c7dc9b02b8e40dd265654c978bd7b81"
+		},
+		{
+			"name": "loadhyph-sa.tex",
+			"offset": 2539520,
+			"length": 1349,
+			"sha256": "466259ac8ef63d0443f4b0ea8d2d9a9af9bfe117bf59f55fd6c448c264d918e4"
+		},
+		{
+			"name": "loadhyph-sk.tex",
+			"offset": 2545664,
+			"length": 1160,
+			"sha256": "cc5a71990cd3967880ed0bd8b8302af509f743f9d6b8cb4b92f868e0dfa45def"
+		},
+		{
+			"name": "loadhyph-sl.tex",
+			"offset": 2547712,
+			"length": 1172,
+			"sha256": "03414b763c952ed508e7486bdaddc0745af8bb3bcdead33f767938f4feb0a9d5"
+		},
+		{
+			"name": "loadhyph-sr-cyrl.tex",
+			"offset": 2541568,
+			"length": 1317,
+			"sha256": "c53cf8518364a0a6f86c202a13127adbb5b147b5c7f7a8a595ea160f1310aed3"
+		},
+		{
+			"name": "loadhyph-sr-latn.tex",
+			"offset": 2543616,
+			"length": 1306,
+			"sha256": "7a9f055b2d900f8ced36dd2c2d3ff629aecec34be726f98682069402bf4b4c43"
+		},
+		{
+			"name": "loadhyph-sv.tex",
+			"offset": 2551808,
+			"length": 1164,
+			"sha256": "257938b3f7233ccf186e4d66cfa1b68f27d98bddc3188a81b7d7c8e5e98102cb"
+		},
+		{
+			"name": "loadhyph-ta.tex",
+			"offset": 2491392,
+			"length": 1215,
+			"sha256": "1c55fab31c1d6642864b542b8b9acaaf1d3bd29bccea193f0f48d34279f32538"
+		},
+		{
+			"name": "loadhyph-te.tex",
+			"offset": 2493440,
+			"length": 1219,
+			"sha256": "46e6c837db5cb8c2c14dc747fd6b5997a26a320dffa905ba3364913aca02261f"
+		},
+		{
+			"name": "loadhyph-th.tex",
+			"offset": 2553856,
+			"length": 1156,
+			"sha256": "8832d0d3991c1024760682da8c709deb27132cba44a74f9d197df8037b2f41fb"
+		},
+		{
+			"name": "loadhyph-tk.tex",
+			"offset": 2557952,
+			"length": 1179,
+			"sha256": "fa2d534858fad7b9f10b60111bc22871f51ab847f2406812a98b8920b434b037"
+		},
+		{
+			"name": "loadhyph-tr.tex",
+			"offset": 2555904,
+			"length": 1164,
+			"sha256": "e8ff56c073a30d5e3b068313a15bafb0a12c9be609eeed483de72074d2aa54eb"
+		},
+		{
+			"name": "loadhyph-uk.tex",
+			"offset": 2560000,
+			"length": 1375,
+			"sha256": "8067154e77d85980b4010d876d23e02ce2e3b7b25751bb6603ca82ff3656f928"
+		},
+		{
+			"name": "loadhyph-zh-latn-pinyin.tex",
+			"offset": 2420736,
+			"length": 1359,
+			"sha256": "eef5be5a705fa50598f5759017987f35b2e31334c5972042c446e5824900dc71"
+		},
+		{
+			"name": "omlcmm.fd",
+			"offset": 144929280,
+			"length": 2332,
+			"sha256": "64c6d721bd82e1b1d0cdae0041737e473e7ae4b6a2ef30be5a4cb58504c2bf27"
+		},
+		{
+			"name": "omlenc.def",
+			"offset": 144935424,
+			"length": 1901,
+			"sha256": "1a82bddbbad0234be439dffccefc2fe26ea9216520be7f1fb888293d9bbd63a4"
+		},
+		{
+			"name": "omscmsy.fd",
+			"offset": 144944128,
+			"length": 2262,
+			"sha256": "2b7223030a17cc25d00f47cc7fe8bb503049acfce8899f0ae409e79949123ae1"
+		},
+		{
+			"name": "omsenc.def",
+			"offset": 144947200,
+			"length": 2693,
+			"sha256": "b2ac48b774931de1988b88bcfff6076c72ba0a739420a6fdbf1378cddf2c8482"
+		},
+		{
+			"name": "omxcmex.fd",
+			"offset": 144956416,
+			"length": 2040,
+			"sha256": "18ef86924d2a8f33abe9fa92aac9416e73bf9cc92b05e964535abb8ae23816fe"
+		},
+		{
+			"name": "ot1cmr.fd",
+			"offset": 144973824,
+			"length": 3705,
+			"sha256": "bcc3699050bd2e0c4214ba93cf28a129f63332a0dea665c2dece1f4a9a1dd57f"
+		},
+		{
+			"name": "ot1cmss.fd",
+			"offset": 144978432,
+			"length": 3152,
+			"sha256": "b997a943a79bcad7b88db340e380d87fe4f668de544e1eb76081b929024c0165"
+		},
+		{
+			"name": "ot1cmtt.fd",
+			"offset": 144982528,
+			"length": 2909,
+			"sha256": "ed73ac7c8ad40924be86b895ec3bc762fb57e58963ea87d267122b98ceb9f942"
+		},
+		{
+			"name": "ot1enc.def",
+			"offset": 144989184,
+			"length": 4647,
+			"sha256": "3b1c1cb3b065751f28a59223c3cdcbd1639549ed5a57c960f22a033d7d4799fa"
+		},
+		{
+			"name": "pdfglyphlist.txt",
+			"offset": 360161792,
+			"length": 5117,
+			"sha256": "9d7bee92b7cfdaa6e03c7df895003145ed982be0bf6d1e78fdd5eb71bf4945aa"
+		},
+		{
+			"name": "pdftex.map",
+			"offset": 355652096,
+			"length": 4408061,
+			"sha256": "16bbb011215db3c7b919e0274bf1a95dc478e6b3712b9cb478149551e0820a6d"
+		},
+		{
+			"name": "preload.cfg",
+			"offset": 145019392,
+			"length": 1982,
+			"sha256": "26b89597c49af2ab6b8fda1a3dffc5cd8edb6259a23b9b57c7892bae07b75e5c"
+		},
+		{
+			"name": "preload.ltx",
+			"offset": 145021952,
+			"length": 2024,
+			"sha256": "05d0c64b1212bb3e6d733290a504773f64ce030f64ee91b0daf9992f20815404"
+		},
+		{
+			"name": "size10.clo",
+			"offset": 145079808,
+			"length": 8448,
+			"sha256": "dee88bc30609ea53e4004f8baf91a2951050a635751fecf1c9b1eb7cf471302e"
+		},
+		{
+			"name": "SpecialCasing.txt",
+			"offset": 13831680,
+			"length": 16830,
+			"sha256": "c667b45908fd269af25fd55d2fc5bbc157fb1b77675936e25c513ce32e080334"
+		},
+		{
+			"name": "t1cmr.fd",
+			"offset": 145175040,
+			"length": 2463,
+			"sha256": "90dce135f4859c6e3276b9a19a08b8af76457881dbf9523d2313fa23d973af7c"
+		},
+		{
+			"name": "t1enc.def",
+			"offset": 145187840,
+			"length": 10880,
+			"sha256": "537d0535c1eb3d4ff06f28398b4e3ec3c2a7b66d0ad046441e6856bddd6c8871"
+		},
+		{
+			"name": "tectonic-format-latex.tex",
+			"offset": 730624,
+			"length": 19,
+			"sha256": "86d8d12cfdfbe74a81b9df7c5b38a766303a772d57e7cb0d228e1e7b9294cf34"
+		},
+		{
+			"name": "tex-text.tec",
+			"offset": 2769003520,
+			"length": 398,
+			"sha256": "511836c4d363daffa1c789956bdb44b89ac526ef3e4215a846c313b717447d40"
+		},
+		{
+			"name": "texglyphlist.txt",
+			"offset": 360167424,
+			"length": 10227,
+			"sha256": "4b11bf2dcd65b004ee2023c5392339aaf89429bef0d3ace13b7b098d108cd991"
+		},
+		{
+			"name": "texsys.cfg",
+			"offset": 145267200,
+			"length": 8067,
+			"sha256": "a0986d94c81fd7ce2251695a1affc58060055ccc9430483e64a73f4aa5e53306"
+		},
+		{
+			"name": "ts1cmr.fd",
+			"offset": 145307136,
+			"length": 2430,
+			"sha256": "c919034d96da20aecccb01a4401a6a52a487aba86db9a354afc4d82b99a8c2b4"
+		},
+		{
+			"name": "ts1enc.def",
+			"offset": 145319424,
+			"length": 8044,
+			"sha256": "0cb1bfd59bf0af4f46eb9b48af25331a9583d186fff93810a6204ebc4cb45659"
+		},
+		{
+			"name": "ts1lmr.fd",
+			"offset": 150848000,
+			"length": 1914,
+			"sha256": "ecda20924242346d91d241e19c89a9a36c7423dc76b1c94e4a3d4d8b51d235d7"
+		},
+		{
+			"name": "tuenc.def",
+			"offset": 145333760,
+			"length": 29098,
+			"sha256": "9893474e5e84d8015aebe5094efbc9383ad4adee1a41553f80dfc468c8e483c6"
+		},
+		{
+			"name": "tulmr.fd",
+			"offset": 145366528,
+			"length": 4822,
+			"sha256": "043558fa61747653d027ba166253292ef24348c1ebe393792f5e1d93f5ed64d7"
+		},
+		{
+			"name": "tulmss.fd",
+			"offset": 145372160,
+			"length": 3663,
+			"sha256": "ef1e9b4bd9b66df17293e552ecbb60401cdb8fb394e60ae79d30990d1c8297cb"
+		},
+		{
+			"name": "tulmtt.fd",
+			"offset": 145380352,
+			"length": 4574,
+			"sha256": "f73aad3758a44b0bb462d99b3dad4232ef1a8fbbb31808cbfa75ca0c1f669fa2"
+		},
+		{
+			"name": "ucmr.fd",
+			"offset": 145389568,
+			"length": 3680,
+			"sha256": "85f78f04e6a9625407f86d519344d3135ff5225f18ef624665a4c0b2e1befdd3"
+		},
+		{
+			"name": "UnicodeData.txt",
+			"offset": 13849088,
+			"length": 1897793,
+			"sha256": "36018e68657fdcb3485f636630ffe8c8532e01c977703d2803f5b89d6c5feafb"
+		},
+		{
+			"name": "xebabel.def",
+			"offset": 16670720,
+			"length": 11961,
+			"sha256": "95718f62527966b22816d91d433f5bb7baf5204e7d7cdb51275ace15bb8ed716"
+		},
+		{
+			"name": "xelatex.ini",
+			"offset": 12802048,
+			"length": 486,
+			"sha256": "1f0fd8f63b3244b8d56f245aae51f1003b9fe56599b9a60aa28bd1a9fb8b8628"
+		},
+		{
+			"name": "zerohyph.tex",
+			"offset": 1671680,
+			"length": 402,
+			"sha256": "80b6e5b7ff3bcd2ff1d32599f9fcd7d3aa40a4c67aa06f72527dd6eb741b551c"
+		}
+	]
+}

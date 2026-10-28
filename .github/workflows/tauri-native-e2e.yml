@@ -164,7 +164,7 @@ jobs:
           $staging = Join-Path $env:RUNNER_TEMP ("modutex-frontend-" + [guid]::NewGuid().ToString('N'))
           if (Test-Path -LiteralPath $staging) { throw 'Frontend artifact staging path already exists' }
           New-Item -ItemType Directory -Path $staging -ErrorAction Stop | Out-Null
-          gh run download $env:GITHUB_RUN_ID --name $env:FRONTEND_ARTIFACT_NAME --dir $staging
+          & ./tests/scripts/helpers/download-workflow-artifact.ps1 -RunId $env:GITHUB_RUN_ID -ArtifactName $env:FRONTEND_ARTIFACT_NAME -Destination $staging
           if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
           $artifactDist = Join-Path $staging 'apps/frontend/dist-tauri'
           $index = Join-Path $artifactDist 'index.html'
@@ -239,7 +239,7 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path $destDir -ErrorAction Stop | Out-Null
 
-          gh run download $env:EXE_ARTIFACT_RUN_ID --name $env:EXE_ARTIFACT_NAME --dir $destDir
+          & ./tests/scripts/helpers/download-workflow-artifact.ps1 -RunId $env:EXE_ARTIFACT_RUN_ID -ArtifactName $env:EXE_ARTIFACT_NAME -Destination $destDir
 
           if ($LASTEXITCODE -ne 0) { throw 'Failed to download the release executable artifact from this run' }
 

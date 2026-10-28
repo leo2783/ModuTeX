@@ -244,8 +244,8 @@ function validatePackageAndLifecycle(wf, gates) {
 
 	const nativeJob = expandedJob(wf, gates.e2e).job;
 	const nativeCommands = commands(nativeJob);
-	assert.match(nativeCommands, /gh run download \$env:GITHUB_RUN_ID/);
-	assert.match(nativeCommands, /gh run download \$env:EXE_ARTIFACT_RUN_ID/);
+	assert.match(nativeCommands, /download-workflow-artifact\.ps1 -RunId \$env:GITHUB_RUN_ID/);
+	assert.match(nativeCommands, /download-workflow-artifact\.ps1 -RunId \$env:EXE_ARTIFACT_RUN_ID/);
 	assert.match(nativeCommands, /CURRENT_RUN_ID/);
 	assert.match(nativeCommands, /Get-FileHash/);
 	assert.doesNotMatch(nativeCommands, /cargo build|frontend:build/);
@@ -263,7 +263,7 @@ function validatePackageAndLifecycle(wf, gates) {
 	);
 	assert.equal(lifecycle.job.strategy['fail-fast'], false);
 	const lifecycleCommands = commands(lifecycle.job);
-	assert.match(lifecycleCommands, /gh run download \$env:GITHUB_RUN_ID/);
+	assert.match(lifecycleCommands, /download-workflow-artifact\.ps1 -RunId \$env:GITHUB_RUN_ID/);
 	assert.match(lifecycleCommands, /INSTALLER_SHA256/);
 	assert.match(lifecycleCommands, /ExpectedInstallerSha256/);
 	assert.match(lifecycleCommands, /ExpectedExecutableSha256/);
@@ -406,7 +406,7 @@ export function validateTauriCiContract(wf) {
 	assert.match(laneStep.run, /\$LASTEXITCODE/, 'native E2E failures must stop the lane');
 	assert.match(JSON.stringify(laneStep.env), /MODUTEX_TEST_PERIODIC_WATCH/, 'compile lane must verify periodic watch');
 	assert.doesNotMatch(JSON.stringify(e2eJob), /MODUTEX_TEST_SOURCE_FORMAT/, 'OS-open CI must not depend on a user-installed formatter');
-	assert.match(e2eCommand, /gh run download/, 'native E2E must consume build artifact');
+	assert.match(e2eCommand, /download-workflow-artifact\.ps1/, 'native E2E must consume build artifact');
 	assert.match(e2eCommand, /Get-FileHash/, 'native E2E must verify executable bytes');
 	assert.match(JSON.stringify(e2eJob), /built_exe_sha256/, 'native E2E must bind expected build SHA');
 	assert.doesNotMatch(e2eCommand, /cargo build|frontend:build/, 'native E2E cannot rebuild the accepted app');
@@ -683,7 +683,7 @@ test('clean runners prepare real WASM bindings and frontend artifacts before dep
 		const download = steps.findIndex(step => /Download source-matched Tauri frontend assets/.test(step.name ?? ''));
 		const compile = steps.findIndex(step => /cargo (clippy|test)\b/.test(step.run ?? ''));
 		assert(download >= 0 && download < compile, `${id} must download assets before Cargo compiles the app`);
-		assert.match(steps[download].run, /gh run download \$env:GITHUB_RUN_ID/);
+		assert.match(steps[download].run, /download-workflow-artifact\.ps1 -RunId \$env:GITHUB_RUN_ID/);
 		assert.match(steps[download].env.FRONTEND_ARTIFACT_NAME, /github.run_id.*github.run_attempt/);
 		assert.match(steps[download].run, /index\.html/);
 	}
@@ -708,6 +708,18 @@ test('MiKTeX prewarm uses bounded official mirrors and verifies the pinned archi
 	const step = stepsOf(rustTests).find(({ name }) => name === 'Install isolated basic MiKTeX and prewarm LuaLaTeX');
 	assert(step, 'MiKTeX prewarm must remain enabled');
 	const run = step.run;
+	assert.match(run, /https:\/\/mirrors\.ibiblio\.org\/pub\/mirrors\/CTAN\/systems\/win32\/miktex\/tm\/packages\//,
+		'package fallback must use the URL registered by miktexsetup --list-repositories');
+	assert.doesNotMatch(run, /https:\/\/mirrors\.ibiblio\.org\/CTAN\/systems\/win32\/miktex\/tm\/packages\//,
+		'the shorter package URL is rejected as an unregistered repository');
+	const packageUrls = [...run.matchAll(/Uri = '([^']+\/tm\/packages\/)'/g)].map(([, url]) => url);
+	assert.deepEqual(packageUrls, [
+		'https://mirror.latigo.net/ctan/systems/win32/miktex/tm/packages/',
+		'https://mirrors.ibiblio.org/pub/mirrors/CTAN/systems/win32/miktex/tm/packages/',
+		'https://mirror.clarkson.edu/ctan/systems/win32/miktex/tm/packages/'
+	]);
+	assert.match(run, /CiProcessDeadline = \[DateTime\]::UtcNow.AddSeconds\(720\)/);
+	assert.match(run, /-TimeoutSeconds 180/);
 	const sourceUrls = [...run.matchAll(/Uri = '([^']+\.zip)'/g)].map(([, url]) => url);
 	assert.deepEqual(sourceUrls, [
 		'https://mirrors.ibiblio.org/CTAN/systems/win32/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip',
@@ -728,6 +740,17 @@ test('MiKTeX prewarm uses bounded official mirrors and verifies the pinned archi
 	assert.match(run, /--set-config-value=\[MPM\]AutoInstall=f/);
 	assert.match(run, /formats', 'build', '--engine=luahbtex'/);
 	assert.match(run, /Invoke-CiBoundedProcess/);
+});
+
+test('real Rust engine tests prepare a verified local bundle before execution',async()=>{
+	const workflow=load(await readFile(resolve(ROOT,'.github/workflows/tauri-rust.yml'),'utf8'));
+	const steps=stepsOf(workflow.jobs['rust-tests']);
+	const prepare=steps.findIndex(step=>step.name==='Prepare verified local Tectonic test bundle');
+	const tests=steps.findIndex(step=>step.name==='Run Rust tests for desktop-tauri with serialized process cleanup');
+	assert(prepare>=0 && tests>prepare);
+	assert.equal(steps[prepare]['timeout-minutes'],5);
+	assert.match(steps[prepare].run,/node tests\/scripts\/prepare-tectonic-test-bundle\.mjs/);
+	assert.match(steps[prepare].run,/LASTEXITCODE -ne 0/);
 });
 
 test('release signing remains downstream of the same CI-tested executable identity', async () => {

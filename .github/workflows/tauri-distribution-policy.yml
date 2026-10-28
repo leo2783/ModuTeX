@@ -137,7 +137,7 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path $destDir | Out-Null
 
-          gh run download $env:EXE_ARTIFACT_RUN_ID --name $env:EXE_ARTIFACT_NAME --dir $destDir
+          & ./tests/scripts/helpers/download-workflow-artifact.ps1 -RunId $env:EXE_ARTIFACT_RUN_ID -ArtifactName $env:EXE_ARTIFACT_NAME -Destination $destDir
 
           if ($LASTEXITCODE -ne 0) { throw 'Failed to download the tested executable fixture' }
 
@@ -158,7 +158,8 @@ jobs:
       - name: Run static CD and PowerShell policy tests
         run: >-
           node --test tests/scripts/tauri-cd-execution.test.mjs tests/scripts/tauri-powershell-parse.test.mjs
-          tests/scripts/frontend-artifact-download.test.mjs tests/scripts/tauri-ci-runtime.test.mjs
+          tests/scripts/frontend-artifact-download.test.mjs tests/scripts/artifact-transport.test.mjs tests/scripts/tauri-ci-runtime.test.mjs
+          tests/scripts/tectonic-test-bundle.test.mjs
       - name: Run signature policy tests against the downloaded executable fixture
         env:
           MODUTEX_TEST_SIGNATURE_SAMPLE: apps/desktop-tauri/target/release/modutex-desktop-tauri.exe

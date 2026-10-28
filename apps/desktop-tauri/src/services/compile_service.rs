@@ -160,6 +160,8 @@ pub(crate) enum SystemArgument {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ManagedProfile {
+    #[cfg(test)]
+    test_bundle: Option<PathBuf>,
     executable: PathBuf,
     cache_directory: PathBuf,
     search_paths: Vec<PathBuf>,
@@ -193,6 +195,8 @@ impl ManagedProfile {
         validate_timeout(DEFAULT_COLD_TIMEOUT)?;
         validate_timeout(DEFAULT_WARM_TIMEOUT)?;
         Ok(Self {
+            #[cfg(test)]
+            test_bundle: None,
             executable,
             cache_directory,
             search_paths,
@@ -200,6 +204,12 @@ impl ManagedProfile {
             cold_timeout: DEFAULT_COLD_TIMEOUT,
             warm_timeout: DEFAULT_WARM_TIMEOUT,
         })
+    }
+
+    #[cfg(test)]
+    fn with_test_bundle(mut self, bundle: PathBuf) -> Self {
+        self.test_bundle = Some(bundle);
+        self
     }
 
     #[cfg(test)]
@@ -393,6 +403,8 @@ struct RunScope {
 #[derive(Clone, Debug)]
 enum ResolvedProfile {
     Managed {
+        #[cfg(test)]
+        test_bundle: Option<PathBuf>,
         executable: PathBuf,
         cache_directory: PathBuf,
         search_paths: Vec<PathBuf>,
@@ -833,6 +845,8 @@ impl CompileServiceInner {
                     }
                 })?;
                 Ok(ResolvedProfile::Managed {
+                    #[cfg(test)]
+                    test_bundle: profile.test_bundle.clone(),
                     executable,
                     cache_directory: profile.cache_directory.clone(),
                     search_paths,
@@ -1424,6 +1438,8 @@ impl CompileServiceInner {
         let default_stem = entry_stem(entry)?;
         let invocation = match &control.profile {
             ResolvedProfile::Managed {
+                #[cfg(test)]
+                test_bundle,
                 executable,
                 cache_directory,
                 search_paths,
@@ -1451,6 +1467,25 @@ impl CompileServiceInner {
                     layout.output.as_os_str().to_owned(),
                     OsString::from(entry.as_str()),
                 ];
+                #[cfg(test)]
+                let arguments = {
+                    let mut arguments = arguments;
+                    if let Some(bundle) = test_bundle {
+                        arguments.splice(
+                            0..0,
+                            [
+                                OsString::from("--bundle"),
+                                OsString::from(
+                                    tauri::Url::from_file_path(bundle)
+                                        .expect("absolute local test bundle")
+                                        .as_str(),
+                                ),
+                                OsString::from("--only-cached"),
+                            ],
+                        );
+                    }
+                    arguments
+                };
                 let process_environment = build_process_environment(
                     environment,
                     search_paths,

@@ -20,6 +20,9 @@ pub mod source_format;
 mod synctex_artifact;
 #[cfg(all(windows, target_arch = "x86_64"))]
 pub mod terminal_service;
+#[cfg(all(test, windows, target_arch = "x86_64"))]
+#[path = "../../tests/helpers/tectonic_bundle.rs"]
+pub(crate) mod test_bundle;
 #[cfg(all(windows, target_arch = "x86_64"))]
 pub mod watch_native;
 #[cfg(all(windows, target_arch = "x86_64"))]
