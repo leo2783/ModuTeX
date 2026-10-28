@@ -449,6 +449,31 @@ test('actual frontend modes, math rendering and help layout', { timeout: 120000 
 			assert.equal(await page.locator('.is-drop-target').count(), 1); await page.mouse.up();
 			await page.waitForFunction(() => document.querySelector('.notebook-cell')?.textContent.trim() === 'Third');
 		});
+		await t.test('heading drag, multiline editing, outline labels and keyboard cell deletion share real UI behavior', async () => {
+			await page.getByRole('button', { name: '原始碼', exact: true }).click(); await sourceEditor.click(); await page.keyboard.press('Control+A');
+			await page.keyboard.insertText('\\documentclass{article}\n\\begin{document}\n\\section{\\textbf{\\textit{\\underline{我葳 English}}}}\n\\subsection{Second}\n\\subsubsection{Third}\n\\par Keep body\n\\end{document}\n');
+			await page.locator('aside').getByRole('button', { name: '我葳 English', exact: true }).waitFor();
+			await page.getByRole('button', { name: '視覺化', exact: true }).click();
+			const cells = page.locator('.notebook-cell');
+			await page.waitForFunction(() => document.querySelectorAll('.notebook-cell').length === 4);
+			const start = await page.locator('.cell-drag-handle').first().boundingBox(), last = await cells.last().boundingBox();
+			await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2); await page.mouse.down();
+			await page.mouse.move(last.x + 40, last.y + last.height - 2, { steps: 12 }); await page.mouse.up();
+			await page.waitForFunction(() => [...document.querySelectorAll('.notebook-cell')].at(-1)?.textContent.trim() === '我葳 English');
+			assert.equal(await cells.count(), 4);
+			const heading = page.locator('[data-source-role="heading"]').filter({ hasText: 'Second' });
+			await heading.click(); await page.keyboard.press('End'); await page.keyboard.press('Enter'); await page.keyboard.insertText('新行 English');
+			await page.waitForFunction(() => [...document.querySelectorAll('[data-source-role="heading"]')].some(node => node.textContent.includes('新行 English')));
+			assert.equal(await cells.count(), 4);
+			assert.equal(await page.getByText('這次編輯未套用，請重新選取內容後再試。', { exact: true }).count(), 0);
+			await page.keyboard.press('Escape');
+			page.once('dialog', dialog => dialog.dismiss()); await page.keyboard.press('Delete');
+			assert.equal(await cells.count(), 4);
+			page.once('dialog', dialog => dialog.accept()); await page.keyboard.press('Delete');
+			await page.waitForFunction(() => document.querySelectorAll('.notebook-cell').length === 3);
+			await page.locator('.ProseMirror').press('Control+z');
+			await page.waitForFunction(() => document.querySelectorAll('.notebook-cell').length === 4);
+		});
 		await t.test('Chinese composition, Enter and font-dependent wrapping preserve notebook text', async () => {
 			await page.getByRole('button', { name: '原始碼', exact: true }).click(); await sourceEditor.click(); await page.keyboard.press('Control+A');
 			await page.keyboard.insertText('\\documentclass{article}\n\\begin{document}\n起始文字\n\\end{document}\n');

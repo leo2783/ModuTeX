@@ -95,7 +95,7 @@ export class VisualEditor {
 	private createDragHandle(index: number): HTMLElement {
 		const enabled = this.editable() && !!this.options.cellReorder && this.isBodyCell(index);
 		return cellDragHandle(this.view.dom.ownerDocument, index, enabled, this.text('拖曳儲存格', 'Drag cell'), () => {
-			this.dragCleanup?.(); this.selectCell(index); const source = this.options.source(), order = this.bodyCellOrder();
+			this.dragCleanup?.(); this.selectCell(index); this.commandMode = true; this.view.focus(); const source = this.options.source(), order = this.bodyCellOrder();
 			const cellIndex = order?.indices.indexOf(index) ?? -1;
 			if (!order || cellIndex < 0) return null;
 			return { cells: order.cells, current: () => !this.disposed && this.editable() && this.options.source() === source, commit: visualBoundary => {
@@ -841,6 +841,14 @@ export class VisualEditor {
 			dispatchTransaction: (transaction) => this.dispatch(transaction),
 			handleKeyDown: (_view, event) => {
 				if (_view.composing || event.isComposing || event.keyCode === 229 || event.key === 'Process') return false;
+				if (this.editable() && this.commandMode && this.selectedCellIndex !== null && this.options.cellAction &&
+					!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && ['Backspace', 'Delete'].includes(event.key)) {
+					const span = this.cellSpan(this.selectedCellIndex);
+					if (span && this.options.cellAction('delete', span) !== false) {
+						this.selectCell(null); this.commandMode = false; this.options.cellDone?.();
+					}
+					return true;
+				}
 				if (!event.ctrlKey && !event.metaKey && !event.altKey && ['Backspace', 'Delete'].includes(event.key) && this.deleteMath(event.key)) return true;
 				if (event.key === 'Escape' && this.selectedCellIndex !== null) {
 					this.commandMode = true; this.view.focus();
@@ -867,7 +875,7 @@ export class VisualEditor {
 				}
 				if (event.key === 'Enter' && this.editable()) {
 					const selection = this.view.state.selection;
-					if (!['paragraph', 'abstract'].includes(selection.$from.parent.attrs.role) || !selection.$from.sameParent(selection.$to)) { options.rejected(); return true; }
+					if (!['paragraph', 'abstract', 'heading'].includes(selection.$from.parent.attrs.role) || !selection.$from.sameParent(selection.$to)) { options.rejected(); return true; }
 					return this.insertLineBreak();
 				}
 				return false;

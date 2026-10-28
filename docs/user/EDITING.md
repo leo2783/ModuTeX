@@ -12,8 +12,8 @@ The boundary `+` menu explicitly creates a separate cell.
 
 Choose body text, paper title, abstract or heading level from the structure menu.
 Changing structure retains the cell's content and starts a new cancel-edit checkpoint. Each insertion above a heading or abstract adds one cell.
-Text wraps with available width; Enter inserts paragraph breaks.
-文字層級選單提供正文、論文題目、摘要及標題；文字依可用寬度換行，Enter 插入段落分隔。
+Text wraps with available width; Enter inserts a line break within text, abstract and heading cells. The outline displays heading text without formatting commands.
+文字層級選單提供正文、論文題目、摘要及標題；文字依可用寬度換行，Enter 在正文、摘要與標題儲存格內換行。大綱顯示標題文字，省略格式指令。
 切換層級會保留儲存格內容，並重新建立取消編輯的起點。在標題或摘要上方插入文字時，每次只新增一格。
 
 ## Math / 數學
@@ -38,13 +38,14 @@ Save to persist image assets with the workspace. Unsupported commands remain edi
 
 ## Shortcuts / 快捷鍵
 
-| Keys                  | Action / 操作                                                         |
-| --------------------- | --------------------------------------------------------------------- |
-| Ctrl+O / Ctrl+S       | Open / Save · 開啟／儲存                                              |
-| Ctrl+Z / Ctrl+Shift+Z | Undo / Redo · 復原／重做                                              |
-| Ctrl+Enter            | Compile PDF; configurable. / 編譯 PDF，可在設定調整。                 |
-| Escape                | Cancel a draft or enter cell navigation. / 取消草稿或進入儲存格導航。 |
-| Up / Down             | Navigate selected cells. / 導航選取儲存格。                           |
-| Alt+Up / Alt+Down     | Move the selected cell. / 移動選取儲存格。                            |
+| Keys                  | Action / 操作                                                                                                               |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Ctrl+O / Ctrl+S       | Open / Save · 開啟／儲存                                                                                                    |
+| Ctrl+Z / Ctrl+Shift+Z | Undo / Redo · 復原／重做                                                                                                    |
+| Ctrl+Enter            | Compile PDF; configurable. / 編譯 PDF，可在設定調整。                                                                       |
+| Escape                | Cancel a draft or enter cell navigation. / 取消草稿或進入儲存格導航。                                                       |
+| Delete / Backspace    | Delete a cell in cell navigation mode, with confirmation for nonempty content. / 在儲存格導航模式刪除整格，非空內容需確認。 |
+| Up / Down             | Navigate selected cells. / 導航選取儲存格。                                                                                 |
+| Alt+Up / Alt+Down     | Move the selected cell. / 移動選取儲存格。                                                                                  |
 
 [Compilation / 編譯](COMPILATION.md) · [Limitations / 限制](KNOWN_LIMITATIONS.md)

@@ -75,6 +75,25 @@ test('empty notebook caret accepts formatting and one undo restores the original
 	} finally { mounted.dispose(); }
 });
 
+for (const key of ['Delete', 'Backspace']) {
+	test(`${key} in cell command mode deletes the selected cell and shares exact-byte undo`, () => {
+		const mounted = mount('\\begin{document}\r\n\\section{Keep}\r\nDelete this cell\r\n\\par Keep this cell\r\n\\end{document}\r\n');
+		try {
+			const block = findBlock(mounted, node => node.textContent.includes('Delete this cell'));
+			assert.equal(mounted.visual.navigate(block.span), true);
+			const press = (value: string, composing = false) => mounted.visual.view.dom.dispatchEvent(new mounted.dom.window.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true, isComposing: composing }));
+			press('Escape'); press(key, true);
+			assert.equal(mounted.actions.length, 0);
+			press(key);
+			assert.equal(mounted.actions.length, 1);
+			assert.equal(mounted.actions[0]!.action, 'delete');
+			assert.doesNotMatch(mounted.source().read(), /Delete this cell/);
+			assert.match(mounted.source().read(), /Keep this cell/);
+			assert.deepEqual(undoAndSync(mounted).toBytes(), mounted.original.toBytes());
+		} finally { mounted.dispose(); }
+	});
+}
+
 function mount(sourceText: string): MountedEditor {
 	const { dom, restore } = installDOM();
 	dom.window.document.body.innerHTML = '<div id="source"></div><div id="visual"></div>';

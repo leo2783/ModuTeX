@@ -1,5 +1,6 @@
 // Original templates authored for the approved document-workbench specification.
 import { SourceDocument } from '../document-core/core.ts';
+import { BILINGUAL_PREAMBLE } from '../compile/document-language.ts';
 
 export const templateOptions = Object.freeze([
 	Object.freeze({ id: 'blank', title: '空白文件', description: '最小 LaTeX 文件' }),
@@ -14,7 +15,7 @@ const sources: Readonly<Record<TemplateId, string>> = Object.freeze({
 });
 export function getTemplateSource(value: TemplateId): string {
 	if (!Object.hasOwn(sources, value)) throw new Error('BAD_TEMPLATE');
-	return sources[value];
+	return sources[value].replace(/(\\documentclass\{[^}]+\}\n)/, `$1${BILINGUAL_PREAMBLE}\n`);
 }
 /** Closed identifiers, not arbitrary source paths or inherited object properties. */
 export function createDraft(value: unknown): SourceDocument {

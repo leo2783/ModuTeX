@@ -259,6 +259,11 @@ export function getCurrentWindow() {
   await page.waitForFunction(()=>!document.querySelector('#compile-margin-top')?.disabled);
   for(const side of ['top','bottom','left','right']) assert.equal(await page.locator('#compile-margin-'+side).inputValue(),'2');
   const originalMain=await page.evaluate(()=>window.appFixture.savedSources()['main.tex']);
+  await page.getByRole('button',{name:/^(啟用中英文排版|Enable Chinese and English)$/}).click();
+  await page.waitForFunction(()=>document.querySelector('.cm-content')?.textContent.includes('\\usepackage[UTF8,scheme=plain,fontset=fandol]{ctex}'));
+  assert.equal(await page.evaluate(()=>window.appFixture.savedSources()['main.tex']),originalMain,'Enabling bilingual typesetting must retain the unsaved draft boundary');
+  await page.getByRole('button',{name:/^(啟用中英文排版|Enable Chinese and English)$/}).click();
+  assert.equal((await page.locator('.cm-content').first().textContent()).split('fontset=fandol').length-1,1,'Repeated enabling must not duplicate the preamble');
   const dateMode = page.locator('#document-date-mode');
   await dateMode.selectOption('iso');
   await page.getByRole('button',{name:/^(套用日期設定|Apply date settings)$/}).click();

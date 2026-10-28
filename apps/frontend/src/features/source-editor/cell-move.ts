@@ -25,7 +25,7 @@ export function cellMoveTransaction(state: EditorState, cells: readonly SourceSp
 	const destination = bodyBoundary > bodyIndex ? bodyBoundary - 1 : bodyBoundary;
 	const first = Math.min(bodyIndex, destination), last = Math.max(bodyIndex, destination);
 	const projected = projectVisual(source, parseSource(source)).document;
-	const paragraphs = new Set<string>(); projected.forEach(node => { if (node.type.name === 'source_block') paragraphs.add(`${node.attrs.from}:${node.attrs.to}`); });
+	const paragraphs = new Set<string>(); projected.forEach(node => { if (node.type.name === 'source_block' && node.attrs.role === 'paragraph') paragraphs.add(`${node.attrs.from}:${node.attrs.to}`); });
 	const spans = bodyCells.slice(first, last + 1), contents = spans.map(span => ({ text: source.read(span.from, span.to), paragraph: paragraphs.has(`${span.from}:${span.to}`) }));
 	const [moving] = contents.splice(bodyIndex - first, 1); contents.splice(destination - first, 0, moving!);
 	let previousParagraph = first > 0 && paragraphs.has(`${bodyCells[first - 1]!.from}:${bodyCells[first - 1]!.to}`);
