@@ -247,6 +247,9 @@ export function getCurrentWindow() {
   await page.waitForTimeout(100);
   assert.equal(await locate.isDisabled(), true, 'changed included source must invalidate the retained mapping');
   await openCompilationSettings();
+  assert.equal(await page.getByLabel(/主 TeX 文件|Main TeX file/).count(),1,'Output help must not become part of another field label');
+  assert.equal(await page.getByLabel(/主 TeX 文件|Main TeX file/).getAttribute('id'),'compile-main-file');
+  assert.equal(await page.locator('#compile-output-dir').getAttribute('aria-describedby'),'compile-output-help');
   const output=page.getByLabel(/^(輸出目錄|Output directory)/);
   await output.fill('build');
   await page.getByRole('button',{name:/^(儲存工作區編譯設定|Save workspace compile settings)$/}).click();
