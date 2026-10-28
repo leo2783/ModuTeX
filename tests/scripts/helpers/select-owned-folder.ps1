@@ -5,6 +5,7 @@ param(
     [ValidateRange(1,30)][int]$TimeoutSeconds = 30
 )
 $ErrorActionPreference = 'Stop'
+[Console]::Error.WriteLine('OWNED_FOLDER_STAGE validate-process')
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $owned = Get-Process -Id $OwnedProcessId -ErrorAction Stop
 if ($ExpectedExecutablePath) {
@@ -13,9 +14,12 @@ if ($ExpectedExecutablePath) {
 } elseif ($owned.ProcessName -ne 'modutex-desktop-tauri') { throw 'UNEXPECTED_TEST_PROCESS' }
 $folder = (Resolve-Path -LiteralPath $FolderPath).Path
 if (-not (Test-Path -LiteralPath $folder -PathType Container)) { throw 'EXPECTED_TEST_FOLDER' }
+[Console]::Error.WriteLine('OWNED_FOLDER_STAGE load-uia')
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+[Console]::Error.WriteLine('OWNED_FOLDER_STAGE load-native-popups')
 . (Join-Path $PSScriptRoot 'owned-native-popups.ps1')
+[Console]::Error.WriteLine('OWNED_FOLDER_STAGE poll-owned-windows')
 $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 $observed = @()
 $nativeWindows = @{}
