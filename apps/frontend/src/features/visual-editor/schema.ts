@@ -1,5 +1,6 @@
 import { Fragment, Schema, type Node as VisualNode, type Mark } from 'prosemirror-model';
 import type { Transaction } from 'prosemirror-state';
+import { explicitCellRanges, type CellBoundary } from './cell-boundaries.ts';
 import { parseTable } from '../tables/source.ts';
 import { mapPosition, parseSource, projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan, type SyntaxNode, type SourcePatch, type SourceChange } from '../document-core/core.ts';
 
@@ -52,6 +53,8 @@ export interface VisualProjection {
 	/** Relative source offset at every visual UTF-16 boundary; formatted blocks use segments, Raw has neither. */
 	readonly boundaries: readonly (readonly number[] | null)[];
 	readonly segments?: readonly (readonly InlineSegment[] | null)[];
+	/** Multiple presentation blocks can belong to one explicit notebook cell. */
+	readonly cellBounds?: readonly (CellBoundary | null)[];
 }
 const normalized = (value: string) => value.replace(/\r\n|\r/g, '\n');
 function sourceWrapper(source: SourceDocument, node: SyntaxNode): InlineWrapper {
@@ -347,7 +350,10 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 		boundaries.push(plain.boundaries); segments.push(null); plainNodes = [];
 	};
 	const nodes = body ? body.children : parsed.nodes;
+	const cellRanges = explicitCellRanges(source, nodes);
+	const cellMarkers = new Set(cellRanges.flatMap(range => [range.from, range.contentTo]));
 	for (const node of nodes) {
+		if (cellMarkers.has(node.span.from) && node.kind === 'comment') { flush(); continue; }
 		if (node.kind === 'raw' && node.name === 'maketitle') {
 			flush();
 			if (titleMarkers.has(node.span.from)) continue;
@@ -404,7 +410,19 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 			role: 'paragraph', name: '', level: 2
 		}));
 	}
+	const cellBounds: (CellBoundary | null)[] = blocks.map(() => null);
+	let cursor = 0;
+	for (const range of cellRanges) {
+		while (cursor < blocks.length && blocks[cursor]!.attrs.to <= range.contentFrom) cursor++;
+		const first = cursor;
+		while (cursor < blocks.length && blocks[cursor]!.attrs.from >= range.contentFrom && blocks[cursor]!.attrs.to <= range.contentTo) cursor++;
+		if (cursor > first) {
+			const cell = Object.freeze({ first, last: cursor - 1, from: range.from, to: range.to });
+			for (let index = first; index < cursor; index++) cellBounds[index] = cell;
+		}
+	}
 	return { documentId: source.documentId, version: source.version, document: visualSchema.nodes.doc!.create(null, blocks), bodyStart: body?.content?.from, bodyEnd: body?.content?.to,
+		cellBounds: Object.freeze(cellBounds),
 		boundaries: Object.freeze(boundaries), segments: Object.freeze(segments) };
 }
 const escaped: Record<string, string> = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '$': '\\$', '%': '\\%', '&': '\\&', '#': '\\#', '_': '\\_', '^': '\\textasciicircum{}', '~': '\\textasciitilde{}' };
@@ -878,7 +896,14 @@ export function advanceVisual(
 		if (!edit || !old) { boundaries.push(old ?? null); continue; }
 		boundaries.push(editBoundaries(old, edit.from, edit.to, edit.insert, source.profile.preferredLineEnding));
 	}
-	return { documentId: next.documentId, version: next.version, document: visualSchema.nodes.doc!.create(null, blocks),
+	const movedCells = new Map<CellBoundary, CellBoundary>();
+	const cellBounds = projection.cellBounds?.map(cell => {
+		if (!cell) return null;
+		let moved = movedCells.get(cell);
+		if (!moved) { moved = Object.freeze({ ...cell, from: mapPosition(change, cell.from, 'before'), to: mapPosition(change, cell.to, 'after') }); movedCells.set(cell, moved); }
+		return moved;
+	});
+	return { documentId: next.documentId, version: next.version, document: visualSchema.nodes.doc!.create(null, blocks), cellBounds,
 		bodyStart: projection.bodyStart === undefined ? undefined : mapPosition(change, projection.bodyStart, 'before'),
 		bodyEnd: projection.bodyEnd === undefined ? undefined : mapPosition(change, projection.bodyEnd, 'after'),
 		viewDocument: transaction.doc, boundaries: Object.freeze(boundaries), segments: Object.freeze(segments) };

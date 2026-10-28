@@ -1,7 +1,21 @@
-import { parseSource, type SourceDocument, type SourcePatch } from '../document-core/core.ts';
+import { parseSource, type SourceDocument, type SourcePatch, type SyntaxNode } from '../document-core/core.ts';
 
 // TeX-distributed fonts keep the same document usable on Windows without optional OS fonts.
 export const BILINGUAL_PREAMBLE = '\\usepackage[UTF8,scheme=plain,fontset=fandol]{ctex}';
+
+/** Managed compilation can prepare standard CJK documents using shared editor history. */
+export function planDefaultBilingualPatches(source: SourceDocument): readonly SourcePatch[] {
+	const text = source.read();
+	if (!/\p{Script=Han}/u.test(text)) return [];
+	const parsed = parseSource(source), body = parsed.nodes.find(node => node.kind === 'environment' && node.name === 'document');
+	if (!body) return [];
+	const containsChinese = (nodes: readonly SyntaxNode[]): boolean => nodes.some(node => node.kind !== 'comment' &&
+		(node.children.length ? containsChinese(node.children) : /\p{Script=Han}/u.test(source.read(node.span.from, node.span.to))));
+	if (!containsChinese(parsed.nodes)) return [];
+	const standardClass = parsed.nodes.some(node => node.name === 'documentclass' && node.span.to <= body.span.from && /\{(?:article|report|book)\}$/.test(source.read(node.span.from, node.span.to)));
+	if (!standardClass) return [];
+	try { return planBilingualPatches(source); } catch { return []; }
+}
 
 /** Explicit migration for existing documents. Existing CJK/font configuration remains authoritative. */
 export function planBilingualPatches(source: SourceDocument): readonly SourcePatch[] {

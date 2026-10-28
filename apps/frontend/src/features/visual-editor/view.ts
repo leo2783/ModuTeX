@@ -14,6 +14,7 @@ import type { StructureSelection } from '../source-editor/structure.ts';
 import { advanceVisual, prepareVisualEdit, projectVisual, visualCaretAnchor, visualSchema, visualMarkName, createVisualMark, supportedVisualMark, type VisualProjection } from './schema.ts';
 import { text, type Language } from '../../i18n/text.ts';
 import { numericDatePreview } from '../compile/document-date.ts';
+import { CELL_BEGIN, CELL_END } from './cell-boundaries.ts';
 
 interface VisualOptions {
 	source(): SourceDocument;
@@ -110,10 +111,12 @@ export class VisualEditor {
 		}, cleanup => { this.dragCleanup = cleanup; });
 	}
 	private moveCell(index: number, next: number): void {
+		index = this.cellFirst(index);
+		next = this.cellFirst(next);
 		if (this.options.cellReorder) {
 			const order = this.bodyCellOrder(), cellIndex = order?.indices.indexOf(index) ?? -1;
 			if (!order || cellIndex < 0) return;
-			const visualBoundary = next < index ? next : index + 2;
+			const visualBoundary = next < index ? next : this.cellLast(next) + 1;
 			const boundary = order.indices.filter(value => value < visualBoundary).length;
 			if (this.options.cellReorder(order.cells, cellIndex, boundary) === false) return;
 			const source = this.options.source();
@@ -145,9 +148,9 @@ export class VisualEditor {
 		const target = event.target as HTMLElement | null;
 		if (target?.closest('.visual-cell-toolbar, .visual-cell-boundary, .inline-equation-draft, .cell-panel-draft, .visual-math, .visual-math-inline')) return;
 		this.commandMode = false;
-		const cell = target?.closest<HTMLElement>('[data-cell-index]');
+		const cell = target?.closest<HTMLElement>('[data-cell-part]');
 		if (!cell || !view.dom.contains(cell)) return;
-		const index = Number(cell.dataset.cellIndex);
+		const index = Number(cell.dataset.cellPart);
 		if (!Number.isInteger(index) || index < 0 || index >= view.state.doc.childCount) return;
 		let position = 0; for (let i = 0; i < index; i++) position += view.state.doc.child(i).nodeSize;
 		const node = view.state.doc.child(index);
@@ -226,6 +229,7 @@ export class VisualEditor {
 	}
 
 	private selectCell(index: number | null): void {
+		if (index !== null) index = this.cellFirst(index);
 		if (this.disposed || this.selectedCellIndex === index) return;
 		this.selectedCellIndex = index;
 		const span = index === null ? null : this.cellSpan(index);
@@ -245,10 +249,16 @@ export class VisualEditor {
 		if (this.projection.documentId !== source.documentId || this.projection.version !== source.version) return null;
 		if (index < 0 || index >= this.projection.document.childCount) return null;
 		const child = this.projection.document.child(index);
-		const from = child.attrs.from;
-		const to = child.attrs.to;
+		const cell = this.projection.cellBounds?.[index];
+		const from = cell?.from ?? child.attrs.from;
+		const to = cell?.to ?? child.attrs.to;
 		if (typeof from !== 'number' || typeof to !== 'number' || from < 0 || to > source.length || from > to) return null;
 		return { documentId: this.projection.documentId, version: this.projection.version, from, to };
+	}
+	private cellFirst(index: number): number { return this.projection?.cellBounds?.[index]?.first ?? index; }
+	private cellLast(index: number): number { return this.projection?.cellBounds?.[index]?.last ?? index; }
+	private adjacentCell(index: number, direction: -1 | 1): number {
+		return direction < 0 ? this.cellFirst(this.cellFirst(index) - 1) : this.cellLast(index) + 1;
 	}
 	private isMaketitleField(node: VisualNode | null | undefined): boolean {
 		return ['source_block', 'raw_block'].includes(node?.type.name ?? '') && ['title', 'author', 'date'].includes(node?.attrs.name);
@@ -263,6 +273,7 @@ export class VisualEditor {
 		if (!fragment && !hasBodyBounds) return null;
 		const cells: SourceSpan[] = [], indices: number[] = [];
 		for (let index = 0; index < projection.document.childCount; index++) {
+			if (this.cellFirst(index) !== index) continue;
 			const span = this.cellSpan(index);
 			if (!span) return null;
 			if (fragment || span.from >= start! && span.to <= end!) {
@@ -307,14 +318,11 @@ export class VisualEditor {
 		if (childCount === 0) {
 			offset = 0;
 		} else if (index <= 0) {
-			const first = this.projection.document.child(0);
-			offset = typeof first.attrs.from === 'number' ? first.attrs.from : 0;
+			offset = this.cellSpan(0)?.from ?? 0;
 		} else if (index >= childCount) {
-			const last = this.projection.document.child(childCount - 1);
-			offset = typeof last.attrs.to === 'number' ? last.attrs.to : source.length;
+			offset = this.cellSpan(childCount - 1)?.to ?? source.length;
 		} else {
-			const prev = this.projection.document.child(index - 1);
-			offset = typeof prev.attrs.to === 'number' ? prev.attrs.to : 0;
+			offset = this.cellSpan(index - 1)?.to ?? 0;
 		}
 		offset = Math.max(0, Math.min(source.length, offset));
 		return { documentId: this.projection.documentId, version: this.projection.version, from: offset, to: offset };
@@ -487,11 +495,11 @@ export class VisualEditor {
 			event.preventDefault();
 			event.stopPropagation();
 			if (!this.editable() || !canMove || (this.options.cellReorder ? bodyIndex <= 0 : cellIndex <= 0)) return;
-			if (this.options.cellReorder) { this.moveCell(cellIndex, cellIndex - 1); return; }
+			if (this.options.cellReorder) { this.moveCell(cellIndex, this.adjacentCell(cellIndex, -1)); return; }
 			const span = this.cellSpan(cellIndex);
-			const adjacent = this.cellSpan(cellIndex - 1);
+			const adjacent = this.cellSpan(this.adjacentCell(cellIndex, -1));
 			if (!span || !adjacent) { this.options.rejected(); return; }
-			this.moveCell(cellIndex, cellIndex - 1);
+			this.moveCell(cellIndex, this.adjacentCell(cellIndex, -1));
 		});
 
 		const moveDownBtn = doc.createElement('button');
@@ -500,18 +508,18 @@ export class VisualEditor {
 		moveDownBtn.textContent = '↓';
 		moveDownBtn.title = this.text('下移儲存格', 'Move cell down');
 		moveDownBtn.setAttribute('aria-label', this.text('下移儲存格', 'Move cell down'));
-		moveDownBtn.disabled = !this.editable() || !canMove || (this.options.cellReorder ? bodyIndex >= (bodyOrder?.indices.length ?? 0) - 1 : cellIndex >= childCount - 1);
-		moveDownBtn.dataset.atEdge = String(this.options.cellReorder ? bodyIndex >= (bodyOrder?.indices.length ?? 0) - 1 : cellIndex >= childCount - 1);
+		moveDownBtn.disabled = !this.editable() || !canMove || (this.options.cellReorder ? bodyIndex >= (bodyOrder?.indices.length ?? 0) - 1 : this.cellLast(cellIndex) >= childCount - 1);
+		moveDownBtn.dataset.atEdge = String(this.options.cellReorder ? bodyIndex >= (bodyOrder?.indices.length ?? 0) - 1 : this.cellLast(cellIndex) >= childCount - 1);
 		this.cellActionButtons.add(moveDownBtn);
 		moveDownBtn.addEventListener('click', (event) => {
 			event.preventDefault();
 			event.stopPropagation();
-			if (!this.editable() || !canMove || (this.options.cellReorder ? bodyIndex >= (bodyOrder?.indices.length ?? 0) - 1 : cellIndex >= childCount - 1)) return;
-			if (this.options.cellReorder) { this.moveCell(cellIndex, cellIndex + 1); return; }
+			if (!this.editable() || !canMove || (this.options.cellReorder ? bodyIndex >= (bodyOrder?.indices.length ?? 0) - 1 : this.cellLast(cellIndex) >= childCount - 1)) return;
+			if (this.options.cellReorder) { this.moveCell(cellIndex, this.adjacentCell(cellIndex, 1)); return; }
 			const span = this.cellSpan(cellIndex);
-			const adjacent = this.cellSpan(cellIndex + 1);
+			const adjacent = this.cellSpan(this.adjacentCell(cellIndex, 1));
 			if (!span || !adjacent) { this.options.rejected(); return; }
-			this.moveCell(cellIndex, cellIndex + 1);
+			this.moveCell(cellIndex, this.adjacentCell(cellIndex, 1));
 		});
 
 		const deleteBtn = doc.createElement('button');
@@ -595,25 +603,28 @@ export class VisualEditor {
 					for (let i = 0; i <= count; i++) {
 						const boundaryIndex = i;
 						const pos = currentPos;
-						decorations.push(Decoration.widget(pos, () => this.createBoundaryElement(boundaryIndex), {
+						if (i === count || this.cellFirst(i) === i) decorations.push(Decoration.widget(pos, () => this.createBoundaryElement(boundaryIndex), {
 							side: i === 0 ? -1 : 1,
 							stopEvent: () => true,
 							key: `boundary-${loc}-${boundaryIndex}`
 						}));
 						if (i < count) {
 							const child = doc.child(i);
-							decorations.push(Decoration.widget(pos, () => this.createDragHandle(i), { side: 0, stopEvent: () => true, destroy: dom => disposeCellDragHandle(dom as HTMLElement), key: `cell-grip-${loc}-${i}-${editable}` }));
-							const isSelected = i === selected;
+							const first = this.cellFirst(i), last = this.cellLast(i);
+							if (first === i) decorations.push(Decoration.widget(pos, () => this.createDragHandle(i), { side: 0, stopEvent: () => true, destroy: dom => disposeCellDragHandle(dom as HTMLElement), key: `cell-grip-${loc}-${i}-${editable}` }));
+							const isSelected = first === selected;
 							decorations.push(Decoration.node(pos, pos + child.nodeSize, {
-								class: `notebook-cell${isSelected ? ' is-selected' : ''}`,
-								'data-cell-index': String(i),
+								class: `${first === i ? 'notebook-cell' : 'notebook-cell-continuation'}${first !== last ? ' compound-cell' : ''}${i === last ? ' cell-end' : ''}${isSelected ? ' is-selected' : ''}`,
+								...(first === i ? { 'data-cell-index': String(i) } : {}),
+								'data-cell-part': String(i),
+								'data-cell-owner': String(first),
 								'data-cell-type': child.type.name
 							}));
-							if (isSelected && !this.options.cellToolbar) {
+							if (isSelected && first === i && !this.options.cellToolbar) {
 								decorations.push(Decoration.widget(pos, () => this.createCellToolbarElement(i), {
 									side: 1,
 									stopEvent: () => true,
-									key: `cell-toolbar-${loc}-${i}`
+									key: `cell-toolbar-${loc}-${i}-${count}-${last}`
 								}));
 							}
 							currentPos += child.nodeSize;
@@ -629,10 +640,10 @@ export class VisualEditor {
 				handleClick: (view, pos, event) => {
 					const target = event.target as HTMLElement | null;
 					if (target?.closest('.visual-cell-toolbar, .visual-cell-boundary, .inline-equation-draft, .cell-panel-draft')) return false;
-					const cell = target?.closest<HTMLElement>('[data-cell-index]');
+					const cell = target?.closest<HTMLElement>('[data-cell-part]');
 					// Blank space between cells must not select the nearest paragraph.
 					if (!cell || !view.dom.contains(cell)) return false;
-					const cellIndex = Number(cell.dataset.cellIndex);
+					const cellIndex = Number(cell.dataset.cellPart);
 					if (!Number.isInteger(cellIndex) || cellIndex < 0 || cellIndex >= view.state.doc.childCount) return false;
 					let position = 0;
 					for (let index = 0; index < cellIndex; index++) position += view.state.doc.child(index).nodeSize;
@@ -855,7 +866,7 @@ export class VisualEditor {
 					return true;
 				}
 				if (this.editable() && this.selectedCellIndex !== null && !event.isComposing && ['ArrowUp', 'ArrowDown'].includes(event.key)) {
-					const index = this.selectedCellIndex, next = index + (event.key === 'ArrowUp' ? -1 : 1);
+					const index = this.selectedCellIndex, next = this.adjacentCell(index, event.key === 'ArrowUp' ? -1 : 1);
 					if (event.altKey && !event.ctrlKey && !event.metaKey) {
 						this.moveCell(index, next);
 						return true;
@@ -916,8 +927,19 @@ export class VisualEditor {
 		const insert = [...wrappers].reverse().map(wrapper => wrapper.close).join('') + '\\\\' + wrappers.map(wrapper => wrapper.open).join('');
 		const source = this.options.source();
 		try {
-			const next = this.options.apply(this.projection, [{from: span.from, to: span.to, expected: source.read(span.from, span.to), insert}]);
-			this.pendingLineBreak = {documentId: next.documentId, version: next.version, position: selection.from + 1, marks: context.map(visualMarkName), text: ''};
+			let patch: SourcePatch = { from: span.from, to: span.to, expected: source.read(span.from, span.to), insert };
+			const heading = block.attrs.role === 'heading' && block.attrs.from >= (this.projection.bodyStart ?? 0);
+			if (heading) {
+				// Preserve the heading prefix, but move the suffix and caret outside its
+				// wrapper. This changes text structure within the user's existing cell.
+				const eol = source.profile.preferredLineEnding;
+				const content = source.read(block.attrs.from, span.from) + [...wrappers].reverse().map(wrapper => wrapper.close).join('') +
+					source.read(block.attrs.editTo, block.attrs.to) + eol + '\\par' + eol + wrappers.map(wrapper => wrapper.open).join('') + source.read(span.to, block.attrs.editTo);
+				patch = { from: block.attrs.from, to: block.attrs.to, expected: source.read(block.attrs.from, block.attrs.to),
+					insert: this.projection.cellBounds?.[index] ? content : CELL_BEGIN + eol + content + eol + CELL_END + eol };
+			}
+			const next = this.options.apply(this.projection, [patch]);
+			this.pendingLineBreak = {documentId: next.documentId, version: next.version, position: selection.from + (heading ? 2 : 1), marks: context.map(visualMarkName), text: ''};
 			this.pendingFocus = true;
 			this.refresh();
 		} catch { this.options.rejected(); }
@@ -1264,14 +1286,14 @@ export class VisualEditor {
 	cellInsertionBoundary(): SourceSpan | null {
 		const index = this.selectedCellIndex ?? Math.min(this.view.state.selection.$from.index(0), this.view.state.doc.childCount - 1);
 		if (this.isMaketitleField(this.projection?.document.maybeChild(index))) return this.bodyInsertionSpan();
-		return this.boundarySpan(index + 1);
+		return this.boundarySpan(this.cellLast(index) + 1);
 	}
 	textStructureSelection(): (StructureSelection & { readonly content: string }) | null {
 		if (!this.editable() || !this.projection) return null;
-		const index = this.selectedCellIndex ?? Math.min(this.view.state.selection.$from.index(0), this.view.state.doc.childCount - 1);
+		const index = Math.min(this.view.state.selection.$from.index(0), this.view.state.doc.childCount - 1);
 		// Native ProseMirror nodes deliberately retain their attrs during fast typing.
 		// Source coordinates always come from the advanced canonical projection.
-		const node = this.projection.document.child(index), span = this.cellSpan(index);
+		const node = this.projection.document.child(index), span = { documentId: this.projection.documentId, version: this.projection.version, from: node.attrs.from, to: node.attrs.to };
 		if (!span || node.type.name !== 'source_block') return null;
 		const contentSpan = { ...span, from: node.attrs.name === 'null' && node.content.size === 0 ? node.attrs.editTo : node.attrs.editFrom, to: node.attrs.editTo };
 		return { span, contentSpan, name: node.attrs.name, content: this.options.source().read(contentSpan.from, contentSpan.to) };
