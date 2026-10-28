@@ -283,7 +283,7 @@ jobs:
             },
             [pscustomobject]@{
               Name = 'ibiblio'
-              Uri = 'https://mirrors.ibiblio.org/CTAN/systems/win32/miktex/tm/packages/'
+              Uri = 'https://mirrors.ibiblio.org/pub/mirrors/CTAN/systems/win32/miktex/tm/packages/'
             }
           )
 
