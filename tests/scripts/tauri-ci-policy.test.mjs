@@ -712,6 +712,14 @@ test('MiKTeX prewarm uses bounded official mirrors and verifies the pinned archi
 		'package fallback must use the URL registered by miktexsetup --list-repositories');
 	assert.doesNotMatch(run, /https:\/\/mirrors\.ibiblio\.org\/CTAN\/systems\/win32\/miktex\/tm\/packages\//,
 		'the shorter package URL is rejected as an unregistered repository');
+	const packageUrls = [...run.matchAll(/Uri = '([^']+\/tm\/packages\/)'/g)].map(([, url]) => url);
+	assert.deepEqual(packageUrls, [
+		'https://mirror.latigo.net/ctan/systems/win32/miktex/tm/packages/',
+		'https://mirrors.ibiblio.org/pub/mirrors/CTAN/systems/win32/miktex/tm/packages/',
+		'https://mirror.clarkson.edu/ctan/systems/win32/miktex/tm/packages/'
+	]);
+	assert.match(run, /CiProcessDeadline = \[DateTime\]::UtcNow.AddSeconds\(720\)/);
+	assert.match(run, /-TimeoutSeconds 180/);
 	const sourceUrls = [...run.matchAll(/Uri = '([^']+\.zip)'/g)].map(([, url]) => url);
 	assert.deepEqual(sourceUrls, [
 		'https://mirrors.ibiblio.org/CTAN/systems/win32/miktex/setup/windows-x64/miktexsetup-5.5.0%2B1763023-x64.zip',

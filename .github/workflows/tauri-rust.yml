@@ -284,6 +284,10 @@ jobs:
             [pscustomobject]@{
               Name = 'ibiblio'
               Uri = 'https://mirrors.ibiblio.org/pub/mirrors/CTAN/systems/win32/miktex/tm/packages/'
+            },
+            [pscustomobject]@{
+              Name = 'clarkson'
+              Uri = 'https://mirror.clarkson.edu/ctan/systems/win32/miktex/tm/packages/'
             }
           )
 
