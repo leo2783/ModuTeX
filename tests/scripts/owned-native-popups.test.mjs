@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, stat, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
@@ -28,7 +28,7 @@ function Add-Type {
 [OwnedNativePopupWindows].Assembly.Location
 `, { POPUP_HELPER: helper, MODUTEX_TEST_NATIVE_POPUPS_ASSEMBLY: assembly });
 		assert.equal(loaded.code, 0, loaded.stderr);
-		assert.equal(loaded.stdout.trim().toLowerCase(), assembly.toLowerCase());
+		assert.equal((await realpath(loaded.stdout.trim())).toLowerCase(), (await realpath(assembly)).toLowerCase(), 'loaded assembly must resolve to the same file, including Windows short-path aliases');
 		const missing = await run('$ErrorActionPreference="Stop"; . $env:POPUP_HELPER', { POPUP_HELPER: helper, MODUTEX_TEST_NATIVE_POPUPS_ASSEMBLY: join(fixture, 'missing.dll') });
 		assert.notEqual(missing.code, 0, 'missing prepared assemblies must fail instead of falling back to runtime compilation');
 	} finally { await rm(fixture, { recursive: true, force: true }); }

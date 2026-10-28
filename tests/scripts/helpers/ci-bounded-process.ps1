@@ -1,6 +1,45 @@
 # SPDX-License-Identifier: Apache-2.0
 . (Join-Path $PSScriptRoot 'owned-process-diagnostics.ps1')
 
+function Invoke-CiResumableDownload {
+    param(
+        [Parameter(Mandatory)][string]$FilePath,
+        [string[]]$Arguments = @(),
+        [Parameter(Mandatory)][string]$LogPath,
+        [Parameter(Mandatory)][string]$PortableRoot,
+        [ValidateRange(1, 600)][int]$TimeoutSeconds = 180
+    )
+    $previousDeadline = $script:CiProcessDeadline
+    $downloadDeadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    if ($previousDeadline -and $previousDeadline -lt $downloadDeadline) { $downloadDeadline = $previousDeadline }
+    # Both transfers share the original per-mirror budget and the provisioning
+    # budget. The underlying runner still owns cleanup and deadline enforcement.
+    $script:CiProcessDeadline = $downloadDeadline
+    try {
+        for ($downloadAttempt = 1; $downloadAttempt -le 2; $downloadAttempt++) {
+            $remaining = ($downloadDeadline - [DateTime]::UtcNow).TotalSeconds
+            if ($remaining -le 0) { throw 'MiKTeX provisioning time budget exhausted' }
+            try {
+                Invoke-CiBoundedProcess -FilePath $FilePath -Arguments $Arguments -LogPath $LogPath -PortableRoot $PortableRoot -TimeoutSeconds ([int][Math]::Ceiling($remaining))
+                return
+            } catch {
+                $stderrPath = "$LogPath.stderr.log"
+                $transferError = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw } else { '' }
+                # Curl 28 is the demonstrated transfer timeout. Configuration,
+                # integrity, certificate and unrelated process errors fail closed.
+                if ($downloadAttempt -eq 2 -or $transferError -notmatch '\bcode\s*=\s*"?28\b' -or [DateTime]::UtcNow -ge $downloadDeadline) { throw }
+                foreach ($suffix in @('', '.stderr.log')) {
+                    $attemptSource = "$LogPath$suffix"
+                    if (Test-Path -LiteralPath $attemptSource -PathType Leaf) {
+                        Copy-Item -LiteralPath $attemptSource -Destination "$LogPath.attempt-1$suffix" -ErrorAction Stop
+                    }
+                }
+                Write-Warning 'MiKTeX transfer timed out; resuming the same repository once within its remaining original time budget'
+            }
+        }
+    } finally { $script:CiProcessDeadline = $previousDeadline }
+}
+
 function Save-CiPortableLogs {
     param([string]$PortableRoot, [string]$LogDirectory)
     if (-not (Test-Path -LiteralPath $PortableRoot -PathType Container)) { return }

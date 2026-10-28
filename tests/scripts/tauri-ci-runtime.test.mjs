@@ -14,6 +14,54 @@ const run = (file, args, options = {}) => new Promise((accept, reject) => execFi
   { windowsHide: true, timeout: 20000, ...options }, (error, stdout, stderr) =>
     error ? reject(Error(`${error}: ${stdout} ${stderr}`)) : accept(stdout)));
 
+for (const mode of ['transient', 'permanent', 'repeated', 'deadline', 'mirror-deadline']) {
+  test(`MiKTeX download resumes only transient transfers within the original budget: ${mode}`, { skip: !windows }, async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'modutex-download-resume-'));
+    await writeFile(join(fixture, 'transfer.mjs'), `
+import {readFile,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+const [folder,mode]=process.argv.slice(2), counter=join(folder,'attempts.txt');
+const count=Number(await readFile(counter,'utf8').catch(()=>0))+1;
+await writeFile(counter,String(count));
+const partial=join(folder,'partial-package');
+if(count===1) await writeFile(partial,'retained-partial');
+if(mode==='transient'&&count===2) {
+ if(await readFile(partial,'utf8')!=='retained-partial') throw Error('Partial download lost');
+ console.log('resumed-success');
+} else {
+ console.error(mode==='permanent'?'archive checksum mismatch':'Timeout was reached; code="28"');
+ if(mode.endsWith('deadline')) await new Promise(resolve=>setTimeout(resolve,5000));
+ process.exitCode=1;
+}
+`);
+    const command = `
+$ErrorActionPreference='Stop'
+. ./tests/scripts/helpers/ci-bounded-process.ps1
+$seconds=if($env:MODUTEX_TRANSFER_MODE -eq 'deadline'){1}else{10}
+$script:CiProcessDeadline=[DateTime]::UtcNow.AddSeconds($seconds)
+$originalDeadline=$script:CiProcessDeadline
+$transferSeconds=if($env:MODUTEX_TRANSFER_MODE -eq 'mirror-deadline'){1}else{10}
+try {
+ Invoke-CiResumableDownload -FilePath $env:MODUTEX_RUNTIME_NODE -Arguments @((Join-Path $env:MODUTEX_RUNTIME_FIXTURE 'transfer.mjs'),$env:MODUTEX_RUNTIME_FIXTURE,$env:MODUTEX_TRANSFER_MODE) -LogPath (Join-Path $env:MODUTEX_RUNTIME_FIXTURE 'download.log') -PortableRoot $env:MODUTEX_RUNTIME_FIXTURE -TimeoutSeconds $transferSeconds
+} finally { if($script:CiProcessDeadline -ne $originalDeadline) { throw 'Provisioning deadline was changed' } }
+`;
+    try {
+      const execute = () => run(process.env.MODUTEX_TEST_PWSH ?? 'pwsh.exe', ['-NoProfile', '-Command', command], {
+        cwd: resolve(import.meta.dirname, '../..'),
+        env: { ...process.env, MODUTEX_RUNTIME_FIXTURE: fixture, MODUTEX_RUNTIME_NODE: process.execPath, MODUTEX_TRANSFER_MODE: mode }
+      });
+      if (mode === 'transient') {
+        assert.match(await execute(), /resumed-success/);
+        assert.match(await readFile(join(fixture, 'download.log.attempt-1.stderr.log'), 'utf8'), /code="28"/);
+      } else {
+        await assert.rejects(execute(), mode.endsWith('deadline') ? /bounded deadline|budget exhausted/ : /MiKTeX command failed/);
+      }
+      assert.equal(Number(await readFile(join(fixture, 'attempts.txt'), 'utf8')), ['transient', 'repeated'].includes(mode) ? 2 : 1,
+        'permanent errors and exhausted deadlines must never be retried');
+    } finally { await rm(fixture, { recursive: true, force: true }); }
+  });
+}
+
 test('CDP readiness accepts a live owned loopback endpoint without generating failure evidence', { skip: !windows }, async () => {
   const evidence = await mkdtemp(join(tmpdir(), 'modutex-cdp-ready-'));
   const reservation = createServer();

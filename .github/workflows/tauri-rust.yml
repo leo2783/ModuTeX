@@ -314,7 +314,7 @@ jobs:
             Write-Host "[MiKTeX] Downloading portable basic package set from $($mirror.Name)"
 
             try {
-              Invoke-CiBoundedProcess `
+              Invoke-CiResumableDownload `
                 -FilePath $setupPath `
                 -Arguments $downloadArguments `
                 -LogPath $downloadLog `
