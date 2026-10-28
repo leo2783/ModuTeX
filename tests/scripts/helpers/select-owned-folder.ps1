@@ -14,15 +14,13 @@ if ($ExpectedExecutablePath) {
 } elseif ($owned.ProcessName -ne 'modutex-desktop-tauri') { throw 'UNEXPECTED_TEST_PROCESS' }
 $folder = (Resolve-Path -LiteralPath $FolderPath).Path
 if (-not (Test-Path -LiteralPath $folder -PathType Container)) { throw 'EXPECTED_TEST_FOLDER' }
-[Console]::Error.WriteLine('OWNED_FOLDER_STAGE load-uia')
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
 [Console]::Error.WriteLine('OWNED_FOLDER_STAGE load-native-popups')
 . (Join-Path $PSScriptRoot 'owned-native-popups.ps1')
 [Console]::Error.WriteLine('OWNED_FOLDER_STAGE poll-owned-windows')
 $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 $observed = @()
 $nativeWindows = @{}
+$uiaLoaded = $false
 while ([DateTime]::UtcNow -lt $deadline) {
     if (-not (Get-Process -Id $OwnedProcessId -ErrorAction SilentlyContinue)) { break }
     $windows = @([OwnedNativePopupWindows]::Enumerate([uint32]$OwnedProcessId))
@@ -58,6 +56,12 @@ while ([DateTime]::UtcNow -lt $deadline) {
         [Console]::Error.WriteLine("OWNED_FOLDER_WIN32_CHILDREN $nativeSnapshot")
         [Console]::Error.Flush()
         try {
+            if (-not $uiaLoaded) {
+                [Console]::Error.WriteLine('OWNED_FOLDER_STAGE load-uia-fallback')
+                Add-Type -AssemblyName UIAutomationClient
+                Add-Type -AssemblyName UIAutomationTypes
+                $uiaLoaded = $true
+            }
             $window = [System.Windows.Automation.AutomationElement]::FromHandle($popup.Handle)
             if ($null -eq $window) { continue }
             $observed += [pscustomobject]@{id=$window.Current.AutomationId;type=$popup.ClassName;processId=$popup.ProcessId}

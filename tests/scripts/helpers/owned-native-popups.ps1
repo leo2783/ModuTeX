@@ -1,4 +1,14 @@
-Add-Type @'
+param([string]$OutputAssembly)
+$ErrorActionPreference = 'Stop'
+# CI prepares this once before starting the application. Loading the assembly
+# keeps C# compilation outside the existing owned-dialog interaction deadline.
+if (-not $OutputAssembly -and $env:MODUTEX_TEST_NATIVE_POPUPS_ASSEMBLY) {
+    Add-Type -Path (Resolve-Path -LiteralPath $env:MODUTEX_TEST_NATIVE_POPUPS_ASSEMBLY -ErrorAction Stop).Path
+    return
+}
+$compileOptions = @{}
+if ($OutputAssembly) { $compileOptions.OutputAssembly = $OutputAssembly }
+Add-Type @compileOptions @'
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;

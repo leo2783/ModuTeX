@@ -288,6 +288,15 @@ jobs:
       - name: Configure app-scoped WebView2 CDP policy
         id: webview2-cdp-policy
         run: pwsh -NoProfile -File tests/scripts/helpers/webview2-cdp-policy.ps1 -Action Configure
+      - name: Prepare compiled owned-dialog interop before starting the app
+        timeout-minutes: 1
+        run: |
+          $assembly = Join-Path $env:RUNNER_TEMP ("modutex-owned-popups-" + [guid]::NewGuid().ToString('N') + '.dll')
+          & ./tests/scripts/helpers/owned-native-popups.ps1 -OutputAssembly $assembly
+          if (-not (Test-Path -LiteralPath $assembly -PathType Leaf) -or (Get-Item -LiteralPath $assembly).Length -le 0) {
+            throw 'Owned-dialog interop assembly was not prepared'
+          }
+          "MODUTEX_TEST_NATIVE_POPUPS_ASSEMBLY=$assembly" >> $env:GITHUB_ENV
       - name: Prewarm Tectonic for compile-config E2E
         if: matrix.lane == 'compile-config'
         timeout-minutes: 12
