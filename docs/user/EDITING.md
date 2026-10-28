@@ -11,8 +11,10 @@ The boundary `+` menu explicitly creates a separate cell.
 點選儲存格並放置游標後，工具在游標處插入內容；拖曳左側把手可排序，邊界 `+` 選單則另外新增儲存格。
 
 Choose body text, paper title, abstract or heading level from the structure menu.
+Changing structure retains the cell's content and starts a new cancel-edit checkpoint. Each insertion above a heading or abstract adds one cell.
 Text wraps with available width; Enter inserts paragraph breaks.
 文字層級選單提供正文、論文題目、摘要及標題；文字依可用寬度換行，Enter 插入段落分隔。
+切換層級會保留儲存格內容，並重新建立取消編輯的起點。在標題或摘要上方插入文字時，每次只新增一格。
 
 ## Math / 數學
 

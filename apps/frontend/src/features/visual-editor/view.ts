@@ -10,6 +10,7 @@ import { highlightCode } from '../code/highlight.ts';
 import { imagePath } from '../images/store.ts';
 import { imageCell, clipboardImage } from '../images/view.ts';
 import { formatShortcut, type TextFormat } from '../source-editor/format.ts';
+import type { StructureSelection } from '../source-editor/structure.ts';
 import { advanceVisual, prepareVisualEdit, projectVisual, visualCaretAnchor, visualSchema, visualMarkName, createVisualMark, supportedVisualMark, type VisualProjection } from './schema.ts';
 import { text, type Language } from '../../i18n/text.ts';
 import { numericDatePreview } from '../compile/document-date.ts';
@@ -318,6 +319,12 @@ export class VisualEditor {
 		offset = Math.max(0, Math.min(source.length, offset));
 		return { documentId: this.projection.documentId, version: this.projection.version, from: offset, to: offset };
 	}
+	/** Only unfenced body text needs a second marker to keep the following cell separate. */
+	private boundaryBeforeText(index: number): boolean {
+		const next = this.projection?.document.maybeChild(index);
+		return next?.type.name === 'source_block' && !['heading', 'abstract'].includes(next.attrs.role) &&
+			!['par', 'null'].includes(next.attrs.name) && !this.isMaketitleField(next);
+	}
 	private createBoundaryElement(boundaryIndex: number): HTMLElement {
 		const doc = this.view?.dom.ownerDocument ?? document;
 		const container = doc.createElement('div');
@@ -371,8 +378,7 @@ export class VisualEditor {
 						if (!this.editable() || !this.options.insertBlock) return;
 						const span = this.boundarySpan(boundaryIndex);
 						if (!span) { this.options.rejected(); return; }
-						const next = this.projection?.document.maybeChild(boundaryIndex);
-						this.options.insertBlock(kind, span, next?.type.name === 'source_block' && !['par','null'].includes(next.attrs.name));
+						this.options.insertBlock(kind, span, this.boundaryBeforeText(boundaryIndex));
 					});
 					return button;
 				};
@@ -448,8 +454,7 @@ export class VisualEditor {
 					const boundary = above ? cellIndex : cellIndex + 1;
 					const span = this.boundarySpan(boundary);
 					if (!span) { this.options.rejected(); return; }
-					const next = this.projection?.document.maybeChild(boundary);
-					this.options.insertBlock(kind, span, next?.type.name === 'source_block' && !['par','null'].includes(next.attrs.name));
+					this.options.insertBlock(kind, span, this.boundaryBeforeText(boundary));
 				});
 				return button;
 			};
@@ -1253,11 +1258,20 @@ export class VisualEditor {
 		if (this.isMaketitleField(this.projection?.document.maybeChild(index))) return this.bodyInsertionSpan();
 		return this.boundarySpan(index + 1);
 	}
-	textStructureSelection(): { span: SourceSpan; content: string } | null {
-		if (!this.editable()) return null;
+	textStructureSelection(): (StructureSelection & { readonly content: string }) | null {
+		if (!this.editable() || !this.projection) return null;
 		const index = this.selectedCellIndex ?? Math.min(this.view.state.selection.$from.index(0), this.view.state.doc.childCount - 1);
-		const node = this.view.state.doc.child(index), span = this.cellSpan(index);
+		// Native ProseMirror nodes deliberately retain their attrs during fast typing.
+		// Source coordinates always come from the advanced canonical projection.
+		const node = this.projection.document.child(index), span = this.cellSpan(index);
 		if (!span || node.type.name !== 'source_block') return null;
-		return { span, content: this.options.source().read(node.attrs.editFrom, node.attrs.editTo).trim() };
+		const contentSpan = { ...span, from: node.attrs.name === 'null' && node.content.size === 0 ? node.attrs.editTo : node.attrs.editFrom, to: node.attrs.editTo };
+		return { span, contentSpan, name: node.attrs.name, content: this.options.source().read(contentSpan.from, contentSpan.to) };
+	}
+	/** A structural commit starts a new edit session; Cancel must never restore its old wrapper. */
+	selectChangedCell(span: SourceSpan): boolean {
+		this.selectCell(null);
+		const node = this.projection?.document.content.content.find(node => node.attrs.from === span.from);
+		return !!node && this.navigate({ ...span, to: node.attrs.to }, true);
 	}
 }

@@ -366,11 +366,12 @@ mod reviewer_supervision_tests {
 
         assert!(
             transcript.contains("GRANDCHILD_NODE_UTF8_終端𠀀_READY_"),
-            "PTY must capture descendant unique UTF-8 marker"
+            "PTY must capture descendant unique UTF-8 marker; transcript={transcript:?}; active={:?}",
+            job.active_processes()
         );
         assert!(
             transcript.contains("LEADER_NODE_PID_"),
-            "PTY must capture leader process marker"
+            "PTY must capture leader process marker; transcript={transcript:?}"
         );
 
         let child_marker = "CHILD_";
