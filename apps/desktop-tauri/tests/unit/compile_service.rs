@@ -1003,10 +1003,12 @@ mod native_tests {
         // The first real compile warms it; the second verifies warm-timeout selection.
         let cache = dir.path().join("tectonic-cache");
         fs::create_dir(&cache).expect("create test-owned Tectonic cache");
+        assert!(!has_cached_latex_format(&cache).unwrap());
         let temporary_root = dir.path().join("tectonic-compile-temp");
         let first_profile =
             ManagedProfile::new(executable.clone(), cache.clone(), Vec::new(), Vec::new())
-                .expect("fixed vendor managed profile");
+                .expect("fixed vendor managed profile")
+                .with_test_bundle(crate::services::test_bundle::verified_path());
         let first_config =
             TrustedCompileConfig::new(temporary_root.clone(), Some(first_profile), None)
                 .expect("first managed configuration");
@@ -1033,6 +1035,7 @@ mod native_tests {
 
         let warm_profile = ManagedProfile::new(executable, cache.clone(), Vec::new(), Vec::new())
             .expect("fixed vendor managed profile")
+            .with_test_bundle(crate::services::test_bundle::verified_path())
             .with_timeouts(Duration::from_millis(1), Duration::from_secs(120))
             .expect("bounded test-only warm timeout");
         let warm_config =

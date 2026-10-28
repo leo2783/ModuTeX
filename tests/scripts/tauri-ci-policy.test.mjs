@@ -742,6 +742,17 @@ test('MiKTeX prewarm uses bounded official mirrors and verifies the pinned archi
 	assert.match(run, /Invoke-CiBoundedProcess/);
 });
 
+test('real Rust engine tests prepare a verified local bundle before execution',async()=>{
+	const workflow=load(await readFile(resolve(ROOT,'.github/workflows/tauri-rust.yml'),'utf8'));
+	const steps=stepsOf(workflow.jobs['rust-tests']);
+	const prepare=steps.findIndex(step=>step.name==='Prepare verified local Tectonic test bundle');
+	const tests=steps.findIndex(step=>step.name==='Run Rust tests for desktop-tauri with serialized process cleanup');
+	assert(prepare>=0 && tests>prepare);
+	assert.equal(steps[prepare]['timeout-minutes'],5);
+	assert.match(steps[prepare].run,/node tests\/scripts\/prepare-tectonic-test-bundle\.mjs/);
+	assert.match(steps[prepare].run,/LASTEXITCODE -ne 0/);
+});
+
 test('release signing remains downstream of the same CI-tested executable identity', async () => {
 	const release = load(
 		await readFile(resolve(ROOT, '.github/workflows/tauri-release.yml'), 'utf8')
