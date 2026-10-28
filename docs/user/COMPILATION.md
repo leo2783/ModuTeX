@@ -14,8 +14,8 @@ For an existing document with missing Chinese characters, open **Settings → Co
 
 ## Results / 結果
 
-To retain PDF files in the workspace, set **Settings → Compilation → Output directory** to an existing folder such as `build`, then save the workspace compile settings. Successful builds write `<entry-name>.pdf` and `<entry-name>.log` there. An explicit PDF path overrides the output directory. With both fields empty, compilation provides a preview without exporting a workspace PDF.
-若要將 PDF 留在工作區，在「設定 → 編譯 → 輸出目錄」填入已存在的資料夾（例如 `build`），並儲存工作區編譯設定。成功後會寫入 `<主文件名稱>.pdf` 與同名 `.log`；明確指定的 PDF 路徑優先於輸出目錄。兩者留空時只提供預覽，不匯出工作區 PDF。
+Successful compilation automatically saves the PDF beside the main `.tex` file. For example, `paper/main.tex` produces `paper/main.pdf`. No output setting is required. A later successful build replaces that PDF; a failed build retains the last successful file. Optional PDF paths and output directories in **Settings → Compilation** override this default.
+成功編譯後，PDF 自動儲存在主 `.tex` 文件旁，例如 `paper/main.tex` 會產生 `paper/main.pdf`，不需設定輸出位置。再次成功編譯會更新 PDF，失敗則保留上一次成功的檔案。「設定 → 編譯」中的選用 PDF 路徑與輸出目錄可覆寫預設位置。
 
 Successful builds display the latest PDF; failures and cancellations keep the previous successful preview.
 The progress indicator describes the stage, not a numeric percentage.

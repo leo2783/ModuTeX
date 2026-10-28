@@ -406,8 +406,9 @@
 							</label>
 		</div>
 						<label for="compile-output-dir" class="form-field">
-							<span class="field-label">{t('輸出目錄（必須已存在於工作區內）', 'Output directory (must already exist in the workspace)')}</span>
+								<span class="field-label">{t('輸出目錄（選用，必須已存在於工作區內）', 'Output directory (optional, must already exist in the workspace)')}</span>
 							<input id="compile-output-dir" bind:value={outputDir} autocomplete="off" spellcheck="false" />
+								<span>{t('留空時，PDF 自動儲存在主 TeX 文件旁，不需另行設定。', 'Leave empty to save the PDF beside the main TeX file automatically.')}</span>
 						</label>
 						<div class="form-row two-cols">
 							<label for="compile-pdf-path" class="form-field">

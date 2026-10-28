@@ -74,6 +74,143 @@ impl CompileService {
 }
 
 static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+#[test]
+fn default_pdf_is_saved_beside_root_and_nested_tex_and_failed_build_retains_it() {
+    let _guard = TEST_LOCK.lock().unwrap();
+    for entry in ["main.tex", "sections/child.tex"] {
+        let dir = TestDirectory::new();
+        let filesystem = new_filesystem(dir.path());
+        let mut fixture = add_workspace(
+            &filesystem,
+            dir.path(),
+            "default-pdf-owner",
+            "saved source\n",
+        );
+        fixture.entry = RelativePath::parse(entry).unwrap();
+        fixture.revision = filesystem
+            .read_file(
+                &fixture.owner,
+                &FileRef {
+                    workspace_id: fixture.workspace_id.clone(),
+                    path: fixture.entry.clone(),
+                },
+            )
+            .unwrap()
+            .revision;
+        let output = fixture.root.join(entry.replace(".tex", ".pdf"));
+        let mut run = 0;
+        let executor = Arc::new(MockProcessExecutor::new(move |invocation, _| {
+            run += 1;
+            let mut pdf = valid_pdf_bytes();
+            pdf.extend_from_slice(format!("\n% generation {run}\n").as_bytes());
+            fs::write(&invocation.output_pdf, pdf).unwrap();
+            fs::write(&invocation.engine_log, "compile transcript\n").unwrap();
+            Ok(ProcessOutput {
+                pid: 1234,
+                exit_code: if run == 3 { 1 } else { 0 },
+                logs: ProcessLogs::default(),
+                active_processes_after_exit: 0,
+            })
+        }));
+        let service = CompileService::with_executor_for_test(
+            filesystem,
+            create_test_config(dir.path()),
+            executor,
+        )
+        .unwrap();
+        let mut prior = Vec::new();
+        for version in 1..=3 {
+            let identity = service
+                .start(&fixture.owner, fixture.request(version))
+                .unwrap();
+            let result = service
+                .wait_result(&fixture.owner, &identity, Duration::from_secs(5))
+                .unwrap()
+                .unwrap();
+            if version < 3 {
+                assert!(
+                    matches!(result, CompileResult::Success { .. }),
+                    "{result:?}"
+                );
+                let saved =
+                    fs::read(&output).expect("PDF exported beside TeX without configuration");
+                assert_ne!(saved, prior, "a later successful build replaces its output");
+                prior = saved;
+            } else {
+                assert!(matches!(result, CompileResult::Failure { .. }));
+                assert_eq!(fs::read(&output).unwrap(), prior);
+            }
+        }
+        assert!(!fixture.root.join("build").exists());
+        assert!(!fixture.root.join(entry.replace(".tex", ".log")).exists());
+    }
+}
+
+#[test]
+fn configured_pdf_and_output_directory_override_the_sibling_default() {
+    let _guard = TEST_LOCK.lock().unwrap();
+    for explicit_pdf in [false, true] {
+        let dir = TestDirectory::new();
+        let filesystem = new_filesystem(dir.path());
+        let fixture = add_workspace(
+            &filesystem,
+            dir.path(),
+            "custom-pdf-owner",
+            "saved source\n",
+        );
+        fs::create_dir(fixture.root.join("build")).unwrap();
+        let executor = Arc::new(MockProcessExecutor::new(|invocation, _| {
+            fs::write(&invocation.output_pdf, valid_pdf_bytes()).unwrap();
+            fs::write(&invocation.engine_log, "clean compile transcript\n").unwrap();
+            Ok(ProcessOutput {
+                pid: 1234,
+                exit_code: 0,
+                logs: ProcessLogs::default(),
+                active_processes_after_exit: 0,
+            })
+        }));
+        let service = CompileService::with_executor_for_test(
+            filesystem,
+            create_test_config(dir.path()),
+            executor,
+        )
+        .unwrap();
+        let request = fixture.request(1);
+        let mut config = CompileWorkspaceConfig::default_for_request(&request);
+        config.output_dir = Some(RelativePath::parse("build").unwrap());
+        if explicit_pdf {
+            config.pdf_path = Some(RelativePath::parse("sections/custom.pdf").unwrap());
+        }
+        let identity = service
+            .start_with_workspace_config(
+                &fixture.owner,
+                request,
+                CompileOverlay::default(),
+                config,
+                false,
+            )
+            .unwrap();
+        let result = service
+            .wait_result(&fixture.owner, &identity, Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(result, CompileResult::Success { .. }),
+            "{result:?}"
+        );
+        assert!(fixture
+            .root
+            .join(if explicit_pdf {
+                "sections/custom.pdf"
+            } else {
+                "build/main.pdf"
+            })
+            .exists());
+        assert!(!fixture.root.join("main.pdf").exists());
+    }
+}
+
 struct TestDirectory(PathBuf);
 impl TestDirectory {
     fn new() -> Self {
