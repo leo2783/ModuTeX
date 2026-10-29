@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { inspectFrontendBoundaries } from './frontend-boundaries.mjs';
 import { digest, inside, inventoryFrontend, packageEvidenceFor } from './frontend-artifacts.mjs';
 import { collectAssetProvenance } from './frontend-asset-origins.mjs';
+import { pdfFontProof } from './pdf-font-proof.mjs';
 
 const HASH = /^[0-9a-f]{64}$/;
 const EVIDENCE_LIMIT = 64 * 1024 * 1024;
@@ -437,6 +438,10 @@ export async function consumeFrontendBuildEvidence(root, artifacts, assetEvidenc
         outputSha256: output.sha256, sourcePath: output.sourceFile.path,
         sourceSha256: output.sourceFile.sha256, compilers: evidence.compilerSummary
       };
+    } else if (finding.kind === 'asset-origin-review-required' && output?.sourceFile &&
+      sourceRows.get(output.sourceFile.path)?.sha256 === output.sourceFile.sha256 &&
+      await modulePackage(output.sourceFile.path) !== null) {
+      proof = await pdfFontProof(root, output);
     } else if (finding.kind === 'script-without-source-map' && output?.kind === 'chunk') {
       const complete = await completeModuleGraph(output.modules, false);
       if (complete) proof = {

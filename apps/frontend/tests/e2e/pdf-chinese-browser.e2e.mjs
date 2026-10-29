@@ -22,13 +22,15 @@ test('production PdfView paints embedded Chinese glyphs without remote resources
  server = await createServer({ root: directory, configFile: false, plugins: [svelte()], server: { host: '127.0.0.1', port: 0, fs: { allow: [path.resolve(frontend, '../..')] } }, logLevel: 'error' });
  await server.listen();
  browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'chrome' } : {}) });
- const page = await browser.newPage();
+ const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
  const warnings = [], failures = [], external = [];
  page.on('console', message => { if (['warning','error'].includes(message.type())) warnings.push(message.text()); });
  page.on('pageerror', error => failures.push(error.message));
  await page.route('**/*', route => { const url = new URL(route.request().url()); if (!['127.0.0.1','localhost'].includes(url.hostname) && url.protocol !== 'data:' && url.protocol !== 'blob:') { external.push(url.href); return route.abort(); } return route.continue(); });
  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}`);
  await page.waitForFunction(() => window.result.renders > 0);
+ const density = await page.locator('canvas').evaluate(canvas => canvas.width / parseFloat(canvas.style.width));
+ assert.ok(density >= 1.9, `fixed high-density rendering required, got ${density}`);
  if (process.env.MODUTEX_PDF_PROOF_DIR) {
   await page.screenshot({ path: path.join(process.env.MODUTEX_PDF_PROOF_DIR, 'preview.png') });
   console.log(warnings);
