@@ -366,12 +366,14 @@ mod reviewer_supervision_tests {
 
         assert!(
             transcript.contains("GRANDCHILD_NODE_UTF8_終端𠀀_READY_"),
-            "PTY must capture descendant unique UTF-8 marker; transcript={transcript:?}; active={:?}",
-            job.active_processes()
+            "PTY must capture descendant unique UTF-8 marker; transcript={transcript:?}; active={:?}; io={:?}; node_trace={:?}",
+            job.active_processes(), service.session_io_progress(&info.session_id),
+            fs::read_to_string(path.join("startup-trace.jsonl"))
         );
         assert!(
             transcript.contains("LEADER_NODE_PID_"),
-            "PTY must capture leader process marker; transcript={transcript:?}"
+            "PTY must capture leader process marker; transcript={transcript:?}; io={:?}; node_trace={:?}",
+            service.session_io_progress(&info.session_id), fs::read_to_string(path.join("startup-trace.jsonl"))
         );
 
         let child_marker = "CHILD_";

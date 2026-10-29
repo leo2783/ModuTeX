@@ -1319,6 +1319,10 @@ mod windows_pty {
     }
 
     struct SessionGate {
+        #[cfg(test)]
+        raw_read_bytes: AtomicUsize,
+        #[cfg(test)]
+        reader_started: AtomicBool,
         owner: OwnerId,
         workspace_id: WorkspaceId,
         session_id: TerminalSessionId,
@@ -1555,6 +1559,10 @@ mod windows_pty {
             *lock_recover(&resources.writer) = Some(raw_writer);
             let writer_for_reader = Arc::clone(&resources.writer);
             let gate = Arc::new(SessionGate {
+                #[cfg(test)]
+                raw_read_bytes: AtomicUsize::new(0),
+                #[cfg(test)]
+                reader_started: AtomicBool::new(false),
                 owner: spec.owner.clone(),
                 workspace_id: spec.workspace_id.clone(),
                 session_id: session_id.clone(),
@@ -1582,6 +1590,10 @@ mod windows_pty {
             let reader_handle = match thread::Builder::new()
                 .name(format!("conpty-reader-{session_id}"))
                 .spawn(move || {
+                    #[cfg(test)]
+                    gate_for_reader
+                        .reader_started
+                        .store(true, Ordering::Release);
                     let reader = lock_recover(&reader_source_for_reader).take();
                     let Some(mut reader) = reader else {
                         gate_for_reader.reader_failed.store(true, Ordering::Release);
@@ -1601,6 +1613,10 @@ mod windows_pty {
                                 break;
                             }
                             Ok(n) => {
+                                #[cfg(test)]
+                                gate_for_reader
+                                    .raw_read_bytes
+                                    .fetch_add(n, Ordering::AcqRel);
                                 let chunk = &buf[..n];
                                 let mut scan = cpr_tail.clone();
                                 scan.extend_from_slice(chunk);
@@ -1869,6 +1885,16 @@ mod windows_pty {
         #[cfg(test)]
         pub(super) fn job_process_group(&self) -> JobProcessGroup {
             self.resources.job.clone()
+        }
+
+        #[cfg(test)]
+        pub(super) fn io_progress(&self) -> String {
+            let gate = &self.gate;
+            format!("reader_started={} raw_read_bytes={} emitted_sequence={} eof={} failed={} backpressure={} stopped={}",
+                gate.reader_started.load(Ordering::Acquire), gate.raw_read_bytes.load(Ordering::Acquire),
+                gate.sequence.load(Ordering::Acquire), gate.reader_eof.load(Ordering::Acquire),
+                gate.reader_failed.load(Ordering::Acquire), gate.backpressure_tripped.load(Ordering::Acquire),
+                gate.reader_stop.load(Ordering::Acquire))
         }
 
         pub(super) fn drain_reader_channel(&self) {
@@ -2796,6 +2822,15 @@ impl TerminalService {
             .sessions
             .get(session_id)
             .map(|s| s.job_process_group())
+    }
+
+    #[cfg(all(test, windows, target_arch = "x86_64"))]
+    pub(crate) fn session_io_progress(&self, session_id: &TerminalSessionId) -> Option<String> {
+        let guard = self.state.lock().ok()?;
+        guard
+            .sessions
+            .get(session_id)
+            .map(|session| session.io_progress())
     }
 }
 
