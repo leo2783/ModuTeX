@@ -90,6 +90,7 @@ try{
  const beforeImages=(await imageSourceEditor.locator('.cm-line').allTextContents()).join('\n');
  await page.getByRole('button',{name:/^(視覺化|Visual)$/}).click();
  const imageInput=page.getByLabel(/^(選擇圖片|Choose image)$/);
+ const imageVisualEditor=page.locator('.visual .ProseMirror[contenteditable="true"]');
  await imageInput.setInputFiles([]);
  assert.equal(await page.locator('.visual-image').count(),0);
  await imageInput.setInputFiles({name:'broken.png',mimeType:'image/png',buffer:Buffer.from('not a PNG image')});
@@ -97,13 +98,14 @@ try{
  assert.equal((await imageSourceEditor.locator('.cm-line').allTextContents()).join('\n'),beforeImages,'invalid image must not mutate source');
  for(const [extension,type] of [['png','image/png'],['jpg','image/jpeg']]){
   const encoded=await page.evaluate(type=>{const canvas=document.createElement('canvas');canvas.width=120;canvas.height=80;const ctx=canvas.getContext('2d');ctx.fillStyle=type==='image/png'?'#3d617b':'#bc4539';ctx.fillRect(0,0,120,80);return canvas.toDataURL(type).split(',')[1]},type);
-  await page.locator('.source-block').filter({hasText:'Unconfigured main test.'}).click();
-  await page.keyboard.press('End');
+  // End only reaches the current wrapped line; inserting there splits the locator's prose.
+  await imageVisualEditor.focus();
+  await page.keyboard.press('Control+End');
   await imageInput.setInputFiles({name:`original.${extension}`,mimeType:type,buffer:Buffer.from(encoded,'base64')});
   await page.waitForFunction(count=>document.querySelectorAll('.visual-image img').length===count&&[...document.querySelectorAll('.visual-image img')].every(img=>img.naturalWidth===120),extension==='png'?1:2);
  }
  stage='native image shared undo and redo';
- await page.locator('.source-block').filter({hasText:'Unconfigured main test.'}).click();
+ await imageVisualEditor.focus();
  await page.keyboard.press('Control+z');
  await page.waitForFunction(()=>document.querySelectorAll('.visual-image').length===1);
  await page.keyboard.press('Control+Shift+z');
@@ -113,6 +115,7 @@ try{
  let savedImages='';
  for(const until=Date.now()+10000;Date.now()<until;){try{savedImages=await readFile(join(workspace,'standalone.tex'),'utf8');if((savedImages.match(/\\includegraphics/g)||[]).length===2)break}catch(error){if(!['EBUSY','ENOENT'].includes(error.code))throw error}await delay(100)}
  assert.equal((savedImages.match(/\\includegraphics/g)||[]).length,2,'both image references must actually reach disk');
+ assert.ok(savedImages.includes('Unconfigured main test. 我你'),'image insertion must preserve the complete original paragraph');
  const imagePaths=[...savedImages.matchAll(/\\includegraphics\[[^\]]*\]\{([^}]+)\}/g)].map(match=>match[1]);
  for(const imagePath of imagePaths)assert((await readFile(join(workspace,imagePath))).length>12,'image asset must exist beside saved TeX');
  stage='native image reopen and real PDF rendering';
