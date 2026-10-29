@@ -684,7 +684,12 @@ test('clean runners prepare real WASM bindings and frontend artifacts before dep
 		const compile = steps.findIndex(step => /cargo (clippy|test)\b/.test(step.run ?? ''));
 		assert(download >= 0 && download < compile, `${id} must download assets before Cargo compiles the app`);
 		assert.match(steps[download].run, /download-workflow-artifact\.ps1 -RunId \$env:GITHUB_RUN_ID/);
-		assert.match(steps[download].env.FRONTEND_ARTIFACT_NAME, /github.run_id.*github.run_attempt/);
+		assert.equal(steps[download].env.FRONTEND_ARTIFACT_NAME, '${{ inputs.frontend_artifact_name }}');
+		assert.equal(wf.workflow.jobs.rust.with.frontend_artifact_name, '${{ needs.frontend.outputs.frontend_artifact_name }}');
+		const producer = wf.children.frontend.workflow.jobs['frontend-build'];
+		assert.equal(producer.outputs.frontend_artifact_name, '${{ steps.artifact-identity.outputs.name }}');
+		const identity = stepsOf(producer).find(step => step.id === 'artifact-identity');
+		assert.match(identity.env.ARTIFACT_NAME, /github.run_id.*github.run_attempt/);
 		assert.match(steps[download].run, /index\.html/);
 	}
 	const rust = jobs.find(item => item.jobId === 'rust-tests').job;

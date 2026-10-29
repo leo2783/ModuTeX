@@ -25,8 +25,23 @@ for(const workflow of (await readdir(new URL('../../.github/workflows/',import.m
   }
 }
 assert(consumers.length>0,'Frontend artifact consumers must be discovered from the real workflow graph');
+test('partial reruns retain the frontend producer artifact identity', async () => {
+  const pipeline=yaml.load(await readFile(new URL('../../.github/workflows/tauri-ci.yml',import.meta.url),'utf8'));
+  assert.equal(producer.on.workflow_call.outputs.frontend_artifact_name.value,'${{ jobs.frontend-build.outputs.frontend_artifact_name }}');
+  assert.equal(producer.jobs['frontend-build'].outputs.frontend_artifact_name,'${{ steps.artifact-identity.outputs.name }}');
+  assert.equal(upload.with.name,'${{ steps.artifact-identity.outputs.name }}');
+  for(const [workflow,job] of consumers){
+    const document=yaml.load(await readFile(new URL(`../../.github/workflows/${workflow}`,import.meta.url),'utf8'));
+    const step=document.jobs[job].steps.find(step=>step.env?.FRONTEND_ARTIFACT_NAME);
+    assert.equal(step.env.FRONTEND_ARTIFACT_NAME,'${{ inputs.frontend_artifact_name }}');
+    const caller=Object.values(pipeline.jobs).find(value=>value.uses===`./.github/workflows/${workflow}`);
+    assert(caller.needs.includes('frontend'));
+    assert.equal(caller.with.frontend_artifact_name,'${{ needs.frontend.outputs.frontend_artifact_name }}');
+  }
+});
 for(const [workflow,job] of consumers){
-  test(`${workflow} ${job} stages frontend artifacts without overwriting checkout licenses`,async()=>{
+ for(const attempt of [1,3]) {
+  test(`${workflow} ${job} attempt ${attempt} stages producer artifacts without overwriting checkout licenses`,async()=>{
     const document=yaml.load(await readFile(new URL(`../../.github/workflows/${workflow}`,import.meta.url),'utf8'));
     const target=document.jobs[job];
     assert(target,`Missing real job ${job}`);
@@ -47,7 +62,7 @@ for(const [workflow,job] of consumers){
       await writeFile(script,`$ErrorActionPreference='Stop'
 $env:RUNNER_TEMP=${quote(runner)}
 $env:GITHUB_RUN_ID='123456789'
-$env:GITHUB_RUN_ATTEMPT='1'
+$env:GITHUB_RUN_ATTEMPT='${attempt}'
 $env:FRONTEND_ARTIFACT_NAME='ModuTeX-Tauri-Frontend-123456789-1'
 Set-Location -LiteralPath ${quote(checkout)}
 function gh {
@@ -87,4 +102,5 @@ if (-not (Test-Path -LiteralPath 'apps/frontend/dist-tauri/index.html' -PathType
       await rm(directory,{recursive:true,force:true,maxRetries:3});
     }
   });
+ }
 }
