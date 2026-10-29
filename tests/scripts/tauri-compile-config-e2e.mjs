@@ -111,7 +111,7 @@ try{
  await page.keyboard.press('Control+s');
  await page.waitForFunction(()=>!document.querySelector('.source-view')?.textContent?.includes('儲存中'));
  let savedImages='';
- for(const until=Date.now()+10000;Date.now()<until;){savedImages=await readFile(join(workspace,'standalone.tex'),'utf8');if((savedImages.match(/\\includegraphics/g)||[]).length===2)break;await delay(100)}
+ for(const until=Date.now()+10000;Date.now()<until;){try{savedImages=await readFile(join(workspace,'standalone.tex'),'utf8');if((savedImages.match(/\\includegraphics/g)||[]).length===2)break}catch(error){if(!['EBUSY','ENOENT'].includes(error.code))throw error}await delay(100)}
  assert.equal((savedImages.match(/\\includegraphics/g)||[]).length,2,'both image references must actually reach disk');
  const imagePaths=[...savedImages.matchAll(/\\includegraphics\[[^\]]*\]\{([^}]+)\}/g)].map(match=>match[1]);
  for(const imagePath of imagePaths)assert((await readFile(join(workspace,imagePath))).length>12,'image asset must exist beside saved TeX');
