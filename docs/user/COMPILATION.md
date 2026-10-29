@@ -14,6 +14,9 @@ Managed compilation automatically prepares Chinese and English typesetting for a
 
 ## Results / 結果
 
+The built-in PDF preview includes local character maps and font resources for Chinese PDFs. It does not fetch preview resources from a CDN. Package initialization details remain in the compile log; Problems lists warnings and errors, including missing glyphs. Wrapped font warnings appear as one message.
+內建 PDF 預覽隨附中文所需的字元映射與字型資源，不透過 CDN 載入預覽資源。套件初始化細節保留在編譯記錄；「問題」列出警告與錯誤，包括缺字訊息。跨行字型警告會合併為一則訊息。
+
 Successful compilation automatically saves the PDF beside the main `.tex` file. For example, `paper/main.tex` produces `paper/main.pdf`. No output setting is required. A later successful build replaces that PDF; a failed build retains the last successful file. Optional PDF paths and output directories in **Settings → Compilation** override this default.
 成功編譯後，PDF 自動儲存在主 `.tex` 文件旁，例如 `paper/main.tex` 會產生 `paper/main.pdf`，不需設定輸出位置。再次成功編譯會更新 PDF，失敗則保留上一次成功的檔案。「設定 → 編譯」中的選用 PDF 路徑與輸出目錄可覆寫預設位置。
 

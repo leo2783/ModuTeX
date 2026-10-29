@@ -76,6 +76,47 @@ impl CompileService {
 static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
+fn latex_initialization_is_not_a_problem_and_font_continuations_stay_together() {
+    let entry = RelativePath::parse("main.tex").unwrap();
+    let snapshot = CompileSourceSnapshot {
+        entries: vec![],
+        files: vec![],
+    };
+    let log = "LaTeX Info: Redefining \\frac on input line 234.\n\
+LaTeX Font Info: Overwriting math alphabet `\\mathfrak' in version `bold'\n\
+(Font) U/euf/m/n --> U/euf/b/n on input line 7.\n\
+Package fontspec Info: Font family created\n\
+LaTeX Font Warning: Font shape `TU/test' undefined\n\
+(Font) using `TU/fallback' instead on input line 12.\n\
+LaTeX Warning: No \\author given.\n";
+    let diagnostics = parse_diagnostics(log, &snapshot, &entry);
+    assert_eq!(diagnostics.len(), 2, "{diagnostics:?}");
+    assert!(matches!(diagnostics[0].severity, Severity::Warning));
+    assert!(diagnostics[0]
+        .message
+        .contains("using `TU/fallback' instead"));
+    // Package initialization line numbers are not locations in the user's source.
+    assert!(diagnostics[0].path.is_none());
+    assert!(diagnostics[0].line.is_none());
+    assert!(diagnostics[1].message.contains("No \\author"));
+}
+
+#[test]
+fn missing_glyphs_and_real_errors_remain_problems() {
+    let entry = RelativePath::parse("main.tex").unwrap();
+    let snapshot = CompileSourceSnapshot {
+        entries: vec![],
+        files: vec![],
+    };
+    let diagnostics = parse_diagnostics("Missing character: There is no 我 (U+6211) in font cmr10!\n! Undefined control sequence.\nl.15 \\bad\nwarning: Unresolved reference\n", &snapshot, &entry);
+    assert_eq!(diagnostics.len(), 3, "{diagnostics:?}");
+    assert!(diagnostics.iter().any(|d| d.message.contains("U+6211")));
+    assert!(diagnostics
+        .iter()
+        .any(|d| matches!(d.severity, Severity::Error)));
+}
+
+#[test]
 fn default_pdf_is_saved_beside_root_and_nested_tex_and_failed_build_retains_it() {
     let _guard = TEST_LOCK.lock().unwrap();
     for entry in ["main.tex", "sections/child.tex"] {
