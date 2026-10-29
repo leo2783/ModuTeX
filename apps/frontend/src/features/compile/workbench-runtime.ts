@@ -17,6 +17,7 @@ import type { WorkspaceFilesPort, WorkspaceFilesTask } from '../files/workspace-
 import type { DiagnosticNavigationRequest } from '../source-editor/diagnostics.ts';
 import type { BoundSynctexIndex, SynctexPdfLocation, SynctexSourceLocation } from './synctex.ts';
 import { sameCompileIdentity } from './identity.ts';
+import { planDefaultBilingualPatches } from './document-language.ts';
 
 export type NoticeDescriptor = [string, string] | { readonly raw: string };
 export type LineDiagnostic = Diagnostic & { readonly path: string; readonly line: number };
@@ -1147,6 +1148,18 @@ export async function runCompileSource(host: WorkbenchRuntimeHost): Promise<void
 	if (config.profile === 'custom' && !config.canSetCommand) {
 		host.errorState = ['自訂編譯命令權限已停用。', 'Custom compile command permission is disabled.'];
 		return;
+	}
+	if (config.profile === 'managed' && path === host.sourceName) {
+		const document = host.source;
+		const patches = planDefaultBilingualPatches(document);
+		if (patches.length) {
+			if (!host.sourceViewInstance?.applySourcePatches?.(document, patches)) {
+				host.compileNoticeState = ['無法準備中英文排版，請完成目前編輯後再編譯。', 'Unable to prepare Chinese and English typesetting. Finish the current edit and compile again.'];
+				return;
+			}
+			await tick();
+			if (!scopeIsCurrent()) return;
+		}
 	}
 	if (!host.revision || host.dirty) {
 		const pendingSource = host.source;

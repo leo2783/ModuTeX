@@ -13,6 +13,9 @@ const { JSDOM } = createRequire(import.meta.url)('jsdom');
 
 function installDOM(): { dom: InstanceType<typeof JSDOM>; restore(): void } {
 	const dom = new JSDOM('<!doctype html><body></body>', { pretendToBeVisual: true });
+	// JSDOM has no text layout; ProseMirror scrolls text selections after moves.
+	dom.window.Range.prototype.getClientRects = () => [];
+	dom.window.Range.prototype.getBoundingClientRect = () => new dom.window.DOMRect();
 	const previous = new Map<string, PropertyDescriptor | undefined>();
 	for (const key of ['window', 'document', 'navigator', 'MutationObserver', 'Node', 'HTMLElement', 'AbortController', 'AbortSignal', 'HTMLMediaElement', 'getComputedStyle']) {
 		previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
@@ -61,6 +64,71 @@ interface MountedEditor {
 }
 
 const bytesWithBom = (source: string) => new TextEncoder().encode(`\uFEFF${source}`);
+
+// A cell is an explicit user operation boundary. Changing text structure inside it
+// must not create another cell or absorb the neighbouring cell.
+for (const heading of ['title', 'section', 'subsection', 'subsubsection']) {
+	for (const caret of [0, 2, 4]) {
+		test(`${heading} Enter at ${caret} exits the heading inside the same cell, survives reopening and deletes atomically`, () => {
+			const mounted = mount(`\\begin{document}\r\n\\${heading}{\\textbf{標題文字}}${heading === 'title' ? '\\maketitle' : ''}\r\n\\par Neighbour\r\n\\end{document}\r\n`);
+			let reopened: MountedEditor | null = null;
+			try {
+				const block = findBlock(mounted, node => node.attrs.role === 'heading');
+				const count = mounted.visual.view.dom.querySelectorAll('[data-cell-index]').length;
+				mounted.visual.view.dispatch(mounted.visual.view.state.tr.setSelection(TextSelection.create(mounted.visual.view.state.doc, block.position + 1 + caret)));
+				mounted.visual.view.dom.dispatchEvent(new mounted.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+				const input = new mounted.dom.window.InputEvent('beforeinput', { inputType: 'insertText', data: '正文', bubbles: true, cancelable: true });
+				mounted.visual.view.dom.dispatchEvent(input);
+				assert.equal(input.defaultPrevented, true, 'typing while the parser acknowledges Enter is retained');
+				mounted.sync();
+				mounted.sync();
+				const headingNode = mounted.blocks().find(({ node }) => node.attrs.role === 'heading')?.node;
+				assert.equal(headingNode?.textContent ?? '', '標題文字'.slice(0, caret), 'only text before Enter belongs to the heading');
+				assert.equal(mounted.visual.view.state.selection.$from.parent.attrs.role, 'paragraph', 'the caret continues in body text');
+				assert.equal(mounted.visual.view.dom.querySelectorAll('[data-cell-index]').length, count, 'Enter does not create a cell');
+				assert.equal(mounted.visual.view.dom.querySelectorAll('.cell-drag-handle').length, count, 'there is one drag handle per cell');
+				const saved = mounted.source().toBytes();
+				// Exercise a new source identity and editor, rather than reusing in-memory grouping.
+				reopened = mount(SourceDocument.open(saved).read());
+				assert.equal(reopened.visual.view.dom.querySelectorAll('[data-cell-index]').length, count, 'cell boundaries survive save/reopen');
+				const body = findBlock(reopened, node => node.attrs.role === 'paragraph' && node.textContent.includes('正文'));
+				assert.ok(body.node.textContent.includes('正文' + '標題文字'.slice(caret)), 'the text after Enter remains body text');
+				assert.equal(reopened.visual.navigate(body.span), true);
+				for (const key of ['Escape', 'Delete']) reopened.visual.view.dom.dispatchEvent(new reopened.dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+				assert.equal(reopened.actions.length, 1);
+				assert.doesNotMatch(reopened.source().read(), new RegExp(`標題文字|正文|\\\\${heading}\\{`));
+				assert.match(reopened.source().read(), /Neighbour/);
+				assert.deepEqual(undoAndSync(reopened).toBytes(), saved, 'deletion is one exact-byte undo step');
+				undoAndSync(mounted); // queued body typing
+				assert.deepEqual(undoAndSync(mounted).toBytes(), mounted.original.toBytes(), 'undoing Enter restores the original BOM and CRLF bytes');
+			} finally { reopened?.dispose(); mounted.dispose(); }
+		});
+	}
+
+	test(`${heading} Enter keeps heading and body together when moving the cell`, () => {
+		const mounted = mount(`\\begin{document}\r\n\\${heading}{Heading}${heading === 'title' ? '\\maketitle' : ''}\r\n\\par Neighbour\r\n\\end{document}\r\n`);
+		try {
+			const block = findBlock(mounted, node => node.attrs.role === 'heading');
+			mounted.visual.view.dispatch(mounted.visual.view.state.tr.setSelection(TextSelection.create(mounted.visual.view.state.doc, block.position + 1 + block.node.content.size)));
+			mounted.visual.view.dom.dispatchEvent(new mounted.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+			mounted.sync();
+			assert.equal(mounted.visual.view.state.selection.$from.parent.attrs.role, 'paragraph');
+			mounted.visual.view.dispatch(mounted.visual.view.state.tr.insertText('Body'));
+			mounted.sync();
+			const before = mounted.source().toBytes();
+			const body = findBlock(mounted, node => node.attrs.role === 'paragraph' && node.textContent.includes('Body'));
+			mounted.visual.view.dispatch(mounted.visual.view.state.tr.setSelection(TextSelection.create(mounted.visual.view.state.doc, body.position + 1)));
+			clickCellButton(mounted, body, /\bmove\b.*\bdown\b/i);
+			const request = mounted.actions.at(-1)!;
+			assert.equal(request.action, 'move-down');
+			const moved = SourceDocument.open(before).read(request.span.from, request.span.to);
+			assert.ok(moved.includes(`\\${heading}{Heading}`) && moved.includes('Body'), 'move payload is the whole cell');
+			assert.ok(mounted.source().read().indexOf('Neighbour') < mounted.source().read().indexOf('Heading'));
+			assert.equal(mounted.visual.view.dom.querySelectorAll('[data-cell-index]').length, 2);
+			assert.deepEqual(undoAndSync(mounted).toBytes(), before);
+		} finally { mounted.dispose(); }
+	});
+}
 
 test('empty notebook caret accepts formatting and one undo restores the original placeholder bytes', () => {
 	const mounted = mount('\\documentclass{article}\r\n\\begin{document}\r\n\\null\r\n\\end{document}\r\n');

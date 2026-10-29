@@ -246,6 +246,17 @@ export function getCurrentWindow() {
   await page.waitForFunction(count => window.appFixture.calls().filter(name => name === 'frontend_list_files').length > count, before);
   await page.waitForTimeout(100);
   assert.equal(await locate.isDisabled(), true, 'changed included source must invalidate the retained mapping');
+  const englishSource = await page.evaluate(() => window.appFixture.savedSources()['main.tex']);
+  await page.getByRole('button',{name:/^(原始碼|Source)$/}).click();
+  const bilingualEditor = page.locator('.source-view .source .cm-content');
+  await bilingualEditor.click(); await page.keyboard.press('Control+A');
+  await page.keyboard.insertText(englishSource.replace('Main source paragraph.', '我25000 English 葳'));
+  await compile.click();
+  await page.waitForFunction(() => window.appFixture.savedSources()['main.tex'].includes('fontset=fandol'));
+  assert.ok((await page.evaluate(() => window.appFixture.savedSources()['main.tex'])).includes('我25000 English 葳'), 'automatic language preparation retains original body text');
+  await bilingualEditor.click(); await page.keyboard.press('Control+A'); await page.keyboard.insertText(englishSource);
+  await compile.click();
+  await page.waitForFunction(original => window.appFixture.savedSources()['main.tex'] === original, englishSource);
   await openCompilationSettings();
   assert.equal(await page.getByLabel(/主 TeX 文件|Main TeX file/).count(),1,'Output help must not become part of another field label');
   assert.equal(await page.getByLabel(/主 TeX 文件|Main TeX file/).getAttribute('id'),'compile-main-file');

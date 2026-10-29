@@ -12,8 +12,8 @@ The boundary `+` menu explicitly creates a separate cell.
 
 Choose body text, paper title, abstract or heading level from the structure menu.
 Changing structure retains the cell's content and starts a new cancel-edit checkpoint. Each insertion above a heading or abstract adds one cell.
-Text wraps with available width; Enter inserts a line break within text, abstract and heading cells. The outline displays heading text without formatting commands.
-文字層級選單提供正文、論文題目、摘要及標題；文字依可用寬度換行，Enter 在正文、摘要與標題儲存格內換行。大綱顯示標題文字，省略格式指令。
+Text wraps with available width. Enter in a heading continues as body text within the same cell. Moving or deleting that cell includes all its content. Text and abstract cells retain line breaks. The outline displays heading text without formatting commands.
+文字依可用寬度換行。標題內按 Enter 後接續正文，仍在同一儲存格；移動或刪除作用於整格內容。正文與摘要支援格內換行。大綱顯示標題文字，省略格式指令。
 切換層級會保留儲存格內容，並重新建立取消編輯的起點。在標題或摘要上方插入文字時，每次只新增一格。
 
 ## Math / 數學
