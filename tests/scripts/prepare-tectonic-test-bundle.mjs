@@ -3,9 +3,69 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const sourceUrl = 'https://data1b.fullyjustified.net/tlextras-2022.0r0.tar';
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const transientCodes = new Set([
+	'ECONNRESET',
+	'ECONNREFUSED',
+	'ETIMEDOUT',
+	'EAI_AGAIN',
+	'UND_ERR_SOCKET',
+	'UND_ERR_CONNECT_TIMEOUT',
+	'UND_ERR_HEADERS_TIMEOUT',
+	'UND_ERR_BODY_TIMEOUT'
+]);
+const transientStatuses = new Set([408, 429, 500, 502, 503, 504]);
+function transientTransfer(error) {
+	return (
+		error?.name === 'TimeoutError' ||
+		transientCodes.has(error?.code) ||
+		transientStatuses.has(error?.status) ||
+		(error?.cause && transientTransfer(error.cause))
+	);
+}
+
+async function downloadResource(file, fetchResource, deadline) {
+	const range = `bytes=${file.offset}-${file.offset + file.length - 1}`;
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		deadline.throwIfAborted();
+		try {
+			const response = await fetchResource(sourceUrl, {
+				headers: { Range: range },
+				redirect: 'error',
+				signal: AbortSignal.any([deadline, AbortSignal.timeout(30000)])
+			});
+			if (transientStatuses.has(response.status)) {
+				await response.body?.cancel();
+				throw Object.assign(Error(`HTTP ${response.status}`), { status: response.status });
+			}
+			if (response.status !== 206 || response.headers.get('content-range') !== `${range.replace('=', ' ')}/2881562112`) {
+				await response.body?.cancel();
+				throw Error(
+					`Bundle resource ${file.name} returned an unexpected byte range: HTTP ${response.status}, received ${response.headers.get('content-range')}, requested ${range}`
+				);
+			}
+			const chunks = [];
+			let length = 0;
+			for await (const chunk of response.body) {
+				length += chunk.length;
+				if (length > file.length) throw Error(`Bundle resource ${file.name} exceeded its size`);
+				chunks.push(chunk);
+			}
+			const data = Buffer.concat(chunks);
+			if (length !== file.length || sha256(data) !== file.sha256) throw Error(`Bundle resource ${file.name} SHA-256 mismatch`);
+			return [file.name, data];
+		} catch (error) {
+			if (deadline.aborted || attempt === 3 || !transientTransfer(error)) {
+				throw Error(`Bundle resource ${file.name} failed on attempt ${attempt}: ${error.message}`, { cause: error });
+			}
+			console.warn(`Bundle resource ${file.name}: retrying transient transfer after attempt ${attempt}: ${error.message}`);
+			await delay(250 * attempt, undefined, { signal: deadline });
+		}
+	}
+}
 const crcTable = Array.from({ length: 256 }, (_, value) => {
 	for (let bit = 0; bit < 8; bit++) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
 	return value >>> 0;
@@ -84,37 +144,24 @@ export async function prepareBundle(manifest, output, fetchResource = fetch) {
 		total += file.length;
 	}
 	if (total > 32 * 1024 * 1024 || files.length < 1 || files.length > 1000) throw Error('Bundle resource budget exceeded');
-	const deadline = AbortSignal.timeout(240000);
+	const transfers = new AbortController();
+	const deadline = AbortSignal.any([AbortSignal.timeout(240000), transfers.signal]);
 	const contents = new Array(files.length);
 	let cursor = 0;
-	await Promise.all(
-		Array.from({ length: 8 }, async () => {
-			while (cursor < files.length) {
-				const index = cursor++,
-					file = files[index];
-				const range = `bytes=${file.offset}-${file.offset + file.length - 1}`;
-				const response = await fetchResource(sourceUrl, {
-					headers: { Range: range },
-					redirect: 'error',
-					signal: AbortSignal.any([deadline, AbortSignal.timeout(30000)])
-				});
-				if (response.status !== 206 || response.headers.get('content-range') !== `${range.replace('=', ' ')}/2881562112`) {
-					await response.body?.cancel();
-					throw Error(`Bundle resource ${file.name} returned an unexpected byte range`);
+	try {
+		await Promise.all(
+			Array.from({ length: 8 }, async () => {
+				while (cursor < files.length) {
+					const index = cursor++,
+						file = files[index];
+					contents[index] = await downloadResource(file, fetchResource, deadline);
 				}
-				const chunks = [];
-				let length = 0;
-				for await (const chunk of response.body) {
-					length += chunk.length;
-					if (length > file.length) throw Error(`Bundle resource ${file.name} exceeded its size`);
-					chunks.push(chunk);
-				}
-				const data = Buffer.concat(chunks);
-				if (length !== file.length || sha256(data) !== file.sha256) throw Error(`Bundle resource ${file.name} SHA-256 mismatch`);
-				contents[index] = [file.name, data];
-			}
-		})
-	);
+			})
+		);
+	} catch (error) {
+		transfers.abort(error);
+		throw error;
+	}
 	const archive = bundleZip([['SHA256SUM', Buffer.from(manifest.bundle_digest)], ...contents]);
 	if (sha256(archive) !== manifest.archive_sha256) throw Error('Local test bundle SHA-256 mismatch');
 	const destination = resolve(output),
