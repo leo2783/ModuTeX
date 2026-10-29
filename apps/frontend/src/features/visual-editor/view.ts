@@ -459,7 +459,7 @@ export class VisualEditor {
 					event.stopPropagation();
 					wrap.classList.remove('open');
 					if (!this.editable() || !this.options.insertBlock) return;
-					const boundary = above ? cellIndex : cellIndex + 1;
+					const boundary = above ? this.cellFirst(cellIndex) : this.cellLast(cellIndex) + 1;
 					const span = this.boundarySpan(boundary);
 					if (!span) { this.options.rejected(); return; }
 					this.options.insertBlock(kind, span, this.boundaryBeforeText(boundary));
