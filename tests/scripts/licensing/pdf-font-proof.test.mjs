@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, symlink, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { digest } from '../../../scripts/licensing/frontend-artifacts.mjs';
@@ -21,6 +21,16 @@ test('PDF font proof requires identical bytes and both shipped license texts', a
   await put(`apps/frontend/dist-tauri/licenses/pdfjs/standard_fonts/${name}.txt`, `${name} original license`);
  }
  assert.equal((await pdfFontProof(root, output))?.licenses.length, 2);
+ const alias = root + '-alias';
+ await symlink(root, alias, process.platform === 'win32' ? 'junction' : 'dir');
+ t.after(() => rm(alias, { recursive: true, force: true }));
+ assert.equal((await pdfFontProof(alias, output))?.licenses.length, 2, 'canonicalize the repository root before comparing contained paths');
+ const fonts = path.join(root, 'node_modules/pdfjs-dist/standard_fonts'), outside = root + '-outside';
+ await rename(fonts, outside);
+ t.after(() => rm(outside, { recursive: true, force: true }));
+ await symlink(outside, fonts, process.platform === 'win32' ? 'junction' : 'dir');
+ assert.equal(await pdfFontProof(alias, output), null, 'matching font and license bytes outside the canonical root must still fail');
+ await rm(fonts, { recursive: true }); await rename(outside, fonts);
  await put(target, 'tampered font'); assert.equal(await pdfFontProof(root, output), null);
  await put(target, bytes);
  await put('apps/frontend/dist-tauri/licenses/pdfjs/standard_fonts/LICENSE_LIBERATION.txt', 'truncated');

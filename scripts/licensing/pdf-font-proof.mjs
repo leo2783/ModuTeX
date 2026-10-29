@@ -13,6 +13,7 @@ export async function pdfFontProof(root, output) {
   return readFile(actual);
  }
  try {
+  root = await realpath(root);
   const original = await canonicalBytes(source.path), emitted = await canonicalBytes(output.rootPath);
   if (digest(original) !== source.sha256 || digest(emitted) !== output.sha256 || output.sha256 !== source.sha256) return null;
   const licenses = [];
