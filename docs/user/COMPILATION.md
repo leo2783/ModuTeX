@@ -6,8 +6,8 @@ Unsaved changes are saved first; resolve disk conflicts before compiling.
 
 ## Chinese and English / 中英文排版
 
-New documents load CTEX with Fandol fonts for mixed Chinese and English, including bold and italic text. English heading names remain unchanged. Use bundled Tectonic or XeLaTeX. The first compilation downloads the required TeX packages and fonts.
-新文件載入 CTEX 與 Fandol 字型，支援中英文混排及粗體、斜體，保留英文標題名稱。請使用內建 Tectonic 或 XeLaTeX；首次編譯會下載所需 TeX 套件與字型。
+New documents load CTEX with Fandol and a TeX-distributed Arphic Traditional Chinese fallback for missing glyphs, including bold and italic text. English heading names remain unchanged. Use bundled Tectonic or XeLaTeX. The first compilation downloads the required TeX packages and fonts.
+新文件載入 CTEX 與 Fandol，並以 TeX 發行的文鼎繁中字型補足缺字，支援粗體、斜體，保留英文標題名稱。請使用內建 Tectonic 或 XeLaTeX；首次編譯會下載所需 TeX 套件與字型。
 
 Managed compilation automatically prepares Chinese and English typesetting for an open main document using the standard article, report or book class when it contains Chinese. This source change shares editor undo and is saved before compilation. Existing CTEX or CJK settings are retained. For other document classes or system engines, use **Settings → Compilation → Chinese and English typesetting** or edit the preamble in Source mode.
 開啟的主文件使用標準 article、report 或 book 類別且含中文時，託管編譯會自動補齊中英文排版設定；變更可透過編輯器復原，並於編譯前儲存。既有 CTEX 或 CJK 設定會保留。其他文件類別或系統引擎可使用「設定 → 編譯 → 中英文排版」，或在原始碼模式調整前言。

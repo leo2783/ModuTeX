@@ -1,7 +1,9 @@
 import { parseSource, type SourceDocument, type SourcePatch, type SyntaxNode } from '../document-core/core.ts';
 
 // TeX-distributed fonts keep the same document usable on Windows without optional OS fonts.
-export const BILINGUAL_PREAMBLE = '\\usepackage[UTF8,scheme=plain,fontset=fandol]{ctex}';
+export const BILINGUAL_PREAMBLE = '\\usepackage[UTF8,scheme=plain,fontset=fandol]{ctex}' +
+	'\\xeCJKsetup{AutoFallBack=true}' +
+	['rm', 'sf', 'tt'].map(family => `\\setCJKfallbackfamilyfont{\\CJK${family}default}[AutoFakeBold=true,AutoFakeSlant=true]{bsmi00lp.ttf}`).join('');
 
 /** Managed compilation can prepare standard CJK documents using shared editor history. */
 export function planDefaultBilingualPatches(source: SourceDocument): readonly SourcePatch[] {
