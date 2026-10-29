@@ -46,9 +46,21 @@ test('isolated mixed-cell matrix', { timeout: 180000, concurrency: 2 }, async t 
   async function selectFormattedText() {
    await formatted.click();
    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-   await page.keyboard.press('Home'); await page.keyboard.press('Shift+End');
+   // Read glyph positions, then make a real pointer selection across the nested formatting marks.
+   const points = await formatted.evaluate(element => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT), nodes = [];
+    for (let node; (node = walker.nextNode());) if (node.textContent.length) nodes.push(node);
+    const range = document.createRange();
+    range.setStart(nodes[0], 0); range.collapse(true);
+    const start = range.getBoundingClientRect();
+    range.setStart(nodes.at(-1), nodes.at(-1).textContent.length); range.collapse(true);
+    const end = range.getBoundingClientRect();
+    return { start: { x: start.x, y: start.y + start.height / 2 }, end: { x: end.x, y: end.y + end.height / 2 } };
+   });
+   await page.mouse.move(points.start.x, points.start.y); await page.mouse.down();
+   await page.mouse.move(points.end.x, points.end.y, { steps: 8 }); await page.mouse.up();
    await page.waitForFunction(() => window.getSelection()?.toString() === '混合 Mixed');
-   // Native Shift+End updates the DOM selection before selectionchange reaches ProseMirror.
+   // Native pointer selection updates the DOM before selectionchange reaches ProseMirror.
    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   }
   for (const [button, tag] of [['粗體', 'strong'], ['底線', 'u']]) {
