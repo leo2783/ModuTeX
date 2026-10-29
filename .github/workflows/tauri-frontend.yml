@@ -113,6 +113,7 @@ jobs:
         run: |
           node --test --test-concurrency=1 \
             apps/frontend/tests/e2e/pdf-synctex-browser.e2e.mjs \
+            apps/frontend/tests/e2e/pdf-chinese-browser.e2e.mjs \
             apps/frontend/tests/e2e/app-settings-draft-entry-browser.e2e.mjs \
             apps/frontend/tests/e2e/draft-panel-browser.e2e.mjs \
             apps/frontend/tests/e2e/workbench-dock-browser.e2e.mjs \

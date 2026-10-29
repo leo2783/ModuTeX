@@ -3,6 +3,7 @@
 	import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 	import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 	import { PdfRenderQueue } from './render-queue.ts';
+	import { LocalPdfDataReader } from './local-pdf-data.ts';
 	import { text, type Language } from '../../i18n/text.ts';
 	let {
 		bytes,
@@ -291,6 +292,7 @@
 				if (!isCurrentLoad()) return;
 				GlobalWorkerOptions.workerSrc = workerUrl;
 				const task = getDocument({ data: new Uint8Array(nextBytes), enableXfa: false, stopAtErrors: true,
+					BinaryDataFactory: LocalPdfDataReader, cMapPacked: true, useWorkerFetch: false,
 					disableAutoFetch: true, disableStream: true, useSystemFonts: true, maxImageSize: 16777216 });
 				loading = task;
 				const pdf = await task.promise;
