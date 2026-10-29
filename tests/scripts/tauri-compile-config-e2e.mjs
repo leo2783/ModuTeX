@@ -23,7 +23,7 @@ if (coldCache) {
  assert.equal(exists, false, 'cold acceptance must start without a cache');
 }
 const scratch=await mkdtemp(join(tmpdir(),'modutex-compile-config-e2e-')),workspace=join(scratch,`project \u6e2c\u8a66 ${basename(scratch)}`);await mkdir(join(workspace,'out'),{recursive:true});
-await writeFile(join(workspace,'standalone.tex'),'\\documentclass{article}\n\\begin{document}Unconfigured main test.\\end{document}\n');
+await writeFile(join(workspace,'standalone.tex'),'\\documentclass{article}\n\\author{}\\date{}\n\\begin{document}Unconfigured main test. 我你\n\\end{document}\n');
 await writeFile(join(workspace,'main.tex'),"\\documentclass{article}\n\\usepackage{amsmath}\n\\title{Cell safety}\n\\author{}\n\\date{}\n\\begin{document}\n\\maketitle\nMain document.\n\\[\\frac{\\partial^2 f}{\\partial x^2}\\]\n\\input{chapter}\n\\end{document}\n");
 const chapter='Included chapter material.\n';await writeFile(join(workspace,'chapter.tex'),chapter);
 const nativeCdp=await createNativeCdpConfig(join(scratch,'webview'));
@@ -61,6 +61,46 @@ try{
  if(process.env.MODUTEX_TEST_PERIODIC_WATCH==='1'){stage='watch after the native periodic reconcile';await delay(65000);await writeFile(join(workspace,'watch-periodic.txt'),'native watch after periodic reconcile\n');await page.locator('.tree-file[title="watch-periodic.txt"]').waitFor({state:'visible',timeout:10000});assert.deepEqual(receipt.watchFailures,[]);receipt.checks.push('native watch survives the real 60-second periodic reconcile');}
  stage='real managed compile of active unset main';await compile(coldCache);receipt.checks.push('unset configured main compiles active saved TeX with real managed engine');
  const siblingPdf=await readFile(join(workspace,'standalone.pdf'));assert.equal(siblingPdf.subarray(0,5).toString(),'%PDF-');receipt.checks.push('default managed compilation saves its PDF beside the TeX file without output settings');
+ stage='native image insertion, cancellation and invalid input';
+ await documentTab();
+ const imageSourceEditor=page.locator('.cm-content[contenteditable="true"]').first();
+ const beforeImages=(await imageSourceEditor.locator('.cm-line').allTextContents()).join('\n');
+ await page.getByRole('button',{name:/^(視覺化|Visual)$/}).click();
+ const imageInput=page.getByLabel(/^(選擇圖片|Choose image)$/);
+ await imageInput.setInputFiles([]);
+ assert.equal(await page.locator('.visual-image').count(),0);
+ await imageInput.setInputFiles({name:'broken.png',mimeType:'image/png',buffer:Buffer.from('not a PNG image')});
+ await page.locator('.tool-error').waitFor({state:'visible'});
+ assert.equal((await imageSourceEditor.locator('.cm-line').allTextContents()).join('\n'),beforeImages,'invalid image must not mutate source');
+ for(const [extension,type] of [['png','image/png'],['jpg','image/jpeg']]){
+  const encoded=await page.evaluate(type=>{const canvas=document.createElement('canvas');canvas.width=120;canvas.height=80;const ctx=canvas.getContext('2d');ctx.fillStyle='#3d617b';ctx.fillRect(0,0,120,80);return canvas.toDataURL(type).split(',')[1]},type);
+  await page.locator('.source-block').filter({hasText:'Unconfigured main test.'}).click();
+  await page.keyboard.press('End');
+  await imageInput.setInputFiles({name:`original.${extension}`,mimeType:type,buffer:Buffer.from(encoded,'base64')});
+  await page.waitForFunction(count=>document.querySelectorAll('.visual-image img').length===count&&[...document.querySelectorAll('.visual-image img')].every(img=>img.naturalWidth===120),extension==='png'?1:2);
+ }
+ stage='native image shared undo and redo';
+ await page.locator('.source-block').filter({hasText:'Unconfigured main test.'}).click();
+ await page.keyboard.press('Control+z');
+ await page.waitForFunction(()=>document.querySelectorAll('.visual-image').length===1);
+ await page.keyboard.press('Control+Shift+z');
+ await page.waitForFunction(()=>document.querySelectorAll('.visual-image img').length===2);
+ await page.keyboard.press('Control+s');
+ await page.waitForFunction(()=>!document.querySelector('.source-view')?.textContent?.includes('儲存中'));
+ let savedImages='';
+ for(const until=Date.now()+10000;Date.now()<until;){savedImages=await readFile(join(workspace,'standalone.tex'),'utf8');if((savedImages.match(/\\includegraphics/g)||[]).length===2)break;await delay(100)}
+ assert.equal((savedImages.match(/\\includegraphics/g)||[]).length,2,'both image references must actually reach disk');
+ const imagePaths=[...savedImages.matchAll(/\\includegraphics\[[^\]]*\]\{([^}]+)\}/g)].map(match=>match[1]);
+ for(const imagePath of imagePaths)assert((await readFile(join(workspace,imagePath))).length>12,'image asset must exist beside saved TeX');
+ stage='native image reopen and real PDF rendering';
+ await page.locator('.tree-file[title="chapter.tex"]').click();
+ await page.locator('.tree-file[title="standalone.tex"]').click();
+ await page.getByRole('button',{name:/^(視覺化|Visual)$/}).click();
+ await page.waitForFunction(()=>document.querySelectorAll('.visual-image img').length===2&&[...document.querySelectorAll('.visual-image img')].every(img=>img.naturalWidth===120));
+ await compile();
+ await page.waitForFunction(()=>[...document.querySelectorAll('canvas')].some(canvas=>{const ctx=canvas.getContext('2d');if(!ctx)return false;const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;let n=0;for(let i=0;i<data.length;i+=4)if(Math.abs(data[i]-61)<12&&Math.abs(data[i+1]-97)<12&&Math.abs(data[i+2]-123)<12)n++;return n>100}));
+ await page.screenshot({path:join(evidence,'compile-images-native-e2e.png')});
+ receipt.checks.push('real native PNG/JPEG insertion rejects corrupt input, cancellation preserves source, shared undo/redo works, saves original assets, reopens them and paints image pixels in a real compiled PDF');
  stage='watch after managed compilation';await writeFile(join(workspace,'watch-after.txt'),'native watch after compile\n');await page.locator('.tree-file[title="watch-after.txt"]').waitFor({state:'visible',timeout:10000});assert.deepEqual(receipt.watchFailures,[]);receipt.checks.push('native watch remains live after managed compilation');
  stage='save trusted UI custom profile';await settings();await page.getByLabel(/主 TeX 文件|Main TeX file/).selectOption('main.tex');await page.getByLabel(/編譯引擎設定檔|Engine profile/).selectOption('custom');
  const tectonic=join(root,'vendor/tectonic/windows-x64/tectonic.exe');await page.getByLabel(/受信任的命令範本|Trusted command template/).fill(`"${tectonic}" --outdir {out} --keep-logs {main}`);await page.getByLabel(/^輸出目錄|^Output directory/).fill('out');await page.getByLabel(/^PDF 路徑|^PDF path/).fill('out/result.pdf');await page.getByLabel(/^記錄|^Log path|^日誌/).fill('out/result.log');await page.getByRole('button',{name:/^(儲存工作區編譯設定|Save workspace compile settings)$/}).click();
