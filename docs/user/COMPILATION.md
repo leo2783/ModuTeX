@@ -6,13 +6,16 @@ Unsaved changes are saved first; resolve disk conflicts before compiling.
 
 ## Chinese and English / 中英文排版
 
-New documents load CTEX with Fandol fonts for mixed Chinese and English, including bold and italic text. English heading names remain unchanged. Use bundled Tectonic or XeLaTeX. The first compilation downloads the required TeX packages and fonts.
-新文件載入 CTEX 與 Fandol 字型，支援中英文混排及粗體、斜體，保留英文標題名稱。請使用內建 Tectonic 或 XeLaTeX；首次編譯會下載所需 TeX 套件與字型。
+New documents load CTEX with Fandol and a TeX-distributed Arphic Traditional Chinese fallback for missing glyphs, including bold and italic text. English heading names remain unchanged. Use bundled Tectonic or XeLaTeX. The first compilation downloads the required TeX packages and fonts.
+新文件載入 CTEX 與 Fandol，並以 TeX 發行的文鼎繁中字型補足缺字，支援粗體、斜體，保留英文標題名稱。請使用內建 Tectonic 或 XeLaTeX；首次編譯會下載所需 TeX 套件與字型。
 
 Managed compilation automatically prepares Chinese and English typesetting for an open main document using the standard article, report or book class when it contains Chinese. This source change shares editor undo and is saved before compilation. Existing CTEX or CJK settings are retained. For other document classes or system engines, use **Settings → Compilation → Chinese and English typesetting** or edit the preamble in Source mode.
 開啟的主文件使用標準 article、report 或 book 類別且含中文時，託管編譯會自動補齊中英文排版設定；變更可透過編輯器復原，並於編譯前儲存。既有 CTEX 或 CJK 設定會保留。其他文件類別或系統引擎可使用「設定 → 編譯 → 中英文排版」，或在原始碼模式調整前言。
 
 ## Results / 結果
+
+The built-in PDF preview includes local character maps and font resources for Chinese PDFs. It does not fetch preview resources from a CDN. Package initialization details remain in the compile log; Problems lists warnings and errors, including missing glyphs. Wrapped font warnings appear as one message.
+內建 PDF 預覽隨附中文所需的字元映射與字型資源，不透過 CDN 載入預覽資源。套件初始化細節保留在編譯記錄；「問題」列出警告與錯誤，包括缺字訊息。跨行字型警告會合併為一則訊息。
 
 Successful compilation automatically saves the PDF beside the main `.tex` file. For example, `paper/main.tex` produces `paper/main.pdf`. No output setting is required. A later successful build replaces that PDF; a failed build retains the last successful file. Optional PDF paths and output directories in **Settings → Compilation** override this default.
 成功編譯後，PDF 自動儲存在主 `.tex` 文件旁，例如 `paper/main.tex` 會產生 `paper/main.pdf`，不需設定輸出位置。再次成功編譯會更新 PDF，失敗則保留上一次成功的檔案。「設定 → 編譯」中的選用 PDF 路徑與輸出目錄可覆寫預設位置。

@@ -2,6 +2,10 @@ name: Tauri CI - Rust and document-core WASM
 on:
   workflow_call:
     inputs:
+      frontend_artifact_name:
+        description: Exact artifact name emitted by the frontend producer job.
+        required: true
+        type: string
       checkout_ref:
         description: Validated full source commit SHA from source admission.
         required: true
@@ -88,7 +92,7 @@ jobs:
       - name: Download source-matched Tauri frontend assets
         env:
           GH_TOKEN: ${{ github.token }}
-          FRONTEND_ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
+          FRONTEND_ARTIFACT_NAME: ${{ inputs.frontend_artifact_name }}
         run: |
           $artifactDirectory = Join-Path $env:RUNNER_TEMP ('modutex-tauri-frontend-' + [guid]::NewGuid().ToString('N'))
           if (Test-Path -LiteralPath $artifactDirectory) {
@@ -167,7 +171,7 @@ jobs:
       - name: Download source-matched Tauri frontend assets
         env:
           GH_TOKEN: ${{ github.token }}
-          FRONTEND_ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
+          FRONTEND_ARTIFACT_NAME: ${{ inputs.frontend_artifact_name }}
         run: |
           $artifactDirectory = Join-Path $env:RUNNER_TEMP ('modutex-tauri-frontend-' + [guid]::NewGuid().ToString('N'))
           if (Test-Path -LiteralPath $artifactDirectory) {

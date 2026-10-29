@@ -156,7 +156,7 @@ jobs:
           node --test --test-concurrency=1 tests/scripts/distribution/inventory.test.mjs tests/scripts/distribution/updater-manifest.test.mjs
           tests/scripts/distribution/installer-lifecycle.test.mjs
       - name: Run owned-dialog interop regression tests
-        run: node --test --test-concurrency=1 tests/scripts/owned-native-popups.test.mjs
+        run: node --test --test-concurrency=1 tests/scripts/owned-native-popups.test.mjs tests/scripts/terminal-node-trace.test.mjs
       - name: Run static CD and PowerShell policy tests
         run: >-
           node --test tests/scripts/tauri-cd-execution.test.mjs tests/scripts/tauri-powershell-parse.test.mjs

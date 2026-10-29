@@ -1,6 +1,10 @@
 name: Tauri CI - Frontend, Svelte, and contracts
 on:
   workflow_call:
+    outputs:
+      frontend_artifact_name:
+        description: Exact name of the produced frontend artifact.
+        value: ${{ jobs.frontend-build.outputs.frontend_artifact_name }}
     inputs:
       checkout_ref:
         description: Validated full source commit SHA from source admission.
@@ -113,6 +117,7 @@ jobs:
         run: |
           node --test --test-concurrency=1 \
             apps/frontend/tests/e2e/pdf-synctex-browser.e2e.mjs \
+            apps/frontend/tests/e2e/pdf-chinese-browser.e2e.mjs \
             apps/frontend/tests/e2e/app-settings-draft-entry-browser.e2e.mjs \
             apps/frontend/tests/e2e/draft-panel-browser.e2e.mjs \
             apps/frontend/tests/e2e/workbench-dock-browser.e2e.mjs \
@@ -122,6 +127,8 @@ jobs:
           MODUTEX_TEST_BROWSER_CHANNEL: chromium
         run: node --test --test-concurrency=1 apps/frontend/tests/app/*.test.mjs
   frontend-build:
+    outputs:
+      frontend_artifact_name: ${{ steps.artifact-identity.outputs.name }}
     name: Build and upload Tauri frontend assets and notices
     runs-on: windows-2025
     steps:
@@ -169,10 +176,15 @@ jobs:
         run: node --test apps/frontend/tests/production/bundle-loading.test.mjs apps/frontend/tests/production/notices.test.mjs
       - name: Run frontend origin licensing and resource-limit tests
         run: node --test tests/scripts/licensing/*.test.mjs
+      - name: Record frontend artifact identity
+        id: artifact-identity
+        env:
+          ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
+        run: '"name=$env:ARTIFACT_NAME" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8'
       - name: Upload Tauri frontend assets and required notices
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ steps.artifact-identity.outputs.name }}
           path: |
             apps/frontend/dist-tauri
             LICENSE

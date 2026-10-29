@@ -38,7 +38,9 @@ export async function storeImage(context: ImageContext, file: Blob): Promise<str
 	const name = prefix + crypto.randomUUID() + (type === 'image/png' ? '.png' : '.jpg');
 	if (context.desktop) {
 		if (!context.workspaceId) throw new Error('IMAGE_SAVE_REQUIRED');
-		await context.desktop.writeFile({ workspaceId: context.workspaceId, path: sibling(context, name), bytes, expectedRevision: null, documentId: context.documentId, documentVersion: context.documentVersion });
+		// An asset is a separate file. Reusing the editor's ID attempts to rebind
+		// the saved TeX document to this image and is rejected by the native host.
+		await context.desktop.writeFile({ workspaceId: context.workspaceId, path: sibling(context, name), bytes, expectedRevision: null, documentId: 'image-' + crypto.randomUUID(), documentVersion: 0 });
 	} else await localAsset(name, bytes);
 	return name;
 }

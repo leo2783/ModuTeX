@@ -702,7 +702,11 @@ fn parse_node_payload(
             if dimensions_len != 3 {
                 return Err(SynctexError::InvalidStructure);
             }
-            if dimensions.iter().any(|dimension| *dimension < 0) {
+            // XeTeX emits signed rule widths for xeCJK punctuation adjustments.
+            // Preserve that direction; scaling and endpoint bounds still apply.
+            if dimensions[1..].iter().any(|dimension| *dimension < 0)
+                || dimensions[0] < 0 && kind != RecordKind::Rule
+            {
                 return Err(SynctexError::InvalidCoordinate);
             }
             (dimensions[0], dimensions[1], dimensions[2])

@@ -3399,8 +3399,23 @@ fn parse_diagnostics(
         .collect::<HashSet<_>>();
     let mut diagnostics = Vec::new();
     let mut pending_latex_error: Option<String> = None;
+    let mut continuation: Option<(String, Option<usize>)> = None;
     for line in log.lines() {
         let trimmed = line.trim();
+        if let Some((prefix, index)) = &continuation {
+            if let Some(rest) = trimmed.strip_prefix(prefix.as_str()) {
+                if let Some(index) = index {
+                    let diagnostic: &mut Diagnostic = &mut diagnostics[*index];
+                    diagnostic.message = bounded_diagnostic_message(&format!(
+                        "{} {}",
+                        diagnostic.message,
+                        rest.trim()
+                    ));
+                }
+                continue;
+            }
+        }
+        continuation = None;
         if let Some(message) = trimmed.strip_prefix('!') {
             if let Some(previous) = pending_latex_error.take() {
                 push_diagnostic(
@@ -3430,6 +3445,19 @@ fn parse_diagnostics(
             continue;
         }
         if let Some((severity, offset)) = diagnostic_marker(trimmed) {
+            let prefix = if trimmed.starts_with("LaTeX Font ") {
+                Some("(Font)".to_owned())
+            } else {
+                trimmed
+                    .strip_prefix("Package ")
+                    .and_then(|rest| rest.split_whitespace().next())
+                    .map(|name| format!("({name})"))
+            };
+            if matches!(severity, Severity::Info) {
+                continuation = prefix.map(|prefix| (prefix, None));
+                continue;
+            }
+            continuation = prefix.map(|prefix| (prefix, Some(diagnostics.len())));
             let payload = trimmed[offset..].trim();
             if let Some(diagnostic) =
                 parse_location_diagnostic(payload, severity, &known_paths, entry_path)
@@ -3450,14 +3478,16 @@ fn parse_diagnostics(
             }
             continue;
         }
-        if let Some((start, end)) = find_input_line_number(trimmed) {
-            let message = nonempty_message(&trimmed[..start]);
+        if trimmed.starts_with("Missing character:")
+            || trimmed.starts_with("Overfull ")
+            || trimmed.starts_with("Underfull ")
+        {
             push_diagnostic(
                 &mut diagnostics,
                 Severity::Warning,
-                &message,
-                Some(entry_path.clone()),
-                parse_position(&trimmed[end..]),
+                trimmed,
+                None,
+                None,
                 None,
             );
             if diagnostics.len() >= MAX_DIAGNOSTICS {
@@ -3556,19 +3586,6 @@ fn map_diagnostic_path(
     known_paths
         .contains(&path.as_str().to_lowercase())
         .then_some(path)
-}
-fn find_input_line_number(line: &str) -> Option<(usize, usize)> {
-    let lower = line.to_ascii_lowercase();
-    let marker = "on input line ";
-    let start = lower.find(marker)?;
-    let number_start = start + marker.len();
-    let number_end = number_start
-        + line[number_start..]
-            .char_indices()
-            .take_while(|(_, character)| character.is_ascii_digit())
-            .map(|(index, character)| index + character.len_utf8())
-            .last()?;
-    Some((start, number_start.max(number_end)))
 }
 fn parse_position(value: &str) -> Option<Position> {
     let value = value.trim_start();

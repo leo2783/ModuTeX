@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -26,5 +26,14 @@ test('production ships the complete notice document and unchanged installed lice
 		assert.ok(license, 'Missing license text: ' + header);
 		const installed = await readFile(new URL('../../../../' + path, import.meta.url), 'utf8');
 		assert.equal(text(license), text(installed), 'License mismatch: ' + header);
+	}
+});
+
+test('production ships unchanged PDF character-map, font and codec licenses', async () => {
+	for (const directory of ['cmaps', 'standard_fonts', 'wasm']) {
+		const installed = new URL(`../../../../node_modules/pdfjs-dist/${directory}/`, import.meta.url);
+		for (const name of (await readdir(installed)).filter(name => name.startsWith('LICENSE'))) {
+			assert.deepEqual(await readFile(new URL(`licenses/pdfjs/${directory}/${name}.txt`, dist)), await readFile(new URL(name, installed)), `${directory}/${name}`);
+		}
 	}
 });

@@ -23,6 +23,27 @@ fn simple_records() -> &'static str {
 }
 
 #[test]
+fn cjk_punctuation_rules_preserve_signed_width_and_navigation() {
+    // Actual XeTeX/xeCJK punctuation adjustment from the bilingual article.
+    let bytes = document(
+        "Input:1:article.tex\n",
+        "{1\nr1,5:18496774,8865055:-422052,0,0\n}1\n",
+        "1",
+        "1000",
+        "0",
+        "0",
+    );
+    let index = SynctexIndex::parse(&bytes).expect("signed rule width is valid SyncTeX");
+    let location = index.forward_search("article.tex", 5, None).unwrap();
+    assert!(location.width < 0.0);
+    let source = index
+        .inverse_search(1, location.x + location.width / 2.0, location.y)
+        .unwrap();
+    assert_eq!(source.path, "article.tex");
+    assert_eq!(source.line, 5);
+}
+
+#[test]
 fn forward_and_inverse_search_use_pdf_points_and_preserve_source_identity() {
     let source = r"C:\Users\TeX\文档\main.tex";
     let inputs = format!("Input:17:{source}\n");

@@ -2,6 +2,10 @@ name: Tauri CI - Native Windows E2E
 on:
   workflow_call:
     inputs:
+      frontend_artifact_name:
+        description: Exact artifact name emitted by the frontend producer job.
+        required: true
+        type: string
       checkout_ref:
         description: Validated full source commit SHA from source admission.
         required: true
@@ -159,7 +163,7 @@ jobs:
       - name: Download frontend assets built for this run
         env:
           GH_TOKEN: ${{ github.token }}
-          FRONTEND_ARTIFACT_NAME: ModuTeX-Tauri-Frontend-${{ github.run_id }}-${{ github.run_attempt }}
+          FRONTEND_ARTIFACT_NAME: ${{ inputs.frontend_artifact_name }}
         run: |
           $staging = Join-Path $env:RUNNER_TEMP ("modutex-frontend-" + [guid]::NewGuid().ToString('N'))
           if (Test-Path -LiteralPath $staging) { throw 'Frontend artifact staging path already exists' }

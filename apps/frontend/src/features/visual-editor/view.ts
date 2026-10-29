@@ -261,7 +261,10 @@ export class VisualEditor {
 		return direction < 0 ? this.cellFirst(this.cellFirst(index) - 1) : this.cellLast(index) + 1;
 	}
 	private isMaketitleField(node: VisualNode | null | undefined): boolean {
-		return ['source_block', 'raw_block'].includes(node?.type.name ?? '') && ['title', 'author', 'date'].includes(node?.attrs.name);
+		if (!node || !['source_block', 'raw_block'].includes(node.type.name) || !['title', 'author', 'date'].includes(node.attrs.name)) return false;
+		// Explicit cells can contain a body title together with ordinary content.
+		// Only a standalone metadata field redirects block insertion to the body.
+		return !this.projection?.cellBounds?.some(cell => cell !== null && node.attrs.from >= cell.from && node.attrs.to <= cell.to);
 	}
 	private bodyCellOrder(): { readonly cells: SourceSpan[]; readonly indices: number[] } | null {
 		const projection = this.projection, start = projection?.bodyStart, end = projection?.bodyEnd;
@@ -459,7 +462,7 @@ export class VisualEditor {
 					event.stopPropagation();
 					wrap.classList.remove('open');
 					if (!this.editable() || !this.options.insertBlock) return;
-					const boundary = above ? cellIndex : cellIndex + 1;
+					const boundary = above ? this.cellFirst(cellIndex) : this.cellLast(cellIndex) + 1;
 					const span = this.boundarySpan(boundary);
 					if (!span) { this.options.rejected(); return; }
 					this.options.insertBlock(kind, span, this.boundaryBeforeText(boundary));

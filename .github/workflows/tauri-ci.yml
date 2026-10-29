@@ -164,6 +164,7 @@ jobs:
       - frontend
     uses: ./.github/workflows/tauri-rust.yml
     with:
+      frontend_artifact_name: ${{ needs.frontend.outputs.frontend_artifact_name }}
       checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
   supply-chain:
     name: Dependency and registry security
@@ -179,15 +180,18 @@ jobs:
       - frontend
     uses: ./.github/workflows/tauri-desktop-build.yml
     with:
+      frontend_artifact_name: ${{ needs.frontend.outputs.frontend_artifact_name }}
       checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
       package_version: ${{ needs.source-identity.outputs.package_version }}
   native-e2e:
     name: Native Windows WebView E2E lanes
     needs:
+      - frontend
       - source-identity
       - desktop-build
     uses: ./.github/workflows/tauri-native-e2e.yml
     with:
+      frontend_artifact_name: ${{ needs.frontend.outputs.frontend_artifact_name }}
       checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
       package_version: ${{ needs.source-identity.outputs.package_version }}
       built_exe_sha256: ${{ needs.desktop-build.outputs.built_exe_sha256 }}
@@ -228,6 +232,7 @@ jobs:
       - native-e2e
     uses: ./.github/workflows/tauri-package-validation.yml
     with:
+      frontend_artifact_name: ${{ needs.frontend.outputs.frontend_artifact_name }}
       checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
       package_version: ${{ needs.source-identity.outputs.package_version }}
       built_exe_sha256: ${{ needs.desktop-build.outputs.built_exe_sha256 }}
