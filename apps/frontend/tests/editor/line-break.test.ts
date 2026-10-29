@@ -15,8 +15,8 @@ test('Enter closes and reopens format wrappers around a real line break, retains
   Object.defineProperty(globalThis, key, {configurable:true,writable:true,value:key === 'getComputedStyle' ? dom.window.getComputedStyle.bind(dom.window) : dom.window[key]});
  }
  try {
-  for (const paragraphMarker of ['', '\\par']) for (const [opening, closing] of [['', ''], ['\\textbf{\\textit{\\underline{', '}}}'], ['\\textcolor[HTML]{B42318}{\\textbf{', '}}']]) {
-   const prefix = '\\begin{document}\r\n' + paragraphMarker, suffix = '\r\n\\end{document}\r\n';
+  for (const paragraphMarker of ['', '\\par', '\\section{', '\\subsection{', '\\subsubsection{']) for (const [opening, closing] of [['', ''], ['\\textbf{\\textit{\\underline{', '}}}'], ['\\textcolor[HTML]{B42318}{\\textbf{', '}}']]) {
+   const prefix = '\\begin{document}\r\n' + paragraphMarker, suffix = (paragraphMarker.endsWith('{') ? '}' : '') + '\r\n\\end{document}\r\n';
    const original = SourceDocument.open(new TextEncoder().encode('\ufeff' + prefix + opening + '你知道嗎' + closing + suffix));
    let state = createSourceState(original), readonly = false;
    const view = new VisualEditor(dom.window.document.getElementById('editor')!, 'main.tex', {

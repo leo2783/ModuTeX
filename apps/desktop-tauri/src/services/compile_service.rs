@@ -918,7 +918,7 @@ impl CompileServiceInner {
         owner: &OwnerId,
         request: CompileRequest,
         overlay: CompileOverlay,
-        workspace_config: CompileWorkspaceConfig,
+        mut workspace_config: CompileWorkspaceConfig,
         custom_command_allowed: bool,
     ) -> Result<CompileIdentity, CompileServiceError> {
         if !request
@@ -932,6 +932,15 @@ impl CompileServiceInner {
             ));
         }
         validate_overlay(&request, &overlay)?;
+        // Resolve the per-run default before capturing inputs so the generated PDF
+        // is excluded from later snapshots just like an explicit output path.
+        if workspace_config.output_dir.is_none() && workspace_config.pdf_path.is_none() {
+            let entry = request.entry_path.as_str();
+            workspace_config.pdf_path = Some(
+                RelativePath::parse(&format!("{}.pdf", &entry[..entry.len() - 4]))
+                    .map_err(|_| CompileServiceError::InvalidConfiguration("default PDF path"))?,
+            );
+        }
         // An unset main file uses this request's TeX entry for this run only.
         let effective_main = workspace_config.effective_main(&request.entry_path);
         if effective_main != &request.entry_path {

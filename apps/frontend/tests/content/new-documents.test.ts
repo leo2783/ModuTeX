@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { createServer } from 'vite';
 import { SourceDocument } from '../../src/features/document-core/core.ts';
 import { createDraft, templateOptions } from '../../src/features/files/templates.ts';
+import { BILINGUAL_PREAMBLE } from '../../src/features/compile/document-language.ts';
 import { readSource } from '../../src/features/files/read.ts';
 import { createSourceState, sourceState, historyTransaction } from '../../src/features/source-editor/state.ts';
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
@@ -70,7 +71,9 @@ test('blank, article and report sources use standard classes and editable two-ce
 		assert.match(text, /\\end\{document\}/);
 		assert.equal(text.split('\\usepackage[margin=2cm]{geometry}').length - 1, 1);
 		assert.ok(text.indexOf('\\usepackage[margin=2cm]{geometry}') < text.indexOf('\\begin{document}'));
-		assert.doesNotMatch(text.replace('\\usepackage[margin=2cm]{geometry}', ''), /\\(?:usepackage|RequirePackage|input|include|write18|openout)\b/);
+		assert.equal(text.split(BILINGUAL_PREAMBLE).length - 1, 1);
+		assert.ok(text.indexOf(BILINGUAL_PREAMBLE) < text.indexOf('\\begin{document}'));
+		assert.doesNotMatch(text.replace('\\usepackage[margin=2cm]{geometry}', '').replace(BILINGUAL_PREAMBLE, ''), /\\(?:usepackage|RequirePackage|input|include|write18|openout)\b/);
 		assert.doesNotMatch(text, /https?:\/\//);
 	}
 });

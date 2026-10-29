@@ -5,6 +5,24 @@ import { createSourceState, sourceState, historyTransaction, metadataClearTransa
 import { projectVisual } from '../../src/features/visual-editor/schema.ts';
 import { cellMoveTransaction } from '../../src/features/source-editor/cell-move.ts';
 
+for (const eol of ['\n', '\r\n']) for (const command of ['section', 'subsection', 'subsubsection']) {
+	test(`moving ${command} preserves cell count, heading wrappers and exact undo (${JSON.stringify(eol)})`, () => {
+		const source = SourceDocument.open(new TextEncoder().encode('\ufeff' + ['\\begin{document}', 'First', `\\${command}{\\textbf{我葳 English}}`, '\\par Last', '\\end{document}'].join(eol)));
+		const state = createSourceState(source), projected = projectVisual(source, parseSource(source)).document;
+		const cells: SourceSpan[] = [];
+		projected.forEach(node => cells.push({ documentId: source.documentId, version: source.version, from: node.attrs.from, to: node.attrs.to }));
+		for (const [index, boundary] of [[1, 0], [1, 3], [0, 2], [2, 1]]) {
+			const changed = cellMoveTransaction(state, cells, index!, boundary!)!.state;
+			const next = changed.field(sourceState).projection.document;
+			const document = projectVisual(next, parseSource(next)).document;
+			assert.equal(document.childCount, projected.childCount);
+			const headings: string[] = []; document.forEach(node => { if (node.attrs.role === 'heading') headings.push(node.textContent); });
+			assert.deepEqual(headings, ['我葳 English']);
+			assert.deepEqual(historyTransaction(changed, 'undo')!.state.field(sourceState).projection.document.toBytes(), source.toBytes());
+		}
+	});
+}
+
 test('arbitrary notebook moves retain each paragraph, unknown syntax and exact-byte undo', () => {
 	const source = SourceDocument.open(new TextEncoder().encode('\uFEFF\\documentclass{article}\r\n\\begin{document}\r\nFirst\r\n\\par Second\n\\[x^2\\]\r\n\\unknown{keep}\n\\par Third\r\n\\end{document}\r\n'));
 	let state = createSourceState(source);

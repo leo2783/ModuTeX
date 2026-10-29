@@ -5,6 +5,13 @@ import { SourceDocument, parseSource } from '../../src/features/document-core/co
 import { sourceOutline } from '../../src/features/source-editor/outline.ts';
 import { createSourceState, sourceState, sourceNavigationTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
 
+test('outline labels unwrap nested formatting and explicit line breaks while retaining navigation spans', () => {
+	const source = SourceDocument.open(new TextEncoder().encode('\\begin{document}\\section{\\textbf{\\textit{\\underline{我葳 English}}}}\\subsection{\\underline{\\textit{252255 }}\\\\More \\& 50\\%}\\end{document}'));
+	const entries = sourceOutline(source, parseSource(source));
+	assert.deepEqual(entries.map(entry => entry.label), ['我葳 English', '252255 More & 50%']);
+	assert.match(source.read(entries[0]!.span.from, entries[0]!.span.to), /^\\section\{\\textbf/);
+});
+
 test('report and book headings retain part/chapter hierarchy including starred headings', () => {
 	const source = SourceDocument.open(new TextEncoder().encode('\\begin{document}\\part{Book}\\chapter*{Intro}\\section{Scope}\\subsection{Details}\\chapter{Next}\\end{document}'));
 	assert.deepEqual(sourceOutline(source, parseSource(source)).map(({label, level}) => [label, level]),

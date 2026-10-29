@@ -4,7 +4,18 @@ Open a saved `.tex` document and choose **Compile PDF**. The new frontend uses b
 Unsaved changes are saved first; resolve disk conflicts before compiling.
 開啟已儲存的 `.tex` 文件後選擇「編譯 PDF」。新版前端使用內建 Tectonic，未儲存內容先保存，磁碟衝突需要先處理。
 
+## Chinese and English / 中英文排版
+
+New documents load CTEX with Fandol fonts for mixed Chinese and English, including bold and italic text. English heading names remain unchanged. Use bundled Tectonic or XeLaTeX. The first compilation downloads the required TeX packages and fonts.
+新文件載入 CTEX 與 Fandol 字型，支援中英文混排及粗體、斜體，保留英文標題名稱。請使用內建 Tectonic 或 XeLaTeX；首次編譯會下載所需 TeX 套件與字型。
+
+For an existing document with missing Chinese characters, open **Settings → Compilation → Chinese and English typesetting**, choose **Enable Chinese and English**, save, then compile. Existing CTEX or CJK settings are retained. Custom font configurations remain editable in Source mode.
+既有文件若出現中文缺字，開啟「設定 → 編譯 → 中英文排版」，按「啟用中英文排版」，儲存後重新編譯。既有 CTEX 或 CJK 設定會保留，自訂字型可在原始碼模式調整。
+
 ## Results / 結果
+
+Successful compilation automatically saves the PDF beside the main `.tex` file. For example, `paper/main.tex` produces `paper/main.pdf`. No output setting is required. A later successful build replaces that PDF; a failed build retains the last successful file. Optional PDF paths and output directories in **Settings → Compilation** override this default.
+成功編譯後，PDF 自動儲存在主 `.tex` 文件旁，例如 `paper/main.tex` 會產生 `paper/main.pdf`，不需設定輸出位置。再次成功編譯會更新 PDF，失敗則保留上一次成功的檔案。「設定 → 編譯」中的選用 PDF 路徑與輸出目錄可覆寫預設位置。
 
 Successful builds display the latest PDF; failures and cancellations keep the previous successful preview.
 The progress indicator describes the stage, not a numeric percentage.

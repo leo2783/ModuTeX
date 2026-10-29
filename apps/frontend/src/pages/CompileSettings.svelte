@@ -6,6 +6,7 @@
 	import { planPageMarginPatches, readPageMargins, type PageMarginsCm } from '../features/compile/page-margins.ts';
 	import { text, type Language } from '../i18n/text.ts';
 	import { readDocumentDate, planDocumentDatePatches, type DocumentDateMode } from '../features/compile/document-date.ts';
+	import { planBilingualPatches } from '../features/compile/document-language.ts';
 
 	interface MarginDraft { top: string; bottom: string; left: string; right: string }
 	type MarginSnapshot =
@@ -52,6 +53,29 @@
 	let dateBusy = $state(false);
 	let dateTouched = false;
 	let dateDocument = $state.raw<SourceDocument | null>(null);
+	let languageBusy = $state(false);
+	let languageIssue = $state('');
+	let languageNote = $state('');
+	async function applyBilingual() {
+		const snapshot = marginSnapshot, document = dateDocument, port = desktop, owner = workspace;
+		if (!snapshot || !document || !port || !owner || languageBusy || marginBusy || dateBusy || sourceCommandDisabled || marginStale || mainFile !== (config?.mainFile ?? '')) return;
+		languageBusy = true; languageIssue = ''; languageNote = '';
+		try {
+			const patches = planBilingualPatches(document);
+			if (snapshot.kind === 'editor') {
+				if (!source || source.documentId !== document.documentId || source.version !== document.version || comparablePath(sourcePath) !== comparablePath(snapshot.path)) throw new Error('STALE_SOURCE');
+				if (patches.length && !onApplySourcePatches({ documentId: document.documentId, version: document.version }, patches)) throw new Error('STALE_SOURCE');
+			} else if (patches.length) {
+				const updated = document.apply({ expectedVersion: document.version, patches }).document;
+				await port.writeFile({ workspaceId: owner.id, path: snapshot.path, bytes: updated.toBytes(), expectedRevision: snapshot.receipt.revision, documentId: updated.documentId, documentVersion: updated.version });
+			}
+			languageNote = patches.length
+				? t('中英文排版已套用。儲存後以託管引擎或 XeLaTeX 重新編譯。首次使用需下載字型與套件。', 'Chinese and English typesetting enabled. Save and recompile with the managed engine or XeLaTeX. Fonts and packages download on first use.')
+				: t('文件已有中文排版設定，請依原始碼中的字型設定編譯。', 'The document already configures Chinese typesetting. Compile using its existing font settings.');
+			await loadPageMargins(snapshot.path, source, !!source && comparablePath(sourcePath) === comparablePath(snapshot.path));
+		} catch { languageIssue = t('未套用中英文排版。請重新載入；自訂前言請在原始碼調整。', 'Typesetting settings were not applied. Reload, or edit a custom preamble in source mode.'); }
+		finally { languageBusy = false; }
+	}
 	function acceptDate(document: SourceDocument) {
 		dateDocument = document;
 		try { dateMode = readDocumentDate(document).mode; dateIssue = ''; }
@@ -161,6 +185,7 @@
 		const targetKey = `${ownerId}|${comparablePath(path)}`;
 		const sourceKey = isSelectedSource && selectedSource ? `${selectedSource.documentId}|${selectedSource.version}` : '';
 		if (targetKey !== observedMarginTarget) {
+			languageIssue = ''; languageNote = '';
 			dateTouched = false; dateDocument = null; dateNote = '';
 			observedMarginTarget = targetKey;
 			observedMarginSource = sourceKey;
@@ -380,10 +405,11 @@
 								</select>
 							</label>
 		</div>
-						<label for="compile-output-dir" class="form-field">
-							<span class="field-label">{t('輸出目錄（必須已存在於工作區內）', 'Output directory (must already exist in the workspace)')}</span>
-							<input id="compile-output-dir" bind:value={outputDir} autocomplete="off" spellcheck="false" />
-						</label>
+						<div class="form-field">
+								<label for="compile-output-dir" class="field-label">{t('輸出目錄（選用，必須已存在於工作區內）', 'Output directory (optional, must already exist in the workspace)')}</label>
+								<input id="compile-output-dir" bind:value={outputDir} aria-describedby="compile-output-help" autocomplete="off" spellcheck="false" />
+								<span id="compile-output-help">{t('留空時，PDF 自動儲存在主 TeX 文件旁，不需另行設定。', 'Leave empty to save the PDF beside the main TeX file automatically.')}</span>
+						</div>
 						<div class="form-row two-cols">
 							<label for="compile-pdf-path" class="form-field">
 								<span class="field-label">{t('PDF 路徑（選用，覆寫預設輸出目錄）', 'PDF path (optional, overrides the output-directory default)')}</span>
@@ -405,6 +431,15 @@
 				<footer class="settings-actions">
 					<button type="button" class="primary" onclick={save} disabled={busy || !config}>{t('儲存工作區編譯設定', 'Save workspace compile settings')}</button>
 					<button type="button" onclick={load} disabled={busy}>{t('重新載入設定', 'Reload configuration')}</button>
+				</footer>
+			</section>
+			<section class="settings-section" aria-labelledby="document-language-heading">
+				<h3 id="document-language-heading">{t('中英文排版', 'Chinese and English typesetting')}</h3>
+				<p>{t('新文件已支援中英文混排。既有文件可加入 CTEX 與 Fandol 中文字型，保留英文標題樣式。請使用託管引擎或 XeLaTeX；首次使用需下載套件與字型。', 'New documents support mixed Chinese and English. Add CTEX and Fandol Chinese fonts to an existing document while keeping English heading styles. Use the managed engine or XeLaTeX. Packages and fonts download on first use.')}</p>
+				{#if languageIssue}<p role="alert" class="settings-alert">{languageIssue}</p>{/if}
+				{#if languageNote}<p role="status" class="settings-status">{languageNote}</p>{/if}
+				<footer class="settings-actions">
+					<button type="button" class="primary" onclick={applyBilingual} disabled={!dateDocument || !marginSnapshot || marginBusy || dateBusy || languageBusy || busy || marginStale || sourceCommandDisabled || mainFile !== (config?.mainFile ?? '')}>{t('啟用中英文排版', 'Enable Chinese and English')}</button>
 				</footer>
 			</section>
 			<section class="settings-section" aria-labelledby="document-date-heading">

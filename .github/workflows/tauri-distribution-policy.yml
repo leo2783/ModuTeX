@@ -153,7 +153,7 @@ jobs:
         run: npm run test:tauri-ci-policy
       - name: Run distribution inventory policy tests
         run: >-
-          node --test tests/scripts/distribution/inventory.test.mjs tests/scripts/distribution/updater-manifest.test.mjs
+          node --test --test-concurrency=1 tests/scripts/distribution/inventory.test.mjs tests/scripts/distribution/updater-manifest.test.mjs
           tests/scripts/distribution/installer-lifecycle.test.mjs
       - name: Run static CD and PowerShell policy tests
         run: >-
