@@ -11,6 +11,7 @@ import {chromium} from 'playwright';
 import { clickFileAction } from './helpers/app-file-actions.mjs';
 import { createNativeCdpConfig } from './helpers/native-cdp-config.mjs';
 import { waitNativeCdp } from './helpers/wait-native-cdp.mjs';
+import { articleText, articleChunks } from '../../apps/frontend/tests/helpers/mixed-article.mjs';
 const root=resolve(import.meta.dirname,'../..'),evidence=join(root,'.verification-artifacts/tauri');
 const exe=resolve(process.env.MODUTEX_TEST_EXE??join(root,'apps/desktop-tauri/target/release/modutex-desktop-tauri.exe'));
 const coldCache = process.env.MODUTEX_TEST_COLD_CACHE === '1';
@@ -24,12 +25,13 @@ if (coldCache) {
 }
 const scratch=await mkdtemp(join(tmpdir(),'modutex-compile-config-e2e-')),workspace=join(scratch,`project \u6e2c\u8a66 ${basename(scratch)}`);await mkdir(join(workspace,'out'),{recursive:true});
 await writeFile(join(workspace,'standalone.tex'),'\\documentclass{article}\n\\author{}\\date{}\n\\begin{document}Unconfigured main test. 我你\n\\end{document}\n');
+await writeFile(join(workspace,'warning.tex'),'\\documentclass{article}\n\\title{Warning 警告}\\date{}\n\\begin{document}\\maketitle\n中文 English\n\\end{document}\n');
 await writeFile(join(workspace,'main.tex'),"\\documentclass{article}\n\\usepackage{amsmath}\n\\title{Cell safety}\n\\author{}\n\\date{}\n\\begin{document}\n\\maketitle\nMain document.\n\\[\\frac{\\partial^2 f}{\\partial x^2}\\]\n\\input{chapter}\n\\end{document}\n");
 const chapter='Included chapter material.\n';await writeFile(join(workspace,'chapter.tex'),chapter);
-const articleText=Array.from({length:5000},(_,index)=>'文章中文混合測試'[index%8]).join('');assert.equal([...articleText].length,5000);
+assert.equal([...articleText].length,5000);
 for(const layout of ['single','multiple']){
  const formatted='\\textcolor[HTML]{B42318}{\\textbf{\\underline{Article 文章}}}';
- const pieces=[`\\begin{abstract}摘要 Abstract ${articleText.slice(0,1000)}\\end{abstract}`,`\\section{${formatted}}\n${articleText.slice(1000,2000)} \\(x^2\\)`,`\\subsection{${formatted}}\n${articleText.slice(2000,3000)} English`,`\\subsubsection{${formatted}}\n${articleText.slice(3000,4000)} \\(\\frac{1}{2}\\)`,`${articleText.slice(4000)}\n\\par\n文章插圖 Body`];
+ const pieces=[`\\title{${formatted}}\\maketitle\n\\begin{abstract}摘要 Abstract ${articleText.slice(0,1000)}\\end{abstract}`,`\\section{${formatted}}\n${articleText.slice(1000,2000)} \\(x^2\\)`,`\\subsection{${formatted}}\n${articleText.slice(2000,3000)} English`,`\\subsubsection{${formatted}}\n${articleText.slice(3000,4000)} \\(\\frac{1}{2}\\)`,`${articleText.slice(4000)}\n\\par\n文章插圖 Body`];
  const fence=text=>`% ModuTeX cell begin\n${text}\n% ModuTeX cell end\n`;
  const content=layout==='single'?fence(pieces.join('\n\\par\n')):pieces.map((piece,index)=>fence((index?'\\par\n':'')+piece)).join('');
  await writeFile(join(workspace,`article-${layout}.tex`),'\\documentclass{article}\n\\usepackage{amsmath,xcolor}\n\\author{}\\date{}\n\\begin{document}\n'+content+'\\par\nTail END\n\\end{document}\n');
@@ -74,6 +76,14 @@ try{
  assert.match(await page.locator('.compile-output').innerText(),/LaTeX (?:Font )?Info:/,'initialization evidence remains in the real compiler log');
  receipt.checks.push('native Problems is empty for clean CTEX compilation while Output preserves initialization details');
  const siblingPdf=await readFile(join(workspace,'standalone.pdf'));assert.equal(siblingPdf.subarray(0,5).toString(),'%PDF-');receipt.checks.push('default managed compilation saves its PDF beside the TeX file without output settings');
+ stage='real warning remains actionable without package information noise';
+ await page.locator('.tree-file[title="warning.tex"]').click();await compile();
+ await page.getByRole('tab',{name:/^(問題|Problems)/}).click();
+ assert.equal(await page.locator('.diagnostic-row').count(),1);
+ assert.equal(await page.locator('.diagnostic-severity').getAttribute('data-severity'),'warning');
+ assert.match(await page.locator('.diagnostic-text').innerText(),/No \\author given/);
+ receipt.checks.push('real missing-author warning remains visible while package Info is absent from Problems');
+ await page.locator('.tree-file[title="standalone.tex"]').click();
  stage='native image insertion, cancellation and invalid input';
  await documentTab();
  const imageSourceEditor=page.locator('.cm-content[contenteditable="true"]').first();
@@ -134,10 +144,13 @@ try{
   for(const until=Date.now()+10000;Date.now()<until;){try{saved=await readFile(join(workspace,name),'utf8');if((saved.match(/\\includegraphics/g)||[]).length===2)break}catch(error){if(!['EBUSY','ENOENT'].includes(error.code))throw error}await delay(100)}
   const paths=[...saved.matchAll(/\\includegraphics\[[^\]]*\]\{([^}]+)\}/g)].map(match=>match[1]);assert.equal(paths.length,2);
   assert.equal((saved.match(/\p{Script=Han}/gu)||[]).length,(originalSource.match(/\p{Script=Han}/gu)||[]).length,'saved article retains every Chinese character');
+  for(const chunk of articleChunks)assert.ok(saved.includes(chunk),'saved bilingual article retains every numbered paragraph');
   for(const imagePath of paths)assert.deepEqual(await readFile(join(workspace,imagePath)),originals.get(imagePath.endsWith('.png')?'png':'jpg'),'native asset retains original image bytes');
   await page.locator('.tree-file[title="chapter.tex"]').click();await page.locator(`.tree-file[title="${name}"]`).click();
   await page.waitForFunction(count=>document.querySelectorAll('.notebook-cell').length===count&&document.querySelectorAll('.visual-image img').length===2&&[...document.querySelectorAll('.visual-image img')].every(img=>img.naturalWidth===120),expectedCells);
   await compile();
+  await page.getByRole('tab',{name:/^(問題|Problems)/}).click();
+  assert.ok(!(await page.locator('.diagnostic-text').allTextContents()).some(text=>/Missing character|There is no .*U\+/i.test(text)),'article glyphs including 我你葳 must not be missing');
   const number=page.locator('.pdf-controls input[type="number"]'),count=Number(await number.getAttribute('max'));assert.ok(count>1,'long article must exercise multiple PDF pages');
   let blue=0,red=0;
   for(let index=1;index<=count;index++){
@@ -148,7 +161,7 @@ try{
    if(ink.blue>100||ink.red>100)await page.screenshot({path:join(evidence,`article-${layout}-page-${index}-native-e2e.png`)});
   }
   assert.ok(blue>100&&red>100,`both original image formats must paint in ${layout} article PDF: blue=${blue},red=${red}`);
-  receipt.checks.push({articleLayout:layout,chineseBodyCharacters:5000,cells:expectedCells,pdfPages:count,pngPixels:blue,jpegPixels:red,originalAssetBytesVerified:true,reopenedFromDisk:true});
+  receipt.checks.push({articleLayout:layout,bodyCharacters:5000,cells:expectedCells,pdfPages:count,pngPixels:blue,jpegPixels:red,originalAssetBytesVerified:true,reopenedFromDisk:true,missingGlyphs:false});
  }
  stage='watch after managed compilation';await writeFile(join(workspace,'watch-after.txt'),'native watch after compile\n');await page.locator('.tree-file[title="watch-after.txt"]').waitFor({state:'visible',timeout:10000});assert.deepEqual(receipt.watchFailures,[]);receipt.checks.push('native watch remains live after managed compilation');
  stage='save trusted UI custom profile';await settings();await page.getByLabel(/主 TeX 文件|Main TeX file/).selectOption('main.tex');await page.getByLabel(/編譯引擎設定檔|Engine profile/).selectOption('custom');

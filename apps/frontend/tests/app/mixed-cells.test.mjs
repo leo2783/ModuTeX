@@ -4,12 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { chromium } from 'playwright';
 import { clickFileAction } from '../../../../tests/scripts/helpers/app-file-actions.mjs';
+import { articleText, articleChunks } from '../helpers/mixed-article.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const cases = ['section', 'subsection', 'subsubsection', 'abstract', 'article-single', 'article-multiple'].flatMap(kind =>
  ['png', 'jpeg'].flatMap(format => ['light', 'dark'].map(theme => ({ kind, format, theme })))).filter(value => !process.env.MODUTEX_MATRIX_CASE || `${value.kind}/${value.format}` === process.env.MODUTEX_MATRIX_CASE);
+assert.ok(cases.length, 'unknown matrix case filter');
+if (!process.env.MODUTEX_MATRIX_CASE) assert.equal(cases.length, 24);
 const fence = value => `% ModuTeX cell begin\n${value}\n% ModuTeX cell end\n`;
-const articleText = Array.from({ length: 5000 }, (_, index) => '文章中文混合測試'[index % 8]).join('');
 assert.equal([...articleText].length, 5000);
 
 test('isolated mixed-cell matrix', { timeout: 180000, concurrency: 2 }, async t => {
@@ -33,13 +35,32 @@ test('isolated mixed-cell matrix', { timeout: 180000, concurrency: 2 }, async t 
   const title = '\\textcolor[HTML]{FF0000}{\\textbf{\\underline{混合 Mixed}}}';
   const heading = kind === 'abstract' ? `\\begin{abstract}${title}\\end{abstract}` : `\\${kind}{${title}}`;
   const bodyText = '\\par\nBody 內文 \\(x^2+\\frac{1}{2}\\)';
-  const sections = [`\\begin{abstract}${title} English abstract 摘要\\end{abstract}\n${articleText.slice(0,1000)}`, `\\section{${title}}\n${articleText.slice(1000,2000)} \\(a+b\\)`, `\\subsection{${title}}\n${articleText.slice(2000,3000)} English`, `\\subsubsection{${title}}\n${articleText.slice(3000,4000)} \\(E=mc^2\\)`, `${articleText.slice(4000)}\n${bodyText}`];
+  const sections = [`\\title{${title}}\\maketitle\n\\begin{abstract}${title} English abstract 摘要\\end{abstract}\n${articleText.slice(0,1000)}`, `\\section{${title}}\n${articleText.slice(1000,2000)} \\(a+b\\)`, `\\subsection{${title}}\n${articleText.slice(2000,3000)} English`, `\\subsubsection{${title}}\n${articleText.slice(3000,4000)} \\(E=mc^2\\)`, `${articleText.slice(4000)}\n${bodyText}`];
   const content = kind === 'article-single' ? fence(sections.join('\n\\par\n')) : kind === 'article-multiple' ? sections.map((section, index) => fence((index ? '\\par\n' : '') + section)).join('') : fence(heading + '\n' + bodyText);
   const initialCells = kind === 'article-multiple' ? 6 : 2;
-  const source = '\\documentclass{article}\n\\usepackage{amsmath,xcolor}\n\\usepackage[UTF8,scheme=plain,fontset=fandol]{ctex}\n\\title{Article 文章}\\author{}\\date{}\n\\begin{document}\n' + content + '\\par\nTail END\n\\end{document}\n';
+  const source = '\\documentclass{article}\n\\usepackage{amsmath,xcolor}\n\\usepackage[UTF8,scheme=plain,fontset=fandol]{ctex}\n\\author{}\\date{}\n\\begin{document}\n' + content + '\\par\nTail END\n\\end{document}\n';
   await editor.click(); await page.keyboard.press('Control+A'); await page.keyboard.insertText(source);
   await page.getByRole('button', { name: '視覺化', exact: true }).click();
   await page.waitForFunction(count => document.querySelectorAll('.notebook-cell').length === count, initialCells);
+  const formatted = page.locator('.source-block').filter({ hasText: '混合 Mixed' }).first();
+  async function selectFormattedText() {
+   await formatted.click();
+   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+   await page.keyboard.press('Home'); await page.keyboard.press('Shift+End');
+   await page.waitForFunction(() => window.getSelection()?.toString() === '混合 Mixed');
+   // Native Shift+End updates the DOM selection before selectionchange reaches ProseMirror.
+   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  }
+  for (const [button, tag] of [['粗體', 'strong'], ['底線', 'u']]) {
+   await selectFormattedText(); await page.locator('.insert-bar').getByRole('button', { name: button, exact: true }).click();
+   await page.waitForFunction(({tag}) => { const block=[...document.querySelectorAll('.source-block')].find(node=>node.textContent.includes('混合 Mixed'));return block&&!block.querySelector(tag); }, {tag});
+   assert.equal(await formatted.locator(tag).count(), 0, `${button} can be removed from mixed heading text`);
+   await selectFormattedText(); await page.locator('.insert-bar').getByRole('button', { name: button, exact: true }).click();
+   await page.waitForFunction(({tag}) => { const block=[...document.querySelectorAll('.source-block')].find(node=>node.textContent.includes('混合 Mixed'));return !!block?.querySelector(tag); }, {tag});
+  }
+  await selectFormattedText(); await page.locator('summary[aria-label="文字顏色"]').click();
+  await page.getByRole('button', { name: '紅色', exact: true }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('.source-block span')].some(span => span.style.color === 'rgb(180, 35, 24)'));
   const body = page.locator('.source-block').filter({ hasText: 'Body 內文' });
   await body.click(); await page.keyboard.press('End');
   const encoded = await page.evaluate(format => { const canvas = document.createElement('canvas'); canvas.width = 120; canvas.height = 60; const ctx = canvas.getContext('2d'); ctx.fillStyle = '#3d617b'; ctx.fillRect(0, 0, 120, 60); return canvas.toDataURL('image/' + format).split(',')[1]; }, format);
@@ -50,7 +71,6 @@ test('isolated mixed-cell matrix', { timeout: 180000, concurrency: 2 }, async t 
   assert.equal(await page.locator('.visual-image').getAttribute('data-cell-owner'), owner);
   await page.waitForFunction(() => [...document.querySelectorAll('math-field')].some(field => field.value?.includes('frac')));
   assert.ok(await page.locator('math-field').count(), 'mixed cell retains actual MathLive presentation');
-  const formatted = page.locator('.source-block').filter({ hasText: '混合 Mixed' }).first();
   const style = await formatted.evaluate(element => {
    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT); let found;
    while ((found = walker.nextNode()) && !found.textContent.includes('混合 Mixed')) {}
@@ -60,9 +80,10 @@ test('isolated mixed-cell matrix', { timeout: 180000, concurrency: 2 }, async t 
   });
   assert.ok(style.some(s => Number(s.weight) >= 700), JSON.stringify(style));
   assert.ok(style.some(s => s.decoration.includes('underline')), JSON.stringify(style));
-  assert.ok(style.some(s => s.color === 'rgb(255, 0, 0)'), JSON.stringify(style));
+  assert.ok(style.some(s => s.color === 'rgb(180, 35, 24)'), JSON.stringify(style));
   const before = await readSource();
   assert.equal((before.match(/\p{Script=Han}/gu) ?? []).length, (source.match(/\p{Script=Han}/gu) ?? []).length, 'complete article text survives image insertion');
+  if (kind.startsWith('article-')) for (const chunk of articleChunks) assert.ok(before.includes(chunk), 'complete bilingual article chunk is retained');
   await page.locator('.visual-image img').dragTo(page.locator('.source-block').filter({ hasText: 'Tail END' }));
   assert.equal(await page.locator('.notebook-cell').count(), initialCells, 'dragging image pixels must never create another cell');
   assert.equal(await readSource(), before, 'native image dragging cannot detach an asset from its owning cell');
@@ -85,7 +106,8 @@ test('isolated mixed-cell matrix', { timeout: 180000, concurrency: 2 }, async t 
   await page.waitForFunction(() => document.querySelector('.visual-image')?.getAttribute('data-cell-owner') === [...document.querySelectorAll('.notebook-cell')].at(-1)?.getAttribute('data-cell-index'));
   const moved = await readSource();
   assert.ok(moved.indexOf('Tail END') < moved.lastIndexOf('% ModuTeX cell begin', moved.indexOf('\\includegraphics')));
-  assert.match(moved, /\\textcolor\[HTML\]\{FF0000\}\{\\textbf\{\\underline\{混合 Mixed\}\}\}/);
+  assert.match(moved, /\\textcolor\[HTML\]\{B42318\}/);
+  assert.match(moved, /\\textbf\{/); assert.match(moved, /\\underline\{/);
   assert.match(moved, /\\frac\{1\}\{2\}/);
   assert.equal(await page.locator('.notebook-cell').count(), initialCells);
   await page.locator('.ProseMirror').press('Control+z');
@@ -143,6 +165,6 @@ test('isolated mixed-cell matrix', { timeout: 180000, concurrency: 2 }, async t 
   await page.waitForFunction(() => document.querySelector('.visual-image img')?.naturalWidth === 120);
   assert.equal(await page.locator('.notebook-cell').count(), initialCells);
   assert.deepEqual(errors, []);
-  } catch (error) { console.error(`${kind}/${format}: ${error.stack}`); console.error(await page.locator('.notebook-cell').evaluateAll(nodes => nodes.map(node => ({index:node.getAttribute('data-cell-index'),role:node.getAttribute('data-source-role'),text:node.textContent.slice(0,60)})))); throw error; }
+  } catch (error) { console.error(`${kind}/${format}: ${error.stack}`); console.error(await page.evaluate(() => ({ selection: window.getSelection()?.toString(), cells: [...document.querySelectorAll('.notebook-cell')].map(node => ({index:node.getAttribute('data-cell-index'),html:node.innerHTML.slice(0,1800)})), alerts: [...document.querySelectorAll('[role="alert"]')].map(node=>node.textContent) }))); throw error; }
  })));
 });

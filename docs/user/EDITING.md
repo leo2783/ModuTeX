@@ -11,10 +11,13 @@ The boundary `+` menu explicitly creates a separate cell.
 點選儲存格並放置游標後，工具在游標處插入內容；拖曳左側把手可排序，邊界 `+` 選單則另外新增儲存格。
 
 Choose body text, paper title, abstract or heading level from the structure menu.
-Changing structure retains the cell's content and starts a new cancel-edit checkpoint. Each insertion above a heading or abstract adds one cell.
+Changing structure retains the cell's content and starts a new cancel-edit checkpoint. Each insertion above or below an existing cell adds one cell.
 Text wraps with available width. Enter in a heading continues as body text within the same cell. Moving or deleting that cell includes all its content. Text and abstract cells retain line breaks. The outline displays heading text without formatting commands.
 文字依可用寬度換行。標題內按 Enter 後接續正文，仍在同一儲存格；移動或刪除作用於整格內容。正文與摘要支援格內換行。大綱顯示標題文字，省略格式指令。
-切換層級會保留儲存格內容，並重新建立取消編輯的起點。在標題或摘要上方插入文字時，每次只新增一格。
+切換層級會保留儲存格內容，並重新建立取消編輯的起點。在既有儲存格上方或下方插入文字時，每次只新增一格。
+
+Bold, underline and text color work on selected heading and abstract text. In cells containing a paper title and body content, images insert at the body caret.
+可對選取的標題與摘要文字套用粗體、底線與字色。儲存格同時包含文章標題與內文時，圖片會插入正文游標所在位置。
 
 ## Math / 數學
 
