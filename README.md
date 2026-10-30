@@ -11,12 +11,6 @@ Visual mode is a working draft; check the PDF for final fonts, spacing, and page
 
 ![Visual editing and compiled PDF side by side](docs/images/workbench-en.png)
 
-## See it in use
-
-[Step-by-step guide](docs/user/FRONTEND_TOUR.md) · [Example document](docs/examples/frontend-tour/main.tex) · [Video recording guide](docs/media/RECORDING.md)
-
-Follow the same document through editing, switching to source, setting the title date, and compiling to PDF.
-
 ## Screenshots
 
 Switch to LaTeX source while keeping the PDF in view.
@@ -45,7 +39,7 @@ Downloads are published on [GitHub Releases](https://github.com/leo2783/ModuTeX/
 2. Edit visually or switch to Source mode.
 3. Click **Compile PDF** to build the document using the integrated engine.
 
-## Development
+## Development with fork
 
 ### Prerequisites
 

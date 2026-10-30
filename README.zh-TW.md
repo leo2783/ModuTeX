@@ -11,12 +11,6 @@ ModuTeX 0.3.0 是適用於 Windows x64 的開源 LaTeX 編輯器，使用 Tauri 
 
 ![視覺編輯與編譯後的 PDF 並列](docs/images/workbench.png)
 
-## 操作示範
-
-[逐步導覽](docs/user/FRONTEND_TOUR.zh-TW.md) · [示範文件](docs/examples/frontend-tour/main.tex) · [影片錄製流程](docs/media/RECORDING.md)
-
-跟著同一份文件練習編輯、切換原始碼、設定標題日期，以及編譯並檢查 PDF。
-
 ## 介面預覽
 
 可切換至 LaTeX 原始碼，並同時查看 PDF 排版。
@@ -45,7 +39,7 @@ ModuTeX 0.3.0 適用於 **Windows x64**。
 2. 在視覺模式編輯，或切換原始碼模式輸入 LaTeX 指令。
 3. 點選「編譯 PDF」，完成編譯與預覽。
 
-## 開發建置
+## Fork開發建置
 
 ### 環境需求
 
