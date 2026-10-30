@@ -31,6 +31,57 @@ async function execute(fixture, source, prelude, environment = {}) {
   return JSON.parse(await readFile(join(fixture, 'result.json'), 'utf8'));
 }
 
+for (const state of ['unsigned-no-publisher', 'unsigned-with-publisher', 'signed-with-publisher', 'signed-no-publisher']) {
+  test(`actual CD bundle preserves child PowerShell parameter binding: ${state}`, async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'modutex-cd-payload-binding-'));
+    try {
+      const exe = join(fixture, 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe');
+      const installer = join(fixture, 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ModuTeX_0.2.1_x64-setup.exe');
+      const engine = join(fixture, 'vendor/tectonic/windows-x64/tectonic.exe');
+      const verifier = join(fixture, 'scripts/distribution/verify-installer-payload.ps1');
+      for (const filename of [exe, installer, engine, verifier]) {
+        await mkdir(resolve(filename, '..'), { recursive: true });
+        await writeFile(filename, 'original');
+      }
+      // Execute the shipped parameter declarations in a real child pwsh process.
+      // Only the expensive archive/Authenticode provider body is replaced.
+      const declarations = (await readFile(resolve('scripts/distribution/verify-installer-payload.ps1'), 'utf8'))
+        .split('Set-StrictMode -Version Latest')[0];
+      await writeFile(verifier, declarations + `
+$ErrorActionPreference='Stop'
+if($ExpectedBundledExeSha256 -ne $env:EXPECTED_TESTED_EXE_SHA -or $ExpectedTectonicSha256 -ne $env:EXPECTED_TESTED_EXE_SHA){throw 'Payload identity arguments changed'}
+if($ExpectedProductName -ne 'ModuTeX' -or $ExpectedProductVersion -ne '0.2.1'){throw 'Product metadata arguments changed'}
+if($ReceiptPath -ne '.verification-artifacts/tauri/payload-receipt-release.json'){throw 'Receipt argument was lost'}
+@{signerBound=$PSBoundParameters.ContainsKey('OurSignerSubject');signer=$OurSignerSubject} | ConvertTo-Json -Compress | Set-Content -LiteralPath 'payload-binding.json'
+exit 0
+`);
+      const signed = state.startsWith('signed-');
+      const publisher = state.endsWith('no-publisher') ? '' : 'CN=ModuTeX Publisher, O=Fixture Organization';
+      const result = await execute(fixture,
+        block('release-build-and-sign', 'Stage 2 - Bundle NSIS installer preserving target executable'), `
+function npx {
+ param([Parameter(ValueFromRemainingArguments=$true)][string[]]$TaskArgs)
+ [IO.File]::WriteAllText(${quote(installer)},'fresh-installer')
+ $global:LASTEXITCODE=0
+}
+`, {
+          SIGNPATH_CONFIGURED: signed ? 'true' : 'false', EXPECTED_PUBLISHER: publisher,
+          EXPECTED_SIGNED_EXE_SHA: signed ? createHash('sha256').update('original').digest('hex') : ''
+        });
+      if (state === 'signed-no-publisher') {
+        assert.equal(result.accepted, false);
+        assert.match(result.error, /signed publisher is missing/);
+        await assert.rejects(readFile(join(fixture, 'payload-binding.json')), { code: 'ENOENT' });
+        return;
+      }
+      assert.equal(result.accepted, true, JSON.stringify(result));
+      const binding = JSON.parse(await readFile(join(fixture, 'payload-binding.json'), 'utf8'));
+      assert.equal(binding.signerBound, signed, 'unsigned verification must omit the optional signer argument');
+      assert.equal(binding.signer, signed ? publisher : '');
+    } finally { await rm(fixture, { recursive: true, force: true }); }
+  });
+}
+
 for (const fault of ['unchanged', 'modified-executable', 'bundle-failed', 'payload-rejected']) {
   test(`actual CD bundle block: ${fault}`, async () => {
     const fixture = await mkdtemp(join(tmpdir(), 'modutex-cd-bundle-'));
@@ -90,6 +141,7 @@ function pwsh {
         block('release-build-and-sign', 'Stage 2 - Bundle NSIS installer preserving target executable'),
         prelude, {
           SIGNPATH_CONFIGURED: state === 'invalid-signpath-status' ? '' : 'true',
+          EXPECTED_PUBLISHER: 'CN=Expected Publisher',
           EXPECTED_SIGNED_EXE_SHA: state === 'missing-signed-output' ? '' :
             state === 'wrong-signed-output' ? '0'.repeat(64) : signedDigest
         });

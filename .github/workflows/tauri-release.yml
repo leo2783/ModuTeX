@@ -404,9 +404,18 @@ jobs:
           }
           $tectonicExe = 'vendor/tectonic/windows-x64/tectonic.exe'
           $expectedTectonicSha = (Get-FileHash -LiteralPath $tectonicExe -Algorithm SHA256).Hash.ToLowerInvariant()
-          $ourSigner = if ($env:SIGNPATH_CONFIGURED -eq 'true') { $env:EXPECTED_PUBLISHER } else { $null }
           $cdReceiptPath = '.verification-artifacts/tauri/payload-receipt-release.json'
-          pwsh -File scripts/distribution/verify-installer-payload.ps1 -InstallerPath $targetInstaller -ExpectedBundledExeSha256 $preBundleSha -ExpectedProductName 'ModuTeX' -ExpectedProductVersion $version -ExpectedTectonicSha256 $expectedTectonicSha -OurSignerSubject $ourSigner -ReceiptPath $cdReceiptPath
+          $payloadArgs = @(
+            '-File', 'scripts/distribution/verify-installer-payload.ps1',
+            '-InstallerPath', $targetInstaller, '-ExpectedBundledExeSha256', $preBundleSha,
+            '-ExpectedProductName', 'ModuTeX', '-ExpectedProductVersion', $version,
+            '-ExpectedTectonicSha256', $expectedTectonicSha, '-ReceiptPath', $cdReceiptPath
+          )
+          if ($env:SIGNPATH_CONFIGURED -eq 'true') {
+            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_PUBLISHER)) { throw 'Verified signed publisher is missing' }
+            $payloadArgs += @('-OurSignerSubject', $env:EXPECTED_PUBLISHER)
+          }
+          pwsh @payloadArgs
           if ($LASTEXITCODE -ne 0) { throw "Installer payload verification failed with exit code $LASTEXITCODE" }
           $installerSha = (Get-FileHash -LiteralPath $targetInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
           if (-not $installerSha -or $installerSha -eq 'none') { throw 'Failed to capture unsigned installer SHA-256' }
