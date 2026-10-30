@@ -39,17 +39,17 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Check maintained project Markdown with pinned Prettier
         run: |
-          mapfile -d '' -t markdown_files < <(git ls-files -z -- ':(icase)*.md')
-          npm exec --no -- prettier --check \
-            "${markdown_files[@]}" \
-            '!docs/archive/**' \
-            '!docs/history/**' \
-            '!docs/historical/**' \
-            '!docs/legacy/**' \
-            '!docs/agents/**' \
-            '!docs/**/AGENTS.md' \
-            '!docs/**/agent-rules/**' \
-            '!**/vendor/**' \
-            '!**/LICENSE*.md' \
-            '!**/NOTICE*.md' \
-            '!**/THIRD_PARTY_NOTICES.md'
+          mapfile -d '' -t markdown_files < <(git ls-files -z -- \
+            ':(icase)*.md' \
+            ':(exclude,glob)docs/archive/**' \
+            ':(exclude,glob)docs/history/**' \
+            ':(exclude,glob)docs/historical/**' \
+            ':(exclude,glob)docs/legacy/**' \
+            ':(exclude,glob)docs/agents/**' \
+            ':(exclude,glob)docs/**/AGENTS.md' \
+            ':(exclude,glob)docs/**/agent-rules/**' \
+            ':(exclude,glob)**/vendor/**' \
+            ':(exclude,glob)**/LICENSE*.md' \
+            ':(exclude,glob)**/NOTICE*.md' \
+            ':(exclude,glob)**/THIRD_PARTY_NOTICES.md')
+          npm exec --no -- prettier --check "${markdown_files[@]}"
