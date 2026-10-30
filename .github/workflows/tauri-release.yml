@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
     steps:
       - name: Checkout repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -146,7 +146,7 @@ jobs:
         shell: pwsh
     steps:
       - name: Checkout repository at verified release commit
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ needs.validate-release-target.outputs.checkout_ref }}
           persist-credentials: false
@@ -670,7 +670,7 @@ jobs:
         shell: pwsh
     steps:
       - name: Checkout immutable validated release source
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ needs.validate-release-target.outputs.checkout_ref }}
           persist-credentials: false
