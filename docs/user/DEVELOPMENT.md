@@ -27,6 +27,8 @@ npm run tauri
 
 未簽署發布設置 `force_unsigned_candidate=true`，安裝包驗證省略選填的 `OurSignerSubject`，避免空值在子 PowerShell 程序變成缺少參數。簽署發布仍必須提供並驗證發行者名稱。
 
+發布產生元件清單前，以 `cargo fetch --locked --target x86_64-pc-windows-msvc` 補齊含選填依賴的快取；清單產生仍使用 `cargo metadata --locked --offline`，不依賴其他 CI 工作的快取。
+
 一般 push 與既有 PR 新增提交時，只要本次變更全為 `.md`，便僅執行 Markdown 格式檢查；同時修改程式、工作流程或圖片等其他檔案時，執行完整 CI。新開或重開 PR 以整個 PR 差異判斷。無法取得比較歷史、新分支、標籤、手動驗證與發布流程一律執行完整 CI。Markdown 檢查涵蓋 Git 追蹤的文件，排除既有歷史／第三方授權聲明及自動產生的 notices。
 
 Rust 測試前執行 `node tests/scripts/prepare-tectonic-test-bundle.mjs`，從固定來源取得測試資源。暫時性連線中斷、逾時及指定 HTTP 錯誤最多嘗試三次，共用原有 240 秒期限；區段、長度或 SHA-256 不符立即失敗。回歸測試使用 `node --test tests/scripts/tectonic-test-bundle.test.mjs`。
