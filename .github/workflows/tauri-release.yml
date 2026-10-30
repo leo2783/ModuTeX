@@ -498,6 +498,12 @@ jobs:
           pwsh -File scripts/distribution/verify-installer-payload.ps1 -InstallerPath $targetInstaller -ExpectedBundledExeSha256 $expectedExeSha -ExpectedProductName 'ModuTeX' -ExpectedProductVersion $env:EXPECTED_VERSION -ExpectedTectonicSha256 $expectedTectonicSha -OurSignerSubject $env:EXPECTED_PUBLISHER -ReceiptPath $cdReceiptPath
           if ($LASTEXITCODE -ne 0) { throw "Signed installer payload re-verification failed with exit code $LASTEXITCODE" }
 
+      - name: Prepare locked Cargo dependencies for offline inventory
+        timeout-minutes: 5
+        run: |
+          cargo fetch --manifest-path apps/desktop-tauri/Cargo.toml --locked --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw 'Locked Cargo inventory dependency preparation failed' }
+
       - name: Generate component inventory and release provenance
         env:
           EXPECTED_RELEASE_COMMIT: ${{ needs.validate-release-target.outputs.release_commit }}
