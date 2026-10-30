@@ -68,6 +68,10 @@ npm run frontend:check
 npm run frontend:test
 ```
 
+## Code signing policy
+
+SignPath Foundation application preparation is in progress. See the [Code signing policy](docs/distribution/SIGNPATH_ELIGIBILITY.md) for signing scope, team roles and release approvals, and the [Privacy policy](docs/user/PRIVACY.md) for local data and network activity.
+
 ## License
 
 Original code in the current Tauri application is licensed under [Apache-2.0](LICENSE).

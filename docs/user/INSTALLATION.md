@@ -14,4 +14,6 @@ Get-FileHash -LiteralPath '.\安裝檔.exe' -Algorithm SHA256
 
 需要更新時，使用 App 的更新提醒下載新版本。安裝前依提示儲存文件，並等待編譯結束。
 
+App 啟動後會自動向 GitHub 檢查更新；下載與安裝需由使用者操作。首次編譯可能另需下載 TeX 套件。完整網路行為與資料處理見[隱私政策](PRIVACY.md)，簽章狀態與核准流程見 [Code signing policy](../distribution/SIGNPATH_ELIGIBILITY.md)。
+
 開發者從原始碼啟動的方式見[開發指南](DEVELOPMENT.md)。

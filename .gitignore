@@ -180,7 +180,9 @@ roundtrip-diff/
 apps/frontend/.pdf-lifetime-*/
 docs/architecture/
 docs/design/
-docs/distribution/
+# Keep internal distribution records local; publish the code signing policy.
+docs/distribution/*
+!docs/distribution/SIGNPATH_ELIGIBILITY.md
 docs/AUDIT_REPORT_SECURITY_PERF_CI.md
 
 .agents/

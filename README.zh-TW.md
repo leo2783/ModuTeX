@@ -68,6 +68,10 @@ npm run frontend:check
 npm run frontend:test
 ```
 
+## Code signing policy／程式碼簽章政策
+
+目前正在準備 SignPath Foundation 申請。簽章範圍、團隊角色與發布核准流程請參閱 [Code signing policy](docs/distribution/SIGNPATH_ELIGIBILITY.md)；本機資料與網路行為請參閱[隱私政策](docs/user/PRIVACY.md)。
+
 ## 授權條款
 
 目前 Tauri 應用程式的原創程式碼採用 [Apache-2.0](LICENSE) 授權。
