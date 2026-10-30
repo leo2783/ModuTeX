@@ -11,6 +11,17 @@ import { load } from 'js-yaml';
 
 const workflowPath = resolve(process.env.MODUTEX_TEST_CD_WORKFLOW ?? '.github/workflows/tauri-release.yml');
 const workflow = load(await readFile(workflowPath, 'utf8'));
+test('release prepares locked optional Cargo dependencies before offline inventory', () => {
+  const steps = workflow.jobs['release-build-and-sign'].steps;
+  const prepare = steps.findIndex(s => s.name === 'Prepare locked Cargo dependencies for offline inventory');
+  const inventory = steps.findIndex(s => s.name === 'Generate component inventory and release provenance');
+  assert(prepare >= 0 && prepare < inventory);
+  assert.equal(steps[prepare]['timeout-minutes'], 5);
+  assert.equal(steps[prepare].if, undefined);
+  assert.notEqual(steps[prepare]['continue-on-error'], true);
+  assert.match(steps[prepare].run, /cargo fetch --manifest-path apps\/desktop-tauri\/Cargo.toml --locked --target x86_64-pc-windows-msvc/);
+  assert.match(steps[prepare].run, /if \(\$LASTEXITCODE -ne 0\) \{ throw/);
+});
 const quote = s => `'${s.replaceAll("'", "''")}'`;
 function block(job, name) {
   const value = workflow.jobs[job].steps.find(s => s.name === name)?.run;
