@@ -4,16 +4,16 @@ Windows x64 的 Rust／Tauri 2 後端，前端使用 WebView2。自有程式碼�
 
 ## 目錄
 
-| 路徑 | 責任 |
-|---|---|
-| `src/commands` | Tauri 命令與視窗入口 |
-| `src/platform` | 原生系統與檔案操作 |
-| `src/schemas` | DTO、識別碼及輸入驗證 |
-| `src/services` | 檔案、Git、監看服務 |
-| `src/shared` | 共用路徑工具 |
-| `src/state` | 設定、工作階段、近期紀錄與能力狀態 |
-| `tests/unit` | 集中單元及原生測試，保留私有模組存取 |
-| `tests/tools` | 引擎與終端機 smoke 工具，僅在 `g1-prototypes` 啟用 |
+| 路徑           | 責任                                               |
+| -------------- | -------------------------------------------------- |
+| `src/commands` | Tauri 命令與視窗入口                               |
+| `src/platform` | 原生系統與檔案操作                                 |
+| `src/schemas`  | DTO、識別碼及輸入驗證                              |
+| `src/services` | 檔案、Git、監看服務                                |
+| `src/shared`   | 共用路徑工具                                       |
+| `src/state`    | 設定、工作階段、近期紀錄與能力狀態                 |
+| `tests/unit`   | 集中單元及原生測試，保留私有模組存取               |
+| `tests/tools`  | 引擎與終端機 smoke 工具，僅在 `g1-prototypes` 啟用 |
 
 ## 啟動
 

@@ -25,6 +25,8 @@ npm run tauri
 
 [CI](../../.github/workflows/tauri-ci.yml) 按 Markdown、前端、Rust、安全、原生 E2E 與打包驗證拆分。[發布流程](../../.github/workflows/tauri-release.yml) 使用 CI 驗證過的執行檔處理簽章與更新產物。
 
+一般 push 與既有 PR 新增提交時，只要本次變更全為 `.md`，便僅執行 Markdown 格式檢查；同時修改程式、工作流程或圖片等其他檔案時，執行完整 CI。新開或重開 PR 以整個 PR 差異判斷。無法取得比較歷史、新分支、標籤、手動驗證與發布流程一律執行完整 CI。Markdown 檢查涵蓋 Git 追蹤的文件，排除既有歷史／第三方授權聲明及自動產生的 notices。
+
 Rust 測試前執行 `node tests/scripts/prepare-tectonic-test-bundle.mjs`，從固定來源取得測試資源。暫時性連線中斷、逾時及指定 HTTP 錯誤最多嘗試三次，共用原有 240 秒期限；區段、長度或 SHA-256 不符立即失敗。回歸測試使用 `node --test tests/scripts/tectonic-test-bundle.test.mjs`。
 
 原生編譯驗證執行 `node tests/scripts/tauri-compile-config-e2e.mjs`；設置 `MODUTEX_TEST_PERIODIC_WATCH=1` 可包含實際 60 秒監看週期。圖片案例透過視覺編輯器的 `Control+End` 定位文件末尾，避免換行後插圖拆開定位文字，並驗證原段落、圖片存檔與 PDF 像素。

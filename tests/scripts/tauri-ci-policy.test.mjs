@@ -304,7 +304,9 @@ export function validateTauriCiContract(wf) {
 		validateDependencyGraph(node);
 
 		for (const [id, job] of Object.entries(node.workflow.jobs)) {
-			assert.equal(job.if, undefined, `${id} cannot skip a required job`);
+			if (node === wf && id === 'source-identity') {
+				assert.equal(job.if, "needs.changes.outputs.full_ci == 'true'", 'only Markdown-only events may skip the full graph');
+			} else assert.equal(job.if, undefined, `${id} cannot skip a required job`);
 			assert.equal(job['continue-on-error'], undefined, `${id} cannot swallow errors`);
 			for (const value of Object.values(job.permissions ?? {})) {
 				assert.equal(value, 'read', 'read-only job permissions required');
@@ -326,7 +328,7 @@ export function validateTauriCiContract(wf) {
 				if (step.uses?.startsWith('actions/checkout@')) {
 					assert.equal(step.with?.['persist-credentials'], false, 'checkout cannot retain credentials');
 					assert.doesNotMatch(step.with?.ref ?? '', /github\.ref|\|\|/, 'checkout must use validated source SHA');
-					if (node === wf && id === 'source-identity') {
+					if (node === wf && ['source-identity', 'changes'].includes(id)) {
 						assert.equal(step.with?.ref, '${{ needs.validate-source-ref.outputs.checkout_ref }}');
 					} else {
 						assert.equal(step.with?.ref, '${{ inputs.checkout_ref }}', 'reusable jobs must use source admission identity');
@@ -419,14 +421,14 @@ export function validateTauriCiContract(wf) {
 	validatePackageAndLifecycle(wf, gates);
 }
 
-test('automatic CI covers every branch and skips only docs-only changes', async () => {
+test('automatic CI admits every branch and Markdown-only events for scoped checks', async () => {
 	const { on: triggers } = (await workflow()).workflow;
 	for (const event of ['push', 'pull_request']) {
 		const filters = triggers[event];
 		assert.equal(filters.branches, undefined, `${event} must not restrict CI to named development branches`);
 		assert.equal(filters['branches-ignore'], undefined, `${event} must include documentation branches with code changes`);
 		assert.equal(filters.paths, undefined, `${event} must not allowlist source paths`);
-		assert.deepEqual(filters['paths-ignore'], ['docs/**'], `${event} skips only changes confined to docs/`);
+		assert.equal(filters['paths-ignore'], undefined, `${event} must still validate Markdown-only changes`);
 	}
 });
 
