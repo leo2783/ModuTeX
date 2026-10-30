@@ -31,4 +31,8 @@ Rust 測試前執行 `node tests/scripts/prepare-tectonic-test-bundle.mjs`，從
 
 原生編譯驗證執行 `node tests/scripts/tauri-compile-config-e2e.mjs`；設置 `MODUTEX_TEST_PERIODIC_WATCH=1` 可包含實際 60 秒監看週期。圖片案例透過視覺編輯器的 `Control+End` 定位文件末尾，避免換行後插圖拆開定位文字，並驗證原段落、圖片存檔與 PDF 像素。
 
+CDP 程序歸屬同時檢查父程序 PID 與建立時間，排除 Windows 重用 PID 造成的過期父子關係。啟動診斷與監聽埠驗證共用此規則。
+
+線上與離線 NSIS 安裝包共用 `apps/desktop-tauri/windows/installer-hooks.nsh`。解除安裝先確認主程式已停止，再於約 10 秒內重試移除被暫時鎖定的主程式；持續鎖定會回傳失敗，保留解除安裝資訊。打包 CI 使用實際 NSIS 驗證原始殘留問題、短暫鎖定成功及持續鎖定失敗；本機可設置 `MODUTEX_TEST_MAKENSIS` 為 `makensis.exe` 路徑後，執行 `node --test tests/scripts/distribution/nsis-uninstall.test.mjs`。既有完整安裝／修復／解除安裝與文件保留驗收仍須通過。
+
 完整工作台瀏覽器回歸使用 `node --test --test-concurrency=1 apps/frontend/tests/app/*.test.mjs`。混合文章矩陣保留 24 種情境，透過真實滑鼠拖選標題並確認完整選取後操作格式工具列，避免 `Home`／`End` 隨版面位置選到部分文字。

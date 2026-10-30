@@ -14,6 +14,22 @@ const run = (file, args, options = {}) => new Promise((accept, reject) => execFi
   { windowsHide: true, timeout: 20000, ...options }, (error, stdout, stderr) =>
     error ? reject(Error(`${error}: ${stdout} ${stderr}`)) : accept(stdout)));
 
+test('owned process traversal rejects stale parent PIDs reused by a newer host', { skip: !windows }, async () => {
+  const output = await run(process.env.MODUTEX_TEST_PWSH ?? 'pwsh.exe', ['-NoProfile', '-Command', `
+. ./tests/scripts/helpers/owned-process-diagnostics.ps1
+function Entry($id, $parent, $seconds) {
+  [pscustomobject]@{ProcessId=$id;ParentProcessId=$parent;CreationDate=([datetime]'2026-01-01').AddSeconds($seconds)}
+}
+# The unrelated older runner still names PID 100 as its historical parent.
+$entries=@((Entry 300 200 30),(Entry 900 800 1),(Entry 200 100 20),(Entry 800 100 2),(Entry 100 50 10))
+$ids=Get-OwnedProcessIds -OwnedProcessId 100 -Processes $entries
+ConvertTo-Json -InputObject @($ids | Sort-Object) -Compress
+$missing=Get-OwnedProcessIds -OwnedProcessId 50 -Processes $entries
+if($missing.Count -ne 0){throw 'Absent root must not claim descendants'}
+`], { cwd: resolve(import.meta.dirname, '../..') });
+  assert.deepEqual(JSON.parse(output), [100, 200, 300]);
+});
+
 for (const mode of ['transient', 'permanent', 'repeated', 'deadline', 'mirror-deadline']) {
   test(`MiKTeX download resumes only transient transfers within the original budget: ${mode}`, { skip: !windows }, async () => {
     const fixture = await mkdtemp(join(tmpdir(), 'modutex-download-resume-'));

@@ -62,18 +62,19 @@ async function inspectCdpListeners(ownedProcessId, port) {
     throw new Error('Cannot validate CDP listener ownership without the native host PID');
   }
   const command = `$ErrorActionPreference = 'Stop'; $rootId = ${ownedProcessId}; $port = ${port}; ` +
-    '$all = @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop); ' +
-    '$owned = [System.Collections.Generic.HashSet[int]]::new(); [void]$owned.Add($rootId); ' +
-    'do { $changed = $false; foreach ($candidate in $all) { ' +
-    'if ($owned.Contains([int]$candidate.ParentProcessId) -and $owned.Add([int]$candidate.ProcessId)) { $changed = $true } ' +
-    '} } while ($changed); ' +
+    '. $env:MODUTEX_PROCESS_DIAGNOSTICS; ' +
+    '$all = @(Get-CimInstance -ClassName Win32_Process -OperationTimeoutSec 3 -ErrorAction Stop); ' +
+    '$owned = Get-OwnedProcessIds -OwnedProcessId $rootId -Processes $all; ' +
     '$listeners = @(Get-CimInstance -Namespace root/StandardCimv2 -ClassName MSFT_NetTCPConnection -Filter "LocalPort = $port AND State = 2" -ErrorAction Stop | ForEach-Object { ' +
     '$ownerId = [int]$_.OwningProcess; $owner = $all | Where-Object { [int]$_.ProcessId -eq $ownerId } | Select-Object -First 1; ' +
     '[pscustomobject]@{ LocalAddress = [string]$_.LocalAddress; OwningProcess = $ownerId; ' +
     'OwnedByHost = $owned.Contains($ownerId); ProcessName = [string]$owner.Name; CommandLine = [string]$owner.CommandLine } ' +
     '}); ConvertTo-Json -InputObject $listeners -Depth 3 -Compress';
   const result = await new Promise((accept, reject) => execFile(process.env.MODUTEX_TEST_PWSH ?? 'pwsh.exe',
-    ['-NoProfile', '-Command', command], { windowsHide: true, timeout: 5000, maxBuffer: 1024 * 1024 },
+    ['-NoProfile', '-Command', command], {
+      windowsHide: true, timeout: 5000, maxBuffer: 1024 * 1024,
+      env: { ...process.env, MODUTEX_PROCESS_DIAGNOSTICS: join(import.meta.dirname, 'owned-process-diagnostics.ps1') }
+    },
     (error, stdout, output) => error ? reject(Error('Native CDP ownership query failed: ' + JSON.stringify({
       message: error.message, code: error.code, killed: error.killed, signal: error.signal,
       stdout: stdout.slice(-8192), stderr: output.slice(-8192)

@@ -401,6 +401,14 @@ jobs:
           if (Test-Path -LiteralPath $staged) { Remove-Item -LiteralPath $staged -Force }
 
           Copy-Item -LiteralPath $exactInstaller -Destination $staged -Force
+      - name: Verify NSIS uninstall lock handling with the bundled compiler
+        run: |
+          $env:MODUTEX_TEST_MAKENSIS = Join-Path $env:LOCALAPPDATA 'tauri/NSIS/makensis.exe'
+          if (-not (Test-Path -LiteralPath $env:MODUTEX_TEST_MAKENSIS -PathType Leaf)) {
+            throw 'The NSIS compiler used for packaging is required for uninstall regression tests'
+          }
+          node --test tests/scripts/distribution/nsis-uninstall.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS uninstall lock regression failed' }
       - name: Verify online and offline installer payloads
         env:
           EXPECTED_EXE_SHA: ${{ inputs.built_exe_sha256 }}
