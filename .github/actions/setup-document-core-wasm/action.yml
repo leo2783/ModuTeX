@@ -13,7 +13,7 @@ runs:
         if ($LASTEXITCODE -ne 0) { throw "Rust toolchain selection failed with exit code $LASTEXITCODE" }
         rustup target add wasm32-unknown-unknown --toolchain 1.97.1-x86_64-pc-windows-msvc
         if ($LASTEXITCODE -ne 0) { throw "WebAssembly target installation failed with exit code $LASTEXITCODE" }
-        cargo install wasm-bindgen-cli --version 0.2.126 --locked
+        cargo install wasm-bindgen-cli --version 0.2.129 --locked
         if ($LASTEXITCODE -ne 0) { throw "wasm-bindgen CLI installation failed with exit code $LASTEXITCODE" }
         $rustcVersion = rustc --version
         if ($LASTEXITCODE -ne 0 -or $rustcVersion -notmatch '^rustc 1\.97\.1(?:\s|$)') {
@@ -24,8 +24,8 @@ runs:
           throw "Cargo 1.97.1 is required, got '$cargoVersion'"
         }
         $wasmBindgenVersion = wasm-bindgen --version
-        if ($LASTEXITCODE -ne 0 -or $wasmBindgenVersion -ne 'wasm-bindgen 0.2.126') {
-          throw "wasm-bindgen 0.2.126 is required, got '$wasmBindgenVersion'"
+        if ($LASTEXITCODE -ne 0 -or $wasmBindgenVersion -ne 'wasm-bindgen 0.2.129') {
+          throw "wasm-bindgen 0.2.129 is required, got '$wasmBindgenVersion'"
         }
     - name: Install pinned Rust and wasm-bindgen on Linux
       if: runner.os == 'Linux'
@@ -35,7 +35,7 @@ runs:
         rustup toolchain install 1.97.1 --profile minimal --target wasm32-unknown-unknown
         rustup default 1.97.1
         rustup target add wasm32-unknown-unknown --toolchain 1.97.1
-        cargo install wasm-bindgen-cli --version 0.2.126 --locked
+        cargo install wasm-bindgen-cli --version 0.2.129 --locked
         rustc_version="$(rustc --version)"
         case "$rustc_version" in
           "rustc 1.97.1"*) ;;
@@ -47,7 +47,7 @@ runs:
           *) printf 'Cargo 1.97.1 is required, got %s\n' "$cargo_version" >&2; exit 1 ;;
         esac
         wasm_bindgen_version="$(wasm-bindgen --version)"
-        if [ "$wasm_bindgen_version" != 'wasm-bindgen 0.2.126' ]; then
-          printf 'wasm-bindgen 0.2.126 is required, got %s\n' "$wasm_bindgen_version" >&2
+        if [ "$wasm_bindgen_version" != 'wasm-bindgen 0.2.129' ]; then
+          printf 'wasm-bindgen 0.2.129 is required, got %s\n' "$wasm_bindgen_version" >&2
           exit 1
         fi
