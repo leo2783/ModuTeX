@@ -281,7 +281,7 @@ jobs:
       - name: Stage 1 - Upload unsigned executable artifact for SignPath
         if: steps.signpath_status.outputs.configured == 'true'
         id: upload_unsigned_exe
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ModuTeX-Executable-Unsigned-Zip
           path: apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe
@@ -434,7 +434,7 @@ jobs:
       - name: Stage 2 - Upload unsigned installer artifact for SignPath
         if: steps.signpath_status.outputs.configured == 'true'
         id: upload_unsigned_installer
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ModuTeX-Installer-Unsigned-Zip
           path: apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ModuTeX_${{ needs.validate-release-target.outputs.release_version }}_x64-setup.exe
@@ -635,7 +635,7 @@ jobs:
 
       - name: Upload final release package artifacts
         id: upload_final_release
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ModuTeX-Release-${{ needs.validate-release-target.outputs.release_tag }}
           path: dist-release/*

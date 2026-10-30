@@ -686,7 +686,7 @@ jobs:
 
           Copy-Item -LiteralPath $npmLockPath -Destination '.verification-artifacts/tauri/package-lock.json' -Force
       - name: Upload validated online installer
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ModuTeX-Tauri-Windows-x64-Online-Installer
           path: >-
@@ -694,7 +694,7 @@ jobs:
             }}_x64-setup-online.exe
           if-no-files-found: error
       - name: Upload validated offline installer
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ModuTeX-Tauri-Windows-x64-Offline-Installer
           path: >-
@@ -703,7 +703,7 @@ jobs:
           if-no-files-found: error
       - name: Upload Tauri source, package, and failure evidence
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ModuTeX-Tauri-CI-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
