@@ -797,6 +797,9 @@ test('real Rust engine tests prepare a verified local bundle before execution',a
 	assert.equal(steps[prepare]['timeout-minutes'],5);
 	assert.match(steps[prepare].run,/node tests\/scripts\/prepare-tectonic-test-bundle\.mjs/);
 	assert.match(steps[prepare].run,/LASTEXITCODE -ne 0/);
+	assert.match(steps[tests].run,/MODUTEX_TEST_NODE = \(Get-Command node -CommandType Application -ErrorAction Stop \| Select-Object -First 1\).Source/);
+	assert.match(steps[tests].run,/& \$env:MODUTEX_TEST_NODE --version/);
+	assert.match(steps[tests].run,/cargo test[^\r\n]+-p modutex-desktop-tauri -- --test-threads=1/);
 });
 
 test('release signing remains downstream of the same CI-tested executable identity', async () => {

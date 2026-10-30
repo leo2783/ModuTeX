@@ -566,14 +566,14 @@ jobs:
       - name: Run Rust tests for desktop-tauri with serialized process cleanup
         env:
           MODUTEX_TEST_LUALATEX: ${{ steps.miktex.outputs.lualatex }}
-        run: >
-          cargo test --manifest-path apps/desktop-tauri/Cargo.toml --locked --release --target x86_64-pc-windows-msvc -p
-          modutex-desktop-tauri -- --test-threads=1
+        run: |
+          $env:MODUTEX_TEST_NODE = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+          if ((& $env:MODUTEX_TEST_NODE --version) -ne 'v24.22.1') { throw 'ConPTY tests require the verified Node.js 24.22.1 executable' }
+          cargo test --manifest-path apps/desktop-tauri/Cargo.toml --locked --release --target x86_64-pc-windows-msvc -p modutex-desktop-tauri -- --test-threads=1
 
           if ($LASTEXITCODE -ne 0) { throw "desktop-tauri tests failed with exit code $LASTEXITCODE" }
 
-          cargo test --manifest-path crates/document-core/Cargo.toml --locked --release --target x86_64-pc-windows-msvc
-          --all-targets --all-features
+          cargo test --manifest-path crates/document-core/Cargo.toml --locked --release --target x86_64-pc-windows-msvc --all-targets --all-features
 
           if ($LASTEXITCODE -ne 0) { throw "document-core tests failed with exit code $LASTEXITCODE" }
       - name: Upload MiKTeX logs on failure
