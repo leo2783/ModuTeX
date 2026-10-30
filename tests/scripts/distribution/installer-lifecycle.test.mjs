@@ -71,18 +71,15 @@ $script:sentinelPath=Join-Path $user 'Documents\\sentinel.tex'
 [IO.File]::WriteAllText($script:sentinelPath,'unchanged document')
 $script:sentinelSha256=(Get-FileHash -LiteralPath $script:sentinelPath).Hash.ToLowerInvariant()
 try {
- [Console]::Error.WriteLine('PROFILE_STAGE create-isolated-profile')
  $null=New-IsolatedInstalledAppProfile
- [Console]::Error.WriteLine('PROFILE_STAGE isolated-profile-created')
  foreach($relative in @('AppData\\Roaming','AppData\\Local')){
   if(-not (Test-Path -LiteralPath (Join-Path $user $relative) -PathType Container)){throw "Missing Windows known folder: $relative"}
  }
  $probe=@'
-[Console]::Error.WriteLine('PROFILE_STAGE child-before-add-type')
-Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class LifecycleFolderProbe { [DllImport("shell32.dll")] static extern int SHGetKnownFolderPath(ref Guid id, uint flags, IntPtr token, out IntPtr path); public static string Read(string key) { Guid id=new Guid(key); IntPtr path; int result=SHGetKnownFolderPath(ref id,0,IntPtr.Zero,out path); try { if(result!=0) throw new Exception("Known folder failed: "+result); return Marshal.PtrToStringUni(path); } finally { Marshal.FreeCoTaskMem(path); } } }'
-[Console]::Error.WriteLine('PROFILE_STAGE child-before-known-folder')
-[LifecycleFolderProbe]::Read('3EB685DB-65F9-4CF6-A03A-E3EF65729F3D')
-[LifecycleFolderProbe]::Read('F1B32785-6FBA-4FCF-9D55-7B8E7F157091')
+# Use the runtime's Windows known-folder implementation without cold-compiling
+# a duplicate P/Invoke shim inside the isolated child.
+[Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
+[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
 '@
  $child=[Diagnostics.ProcessStartInfo]::new((Get-Process -Id $PID).Path)
  $child.UseShellExecute=$false
@@ -94,10 +91,10 @@ Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; pu
  $child.Environment['APPDATA']=Join-Path $user 'AppData\\Roaming'
  $child.Environment['LOCALAPPDATA']=Join-Path $user 'AppData\\Local'
  $process=[Diagnostics.Process]::Start($child)
- [Console]::Error.WriteLine('PROFILE_STAGE read-child-output')
  try {
-  $resolved=$process.StandardOutput.ReadToEnd()
+  $output=$process.StandardOutput.ReadToEndAsync()
   if(-not $process.WaitForExit(10000) -or $process.ExitCode -ne 0){throw 'Known folder probe failed'}
+  $resolved=$output.GetAwaiter().GetResult()
   foreach($relative in @('AppData\\Roaming','AppData\\Local')){
    if($resolved.IndexOf((Join-Path $user $relative),[StringComparison]::OrdinalIgnoreCase) -lt 0){throw 'Known folder escaped isolated profile'}
   }
