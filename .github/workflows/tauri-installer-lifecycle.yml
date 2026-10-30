@@ -65,7 +65,7 @@ jobs:
       PRIOR_EXECUTABLE_NAME: ${{ github.event.inputs.prior_executable_name || '' }}
     steps:
       - name: Checkout verified source commit
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
@@ -189,7 +189,7 @@ jobs:
           $LASTEXITCODE" }
       - name: Upload installer lifecycle receipt
         if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ModuTeX-Tauri-Installer-Lifecycle-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: .verification-artifacts/tauri/installer-lifecycle-${{ matrix.lane }}.json

@@ -53,6 +53,9 @@ export async function waitNativeCdp({ app, port, evidence, lane, stderr, launchE
     }
     await mkdir(evidence, { recursive: true });
     await writeFile(join(evidence, `${lane}-startup-e2e.json`), JSON.stringify(diagnostic, null, 2));
+    // Keep the same bounded, app-owned evidence readable when artifact downloads
+    // are unavailable. Never dump the runner environment or unrelated processes.
+    console.error(`Native CDP startup diagnostic: ${JSON.stringify(diagnostic)}`);
     throw error;
   }
 }

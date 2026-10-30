@@ -42,8 +42,8 @@ function run(command, args, capture = false) {
 
 try {
 	const version = run(wasmBindgen, ['--version'], true);
-	if (version !== 'wasm-bindgen 0.2.126') {
-		throw new Error(`Expected wasm-bindgen 0.2.126; found ${version || 'no version output'}`);
+	if (version !== 'wasm-bindgen 0.2.129') {
+		throw new Error(`Expected wasm-bindgen 0.2.129; found ${version || 'no version output'}`);
 	}
 
 	await mkdir(outputDirectory, { recursive: true });

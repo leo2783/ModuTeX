@@ -25,13 +25,13 @@ jobs:
         shell: bash
     steps:
       - name: Checkout verified source commit
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
           fetch-depth: 1
       - name: Setup Node.js 24.22.1
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 24.22.1
           package-manager-cache: false
@@ -54,7 +54,7 @@ jobs:
     runs-on: windows-2025
     steps:
       - name: Checkout verified source commit
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
@@ -84,7 +84,7 @@ jobs:
     runs-on: windows-2025
     steps:
       - name: Checkout verified source commit
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
@@ -163,7 +163,7 @@ jobs:
     runs-on: windows-2025
     steps:
       - name: Checkout verified source commit
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.checkout_ref }}
           persist-credentials: false
@@ -550,7 +550,7 @@ jobs:
           }
           "lualatex=$lualatexPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
       - name: Setup Node.js 24.22.1
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 24.22.1
           package-manager-cache: false
@@ -566,19 +566,19 @@ jobs:
       - name: Run Rust tests for desktop-tauri with serialized process cleanup
         env:
           MODUTEX_TEST_LUALATEX: ${{ steps.miktex.outputs.lualatex }}
-        run: >
-          cargo test --manifest-path apps/desktop-tauri/Cargo.toml --locked --release --target x86_64-pc-windows-msvc -p
-          modutex-desktop-tauri -- --test-threads=1
+        run: |
+          $env:MODUTEX_TEST_NODE = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+          if ((& $env:MODUTEX_TEST_NODE --version) -ne 'v24.22.1') { throw 'ConPTY tests require the verified Node.js 24.22.1 executable' }
+          cargo test --manifest-path apps/desktop-tauri/Cargo.toml --locked --release --target x86_64-pc-windows-msvc -p modutex-desktop-tauri -- --test-threads=1
 
           if ($LASTEXITCODE -ne 0) { throw "desktop-tauri tests failed with exit code $LASTEXITCODE" }
 
-          cargo test --manifest-path crates/document-core/Cargo.toml --locked --release --target x86_64-pc-windows-msvc
-          --all-targets --all-features
+          cargo test --manifest-path crates/document-core/Cargo.toml --locked --release --target x86_64-pc-windows-msvc --all-targets --all-features
 
           if ($LASTEXITCODE -ne 0) { throw "document-core tests failed with exit code $LASTEXITCODE" }
       - name: Upload MiKTeX logs on failure
         if: failure()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: miktex-logs-${{ github.run_id }}-${{ github.run_attempt }}
           path: |

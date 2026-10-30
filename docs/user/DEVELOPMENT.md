@@ -1,16 +1,20 @@
 # 開發與打包
 
-在儲存庫根目錄執行。使用 Node.js 24.22.1、npm 11.19.1、Rust 1.97.1 MSVC 與 wasm-bindgen-cli 0.2.126。
+在儲存庫根目錄執行。使用 Node.js 24.22.1、npm 11.19.1、Rust 1.97.1 MSVC 與 wasm-bindgen-cli 0.2.129。
 
 ```powershell
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.126 --locked
+cargo install wasm-bindgen-cli --version 0.2.129 --locked
 npm ci
 npm run build
 npm run tauri
 ```
 
 `npm run tauri` 啟動已建置的執行檔。修改程式後先重新建置。
+
+更新依賴時，桌面與 document-core 的 `serde` 固定版本必須一致，並同步兩份 Cargo lockfile。`wasm-bindgen` crate、CI 安裝的 CLI 與前端建置版本檢查也必須同步；GitHub Actions 更新需核對官方標籤的完整 SHA，再更新 CI 政策白名單。
+
+landing 的 Inlang plugins 使用明確宣告的本機依賴。CI 會產生翻譯、執行型別檢查及正式建置，避免依賴更新只有桌面前端通過。
 
 | 命令                            | 用途                                 |
 | ------------------------------- | ------------------------------------ |

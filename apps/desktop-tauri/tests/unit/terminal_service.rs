@@ -292,6 +292,14 @@ mod reviewer_supervision_tests {
     }
 
     fn resolve_test_node_exe() -> PathBuf {
+        if let Some(configured) = std::env::var_os("MODUTEX_TEST_NODE") {
+            let configured = PathBuf::from(configured);
+            assert!(
+                configured.is_absolute() && configured.is_file(),
+                "MODUTEX_TEST_NODE must identify an existing absolute Node executable"
+            );
+            return fs::canonicalize(&configured).expect("canonical test Node executable");
+        }
         let standard = PathBuf::from(r"C:\Program Files\nodejs\node.exe");
         if standard.is_file() {
             return fs::canonicalize(&standard).unwrap_or(standard);
@@ -320,6 +328,7 @@ mod reviewer_supervision_tests {
             System::Threading::{OpenProcess, WaitForSingleObject},
         };
         let node_exe = resolve_test_node_exe();
+        eprintln!("ConPTY fixture Node executable: {}", node_exe.display());
         let path = std::env::temp_dir().join(format!(
             "modutex-terminal-node-tree-{}",
             uuid::Uuid::new_v4()

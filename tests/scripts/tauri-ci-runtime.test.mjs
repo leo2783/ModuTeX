@@ -101,7 +101,8 @@ test('CDP readiness accepts a live owned loopback endpoint without generating fa
   }
 });
 
-test('CDP timeout preserves live owned process evidence and stderr before caller cleanup', { skip: !windows }, async () => {
+test('CDP timeout preserves live owned process evidence and stderr before caller cleanup', { skip: !windows }, async (t) => {
+  const logged = t.mock.method(console, 'error', () => {});
   const evidence = await mkdtemp(join(tmpdir(), 'modutex-cdp-evidence-'));
   const app = spawn(process.execPath, ['-e', 'console.error("launch-tail");setInterval(()=>{},1000)'],
     { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
@@ -115,6 +116,9 @@ test('CDP timeout preserves live owned process evidence and stderr before caller
     await assert.rejects(waitNativeCdp({ app, port: server.address().port, evidence,
       lane: 'timeout-test', stderr: () => stderr, launchError: () => undefined, timeoutMs: 100 }), /CDP endpoint unavailable/);
     const diagnostic = JSON.parse(await readFile(join(evidence, 'timeout-test-startup-e2e.json')));
+    assert.equal(logged.mock.calls.length, 1);
+    assert.deepEqual(JSON.parse(logged.mock.calls[0].arguments[0].replace('Native CDP startup diagnostic: ', '')), diagnostic,
+      'CI logs must preserve the actual app-owned receipt when artifact downloads are blocked');
     assert.equal(app.exitCode, null, 'helper must record before the caller terminates its host');
     assert.match(diagnostic.stderr, /launch-tail/);
     assert.equal(diagnostic.snapshotError, undefined);

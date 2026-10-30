@@ -9,9 +9,9 @@ import { dump, load } from 'js-yaml';
 const ROOT = resolve(import.meta.dirname, '../..');
 const ACTIONS = new Set([
 	'./.github/actions/setup-document-core-wasm',
-	'actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd',
-	'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
-	'actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f'
+	'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
+	'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1',
+	'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'
 ]);
 const MANIFESTS = ['apps/desktop-tauri/Cargo.toml', 'crates/document-core/Cargo.toml'];
 const GATES = {
@@ -534,6 +534,19 @@ test('frontend unit tests bound native bundler worker pools', async () => {
 	}
 });
 
+test('frontend admission also checks landing localization and the production build', async () => {
+	const frontend = load(await readFile(resolve(ROOT, '.github/workflows/tauri-frontend.yml'), 'utf8'));
+	const step = stepsOf(frontend.jobs['frontend-types']).find(item => item.name === 'Verify landing localization, types, and production build');
+	assert(step, 'landing dependency updates must be exercised by CI');
+	assert.equal(step.if, undefined);
+	assert.notEqual(step['continue-on-error'], true);
+	assert.equal(step['timeout-minutes'], 5);
+	for (const script of ['sync', 'check', 'build']) {
+		assert(step.run.includes(`npm run ${script} --workspace=modutex-landing`));
+	}
+	assert.equal((step.run.match(/if \(\$LASTEXITCODE -ne 0\) \{ throw/g) ?? []).length, 3);
+});
+
 test('supply-chain gates audit complete npm and Cargo lockfiles and preserve failures', async () => {
 	const wf = await workflow();
 	assert(rootAncestors(wf.workflow, 'package-validation').has('supply-chain'), 'package validation must wait for supply-chain audits');
@@ -702,10 +715,36 @@ test('clean runners prepare real WASM bindings and frontend artifacts before dep
 	for (const step of action.runs.steps) {
 		assert.equal(step.uses, undefined, 'bootstrap must not pull unreviewed nested actions');
 		assert.match(step.run, /rustup toolchain install 1\.97\.1/);
-		assert.match(step.run, /cargo install wasm-bindgen-cli --version 0\.2\.126 --locked/);
+		assert.match(step.run, /cargo install wasm-bindgen-cli --version 0\.2\.129 --locked/);
 		assert.match(step.run, /wasm-bindgen --version/);
 		assert.doesNotMatch(step.run, /secrets\./);
 	}
+});
+
+test('shared Rust dependency pins and the WASM CLI match their consumers', async () => {
+	const [desktop, core, bootstrap, frontendBuild] = await Promise.all([
+		readFile(resolve(ROOT, MANIFESTS[0]), 'utf8'),
+		readFile(resolve(ROOT, MANIFESTS[1]), 'utf8'),
+		readFile(resolve(ROOT, '.github/actions/setup-document-core-wasm/action.yml'), 'utf8'),
+		readFile(resolve(ROOT, 'apps/frontend/scripts/build-document-core.mjs'), 'utf8')
+	]);
+	const serdePin = (manifest) => manifest.match(/^serde\s*=\s*\{\s*version\s*=\s*"(=[^"]+)"/m)?.[1];
+	assert(serdePin(core), 'document-core must pin serde exactly');
+	assert.equal(serdePin(desktop), serdePin(core), 'desktop and document-core must resolve the same pinned serde');
+	const wasmPin = core.match(/^wasm-bindgen\s*=\s*\{\s*version\s*=\s*"=([^"]+)"/m)?.[1];
+	assert(wasmPin, 'document-core must pin wasm-bindgen exactly');
+	for (const step of load(bootstrap).runs.steps) {
+		assert.equal(
+			step.run.match(/cargo install wasm-bindgen-cli --version (\S+) --locked/)?.[1],
+			wasmPin,
+			`${step.name}: WASM schema and CLI versions must match`
+		);
+	}
+	assert.equal(
+		frontendBuild.match(/version !== 'wasm-bindgen ([^']+)'/)?.[1],
+		wasmPin,
+		'frontend CLI guard must accept the document-core WASM schema'
+	);
 });
 
 test('MiKTeX prewarm uses bounded official mirrors and verifies the pinned archive before extraction', async () => {
@@ -758,6 +797,9 @@ test('real Rust engine tests prepare a verified local bundle before execution',a
 	assert.equal(steps[prepare]['timeout-minutes'],5);
 	assert.match(steps[prepare].run,/node tests\/scripts\/prepare-tectonic-test-bundle\.mjs/);
 	assert.match(steps[prepare].run,/LASTEXITCODE -ne 0/);
+	assert.match(steps[tests].run,/MODUTEX_TEST_NODE = \(Get-Command node -CommandType Application -ErrorAction Stop \| Select-Object -First 1\).Source/);
+	assert.match(steps[tests].run,/& \$env:MODUTEX_TEST_NODE --version/);
+	assert.match(steps[tests].run,/cargo test[^\r\n]+-p modutex-desktop-tauri -- --test-threads=1/);
 });
 
 test('release signing remains downstream of the same CI-tested executable identity', async () => {
