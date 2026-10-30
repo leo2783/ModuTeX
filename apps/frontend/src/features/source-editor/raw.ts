@@ -1,5 +1,5 @@
 import type { EditorState } from '@codemirror/state';
-import type { SourceSpan } from '@modutex/document-core';
+import type { SourceSpan } from '../document-core/core.ts';
 import { sourceState, insertionTransaction, rangeInsertionTarget } from './state.ts';
 
 /** Explicit source tool; no parser rewrite or implicit package insertion. */

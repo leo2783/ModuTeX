@@ -1,7 +1,7 @@
 import { StateEffect, StateField, type EditorState, type Extension } from '@codemirror/state';
 import { codeFolding, foldGutter, foldKeymap, foldService } from '@codemirror/language';
 import { keymap, ViewPlugin } from '@codemirror/view';
-import { projectionIsCurrent, SourceError, type SourceProjection, type SyntaxNode } from '@modutex/document-core';
+import { projectionIsCurrent, SourceError, type SourceProjection, type SyntaxNode } from '../document-core/core.ts';
 import { sourceState } from './state.ts';
 
 interface FoldRange { readonly line: number; readonly from: number; readonly to: number }
@@ -27,9 +27,9 @@ function index(state: EditorState, parsed: SourceProjection): FoldIndex {
 		if (!previous || previous.to < to) byLine.set(line.from, Object.freeze({ line: line.from, from: line.to, to }));
 	};
 	const body = parsed.nodes.find((node) => node.kind === 'environment' && node.name === 'document');
-	const headings = (body?.children ?? parsed.nodes).filter((node) => node.kind === 'heading' && /^(?:section|subsection|subsubsection)\*?$/.test(node.name));
+	const headings = (body?.children ?? parsed.nodes).filter((node) => node.kind === 'heading' && /^(?:part|chapter|section|subsection|subsubsection)\*?$/.test(node.name));
 	const stack: { node: SyntaxNode; level: number }[] = [];
-	const levels: Record<string, number> = { section: 0, subsection: 1, subsubsection: 2 };
+	const levels: Record<string, number> = { part: -2, chapter: -1, section: 0, subsection: 1, subsubsection: 2 };
 	for (const node of headings) {
 		const level = levels[node.name.replace(/\*$/, '')]!;
 		while (stack.length && stack.at(-1)!.level >= level) add(stack.pop()!.node.span.from, node.span.from, true);

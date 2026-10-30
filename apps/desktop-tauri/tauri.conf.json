@@ -1,0 +1,85 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ModuTeX",
+  "version": "0.3.0",
+  "identifier": "io.github.leo2783.modutex.tauri",
+  "build": {
+    "frontendDist": "../frontend/dist-tauri",
+    "devUrl": "http://127.0.0.1:5174"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "create": false,
+        "title": "ModuTeX",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "capabilities": [
+        "main"
+      ],
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost blob: data:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'",
+      "devCsp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws://127.0.0.1:5174 ipc: http://ipc.localhost blob: data:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE2NEREOUFCRjg3MTk0RTYKUldUbWxISDRxOWxOcHZkMmxZZFJ1VmxYY1g4WWM3Z21IV01wc3BoN0FOeEdOZ0pQWFBpRW5wMWoK",
+      "requireSignedVersion": true,
+      "endpoints": [
+        "https://github.com/leo2783/ModuTeX/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": [
+      "nsis"
+    ],
+    "resources": {
+      "../../vendor/tectonic/windows-x64/tectonic.exe": "vendor/tectonic/windows-x64/tectonic.exe",
+      "../../vendor/tectonic/VERSION": "vendor/tectonic/VERSION",
+      "../../vendor/notices/TECTONIC-LICENSE.txt": "vendor/notices/TECTONIC-LICENSE.txt",
+      "../../vendor/notices/TECTONIC-NOTICE.md": "vendor/notices/TECTONIC-NOTICE.md",
+      "LICENSE": "LICENSE",
+      "NOTICE": "NOTICE",
+      "../frontend/LICENSE": "apps/frontend/LICENSE",
+      "../frontend/NOTICE": "apps/frontend/NOTICE",
+      "../frontend/THIRD_PARTY_NOTICES.md": "apps/frontend/THIRD_PARTY_NOTICES.md",
+      "../../packages/frontend-contracts/LICENSE": "packages/frontend-contracts/LICENSE"
+    },
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["tex"],
+        "name": "TeX source document"
+      },
+      {
+        "ext": ["pdf"],
+        "name": "PDF document"
+      }
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/installer-hooks.nsh"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+[default]
+description = "Default permissions for frontend terminal"
+permissions = ["allow-frontend-terminal"]
+
+[[permission]]
+identifier = "allow-frontend-terminal"
+description = "Enables all frontend terminal commands"
+commands.allow = [
+    "frontend_terminal_availability",
+    "frontend_terminal_spawn",
+    "frontend_terminal_input",
+    "frontend_terminal_resize",
+    "frontend_terminal_kill",
+]

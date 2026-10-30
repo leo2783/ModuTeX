@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorState } from '@codemirror/state';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { formatTransaction } from '../../src/features/source-editor/format.ts';
 import { createSourceState, historyTransaction, sourceState } from '../../src/features/source-editor/state.ts';
 
@@ -18,8 +18,8 @@ function selectedBetween(text: string, first: string, last: string) {
 }
 
 test('applies across adjacent plain and formatted leaves, then toggles off with shared exact history', () => {
-	const original = '\uFEFFbefore\r\nplain \\emph{marked} tail\n\\opaque{keep\\%😀}\r';
-	const expected = '\uFEFFbefore\r\n\\textbf{plain \\emph{marked} tail}\n\\opaque{keep\\%😀}\r';
+	const original = '\uFEFFbefore\r\nplain \\emph{marked} tail\n\\opaque{keep\\%\ud840\udc00}\r';
+	const expected = '\uFEFFbefore\r\n\\textbf{plain \\emph{marked} tail}\n\\opaque{keep\\%\ud840\udc00}\r';
 	let { source, state } = selectedBetween(original, 'plain', 'tail');
 	const originalSelection = state.selection;
 

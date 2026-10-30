@@ -1,4 +1,4 @@
-import type { SourceDocument, SourceSpan } from '@modutex/document-core';
+import type { SourceDocument, SourceSpan } from '../document-core/core.ts';
 import type { CompileIdentity, Diagnostic } from '@modutex/frontend-contracts';
 
 /** Resolve only the unchanged entry document; locations in includes remain log-only. */

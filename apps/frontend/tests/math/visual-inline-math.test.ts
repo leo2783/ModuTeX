@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
-import { EditorState as VisualState, TextSelection } from 'prosemirror-state';
-import { SourceDocument, parseSource, type SourceSpan } from '@modutex/document-core';
+import { EditorState as VisualState, TextSelection, NodeSelection } from 'prosemirror-state';
+import { SourceDocument, parseSource, type SourceSpan } from '../../src/features/document-core/core.ts';
 import { projectVisual, visualPatches, advanceVisual, escapeVisualText } from '../../src/features/visual-editor/schema.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { createSourceState, sourceState, sourcePatchTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
@@ -24,6 +24,44 @@ function textPosition(doc: ReturnType<typeof projectVisual>['document'], needle:
 	});
 	assert.ok(found >= 0, needle); return found;
 }
+
+test('Backspace/Delete remove only anchored math and shared undo restores exact source bytes', () => {
+	const dom = new JSDOM('<!doctype html><body><div id="target"></div></body>', {pretendToBeVisual:true});
+	const previous = new Map<string, PropertyDescriptor | undefined>();
+	for (const key of ['window', 'document', 'navigator', 'MutationObserver', 'Node', 'HTMLElement', 'getComputedStyle']) {
+		previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+		Object.defineProperty(globalThis, key, {configurable:true, writable:true, value:key === 'getComputedStyle' ? dom.window.getComputedStyle.bind(dom.window) : dom.window[key]});
+	}
+	try {
+		for (const [latex, key, selected] of [['$x$', 'Backspace', false], ['$x$', 'Delete', false], ['$x$', 'Backspace', true], ['\\[y\\]', 'Backspace', true], ['\\[y\\]', 'Delete', true]] as const) {
+			const original = SourceDocument.open(bytes('\ufeff\\begin{document}\r\nBefore ' + latex + ' after.\r\n\\end{document}\r\n'));
+			let editor = createSourceState(original), readonly = false;
+			const view = new VisualEditor(dom.window.document.getElementById('target')!, 'math.tex', {
+				source: () => editor.field(sourceState).projection.document,
+				apply: (identity, patches) => { editor = sourcePatchTransaction(editor, identity, patches).state; return editor.field(sourceState).projection.document; },
+				history: () => false, readOnly: () => readonly, rejected: () => assert.fail('Unexpected rejection'), status: () => {}
+			});
+			try {
+				view.sync(parseSource(original));
+				const atom = atoms(view.view.state.doc)[0]!;
+				view.view.dispatch(view.view.state.tr.setSelection(selected ? NodeSelection.create(view.view.state.doc, atom.position) : TextSelection.create(view.view.state.doc, atom.position + (key === 'Backspace' ? 1 : 0))));
+				const press = (composing = false) => view.view.dom.dispatchEvent(new dom.window.KeyboardEvent('keydown', {key, bubbles:true, cancelable:true, isComposing:composing}));
+				press(true); assert.deepEqual(editor.field(sourceState).projection.document.toBytes(), original.toBytes());
+				readonly = true; press(); assert.deepEqual(editor.field(sourceState).projection.document.toBytes(), original.toBytes()); readonly = false;
+				press();
+				const next = editor.field(sourceState).projection.document;
+				assert.equal(next.read(), original.read().replace(latex, ''));
+				view.sync(parseSource(next));
+				assert.equal(atoms(view.view.state.doc).length, 0);
+				editor = historyTransaction(editor, 'undo')!.state;
+				assert.deepEqual(editor.field(sourceState).projection.document.toBytes(), original.toBytes());
+			} finally { view.dispose(); }
+		}
+	} finally {
+		dom.window.close();
+		for (const [key, descriptor] of previous) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }
+	}
+});
 
 test('inline dollar and parenthesized math share true paragraphs, heading and known-format marks', () => {
 	for (const text of ['left $x$ middle \\(y\\) right', '\\section{left $x$ middle \\(y\\) right}', '\\textbf{left $x$ middle \\(y\\) right}']) {
@@ -55,7 +93,7 @@ test('consecutive real PM text edits around two atoms preserve local bytes, esca
 	const text = '\uFEFF%keep\r\nStart $x^2$ middle \\(y^2\\) end\r\n\\opaque{raw}\n';
 	const original = SourceDocument.open(bytes(text));
 	let editor = createSourceState(original), source = original, projection = projectVisual(source, parseSource(source)), expected = text;
-	for (const [needle, replacement] of [['Start', 'Begin%😀'], ['middle', 'mid&雪'], ['end', 'finish$']] as const) {
+	for (const [needle, replacement] of [['Start', 'Begin%\ud840\udc00'], ['middle', 'mid&雪'], ['end', 'finish$']] as const) {
 		const position = textPosition(projection.document, needle);
 		const transaction = VisualState.create({ doc: projection.document }).tr.insertText(replacement, position, position + needle.length);
 		const patches = visualPatches(source, projection, transaction);

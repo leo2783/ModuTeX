@@ -1,0 +1,196 @@
+name: Tauri CI - Online and offline installer lifecycle
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Validated full source commit SHA from source admission.
+        required: true
+        type: string
+      package_version:
+        description: Package version verified by source admission.
+        required: true
+        type: string
+      built_exe_sha256:
+        description: SHA-256 of the accepted release executable.
+        required: true
+        type: string
+      built_exe_source_commit:
+        description: Source commit used to build the executable.
+        required: true
+        type: string
+      built_exe_package_version:
+        description: Package version associated with the executable.
+        required: true
+        type: string
+      online_installer_sha256:
+        description: SHA-256 of the validated online installer.
+        required: true
+        type: string
+      offline_installer_sha256:
+        description: SHA-256 of the validated offline installer.
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  installer-lifecycle:
+    name: NSIS lifecycle (${{ matrix.lane }})
+    runs-on: windows-2025
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: online
+            artifact_name: ModuTeX-Tauri-Windows-x64-Online-Installer
+          - lane: offline
+            artifact_name: ModuTeX-Tauri-Windows-x64-Offline-Installer
+    env:
+      GH_TOKEN: ${{ github.token }}
+      INSTALLER_LANE: ${{ matrix.lane }}
+      INSTALLER_ARTIFACT_NAME: ${{ matrix.artifact_name }}
+      PACKAGE_VERSION: ${{ inputs.package_version }}
+      SOURCE_COMMIT: ${{ inputs.checkout_ref }}
+      EXECUTABLE_SHA256: ${{ inputs.built_exe_sha256 }}
+      EXECUTABLE_SOURCE_COMMIT: ${{ inputs.built_exe_source_commit }}
+      EXECUTABLE_PACKAGE_VERSION: ${{ inputs.built_exe_package_version }}
+      INSTALLER_SHA256: ${{ matrix.lane == 'online' && inputs.online_installer_sha256 || inputs.offline_installer_sha256 }}
+      PRIOR_INSTALLER_URL: ${{ github.event.inputs.prior_installer_url || '' }}
+      PRIOR_INSTALLER_VERSION: ${{ github.event.inputs.prior_installer_version || '' }}
+      PRIOR_INSTALLER_SHA256: ${{ github.event.inputs.prior_installer_sha256 || '' }}
+      PRIOR_EXECUTABLE_NAME: ${{ github.event.inputs.prior_executable_name || '' }}
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify package-gate identity and download its exact installer
+        id: current-installer
+        run: >
+          $commit = (git rev-parse HEAD).Trim()
+
+          if ($LASTEXITCODE -ne 0 -or $commit -ne $env:SOURCE_COMMIT) { throw 'Installer lifecycle source commit
+          mismatch' }
+
+          if ($env:EXECUTABLE_SOURCE_COMMIT -ne $env:SOURCE_COMMIT) { throw 'Executable source commit mismatch' }
+
+          if ($env:EXECUTABLE_PACKAGE_VERSION -ne $env:PACKAGE_VERSION) { throw 'Executable package version mismatch' }
+
+          if ($env:EXECUTABLE_SHA256 -notmatch '^[0-9a-f]{64}$' -or $env:INSTALLER_SHA256 -notmatch '^[0-9a-f]{64}$') {
+            throw 'Package-gate executable or installer SHA-256 is invalid'
+          }
+
+          if ($env:SOURCE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw 'Package-gate source commit is invalid' }
+
+          $downloadRoot = Join-Path $env:RUNNER_TEMP ('modutex-installer-' + [guid]::NewGuid().ToString('N'))
+
+          if (Test-Path -LiteralPath $downloadRoot) { throw 'Fresh installer download directory already exists' }
+
+          New-Item -ItemType Directory -Path $downloadRoot -ErrorAction Stop | Out-Null
+
+          & ./tests/scripts/helpers/download-workflow-artifact.ps1 -RunId $env:GITHUB_RUN_ID -ArtifactName $env:INSTALLER_ARTIFACT_NAME -Destination $downloadRoot
+
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to download the package-gate installer from this workflow run' }
+
+          $expectedName = "ModuTeX_$($env:PACKAGE_VERSION)_x64-setup-$($env:INSTALLER_LANE).exe"
+
+          $matches = @(Get-ChildItem -LiteralPath $downloadRoot -Filter $expectedName -File -Recurse)
+
+          $executables = @(Get-ChildItem -LiteralPath $downloadRoot -Filter '*.exe' -File -Recurse)
+
+          if ($matches.Count -ne 1 -or $executables.Count -ne 1) { throw 'Installer artifact does not contain exactly
+          the expected installer' }
+
+          $installerPath = $matches[0].FullName
+
+          $hash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($hash -ne $env:INSTALLER_SHA256) { throw 'Downloaded installer differs from the package-gate SHA-256' }
+
+          "installer_path=$installerPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Download optional prior release installer
+        id: prior-installer
+        run: >
+          $fields = @($env:PRIOR_INSTALLER_URL, $env:PRIOR_INSTALLER_VERSION, $env:PRIOR_INSTALLER_SHA256,
+          $env:PRIOR_EXECUTABLE_NAME)
+
+          $provided = @($fields | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+
+          if ($provided.Count -eq 0) {
+            'installer_path=' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            return
+          }
+
+          if ($provided.Count -ne 4) { throw 'Prior installer URL, version, SHA-256, and executable basename must be
+          supplied together' }
+
+          $uri = [uri]::new($env:PRIOR_INSTALLER_URL, [UriKind]::Absolute)
+
+          if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'github.com' -or
+            $uri.AbsolutePath -notmatch '^/leo2783/ModuTeX/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/[^/]+\.exe$') {
+            throw 'Prior installer URL must be an HTTPS ModuTeX GitHub release asset'
+          }
+
+          if ($env:PRIOR_INSTALLER_SHA256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Prior installer SHA-256 is invalid' }
+
+          $priorRoot = Join-Path $env:RUNNER_TEMP ('modutex-prior-installer-' + [guid]::NewGuid().ToString('N'))
+
+          if (Test-Path -LiteralPath $priorRoot) { throw 'Fresh prior installer download directory already exists' }
+
+          New-Item -ItemType Directory -Path $priorRoot -ErrorAction Stop | Out-Null
+
+          $priorPath = Join-Path $priorRoot 'prior-installer.exe'
+
+          Invoke-WebRequest -Uri $uri -OutFile $priorPath -ErrorAction Stop
+
+          $priorItem = Get-Item -LiteralPath $priorPath
+
+          if ($priorItem.Length -le 0 -or $priorItem.Length -gt 1GB) { throw 'Prior installer size is outside the
+          supported limit' }
+
+          $hash = (Get-FileHash -LiteralPath $priorPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($hash -ne $env:PRIOR_INSTALLER_SHA256.ToLowerInvariant()) { throw 'Prior installer SHA-256 mismatch' }
+
+          "installer_path=$priorPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Run owned-directory NSIS lifecycle verification
+        env:
+          INSTALLER_PATH: ${{ steps.current-installer.outputs.installer_path }}
+          PRIOR_INSTALLER_PATH: ${{ steps.prior-installer.outputs.installer_path }}
+        run: >
+          $parameters = @(
+            '-InstallerPath', $env:INSTALLER_PATH,
+            '-ExpectedInstallerSha256', $env:INSTALLER_SHA256,
+            '-ExpectedExecutableSha256', $env:EXECUTABLE_SHA256,
+            '-PackageVersion', $env:PACKAGE_VERSION,
+            '-SourceCommit', $env:SOURCE_COMMIT,
+            '-Lane', $env:INSTALLER_LANE,
+            '-ReceiptPath', ".verification-artifacts/tauri/installer-lifecycle-$($env:INSTALLER_LANE).json"
+          )
+
+          if (-not [string]::IsNullOrWhiteSpace($env:PRIOR_INSTALLER_PATH)) {
+            $parameters += @(
+              '-PriorInstallerPath', $env:PRIOR_INSTALLER_PATH,
+              '-PriorVersion', $env:PRIOR_INSTALLER_VERSION,
+              '-PriorInstallerSha256', $env:PRIOR_INSTALLER_SHA256,
+              '-PriorExecutableName', $env:PRIOR_EXECUTABLE_NAME
+            )
+          }
+
+          pwsh -NoProfile -File scripts/distribution/verify-installer-lifecycle.ps1 @parameters
+
+          if ($LASTEXITCODE -ne 0) { throw "NSIS $($env:INSTALLER_LANE) lifecycle verification failed with exit code
+          $LASTEXITCODE" }
+      - name: Upload installer lifecycle receipt
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Tauri-Installer-Lifecycle-${{ matrix.lane }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .verification-artifacts/tauri/installer-lifecycle-${{ matrix.lane }}.json
+          if-no-files-found: warn

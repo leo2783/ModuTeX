@@ -1,9 +1,0 @@
-{
-  "prompt": "Use case: ui-mockup. Generate one high-fidelity ModuTeX desktop application viewport edge-to-edge, landscape 1672x940. Reference image 1 is the USER APPROVED layout A: preserve its restrained warm-white canvas, thin grey borders, muted navy accent, system UI typography, global top navigation, proportions and compact controls. No neon, gradients, marketing, decorative cards or device frame. Traditional Chinese labels. Global bar: ModuTeX, 首頁, 工作台, 設定, 說明, 版本紀錄; actions 開啟 儲存 編譯. Under it a slim file tree left 16%, document editor center 44%, actual typeset PDF preview right 40%. Sample main.tex contains title 實驗方法, section 研究設計, one short paragraph, equation E=(1/n)Σ(yᵢ−ŷᵢ)² and paper table 方法 / 樣本數 / 平均誤差, 基準法 / 100 / 0.12, 改良法 / 100 / 0.08. PDF matches document. Header main.tex with mode switch 視覺 | LaTeX. Bottom status 已儲存. Synthetic design example, not real app screenshot.\nTERMINAL OPEN VIEW. LaTeX source center and PDF right remain visible in upper 65%. A resizable bottom dock spans ONLY editor+PDF columns, tree stays full height. Dock tabs 終端機 | 編譯紀錄 | 問題, 終端機 active. Realistic light terminal white/offwhite background dark monospace text, PS C:\\Documents\\experiment> followed by blank caret prompt; no invented compile-success output. Dock has new terminal plus, collapse chevron and X close. No external window. Preserve top toolbar and source/visual switch.",
-  "approved": false,
-  "tool": "image_gen",
-  "reference": "docs/design/concepts/workbench-a.png",
-  "sourcePath": "C:\\Users\\qet63\\.codex\\generated_images\\019ff6f5-0321-7473-9d13-579230a0995b\\exec-634bb4d1-1ee7-409a-b6c1-4e77ba80777d.png",
-  "kind": "design-concept",
-  "date": "2026-10-07"
-}

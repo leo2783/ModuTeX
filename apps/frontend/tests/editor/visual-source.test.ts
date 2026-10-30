@@ -2,10 +2,31 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorState as VisualState } from 'prosemirror-state';
 import { EditorState } from '@codemirror/state';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { visualSchema, projectVisual, visualPatches, escapeVisualText, advanceVisual } from '../../src/features/visual-editor/schema.ts';
 import { createSourceState, sourceState, sourcePatchTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
+import { createDraft } from '../../src/features/files/templates.ts';
 const source = (value: string) => SourceDocument.open(new TextEncoder().encode(value));
+
+test('report template projects a compact editable title and chapter without raw syntax or empty metadata cells', () => {
+	const original = createDraft('report');
+	const bytes = original.toBytes();
+	const projection = projectVisual(original, parseSource(original));
+	const blocks: string[] = [];
+	projection.document.forEach(node => {
+		assert.equal(node.type.name, 'source_block');
+		assert.equal(node.attrs.role, 'heading');
+		blocks.push(node.textContent);
+	});
+	assert.deepEqual(blocks, ['Report title', 'Introduction']);
+	const state = VisualState.create({ doc: projection.document });
+	const position = projection.document.child(0).nodeSize + 1;
+	const transaction = state.tr.insertText('New ', position);
+	const patches = visualPatches(original, projection, transaction);
+	const updated = original.apply({ expectedVersion: original.version, patches }).document;
+	assert.equal(updated.read(), original.read().replace('\\chapter{Introduction}', '\\chapter{New Introduction}'));
+	assert.deepEqual(original.toBytes(), bytes);
+});
 
 test('one persistent PM state edits shifted blocks while fresh source anchors remain separate from presentation metadata', () => {
 	const originalText = '\uFEFF\\section{One}\r\nBody $x$ \\opaque{keep}\r\n\\section{Two}\nTail';
@@ -14,7 +35,7 @@ test('one persistent PM state edits shifted blocks while fresh source anchors re
 	let visual = VisualState.create({ doc: projection.document }), expected = originalText;
 	const raw = [...Array(visual.doc.childCount)].map((_, index) => visual.doc.child(index)).find(node => node.type.name === 'raw_block');
 	assert.ok(raw);
-	for (const [label, local, insert] of [['One', 3, '雪'], ['Two', 1, '😀'], ['Tail', 2, '%'], ['Body', 1, '&']] as const) {
+	for (const [label, local, insert] of [['One', 3, '雪'], ['Two', 1, '\ud840\udc00'], ['Tail', 2, '%'], ['Body', 1, '&']] as const) {
 		let position = -1;
 		visual.doc.descendants((node, offset) => {
 			if (position < 0 && node.isText && node.text!.includes(label)) position = offset + node.text!.indexOf(label) + local;
@@ -37,14 +58,14 @@ test('one persistent PM state edits shifted blocks while fresh source anchors re
 });
 
 test('equal-width visual replacement reuses immutable offsets; escaped replacement remaps and preserves exact history', () => {
-	const original = source('\uFEFFA雪😀\r\nB\rtail\n');
+	const original = source('\uFEFFA雪\ud840\udc00\r\nB\rtail\n');
 	let editor = createSourceState(original);
 	let projection = projectVisual(original, parseSource(original));
 	const originalOffsets = projection.boundaries[0];
 	assert.ok(originalOffsets);
 	for (const [replacement, expected, reused] of [
-		['Z', '\uFEFFZ雪😀\r\nB\rtail\n', true],
-		['%', '\uFEFF\\%雪😀\r\nB\rtail\n', false]
+		['Z', '\uFEFFZ雪\ud840\udc00\r\nB\rtail\n', true],
+		['%', '\uFEFF\\%雪\ud840\udc00\r\nB\rtail\n', false]
 	] as const) {
 		const before = editor.field(sourceState).projection.document;
 		const transaction = VisualState.create({ doc: projection.document }).tr.insertText(replacement, 1, 2);
@@ -103,10 +124,10 @@ test('visual edits preserve mixed EOL offsets and escape inserted LaTeX punctuat
 	assert.equal(escapeVisualText('a_b#{}$^~\\'), 'a\\_b\\#\\{\\}\\$\\textasciicircum{}\\textasciitilde{}\\textbackslash{}');
 });
 test('surrogate replacement never splits unchanged source scalar boundaries', () => {
-	const document = source('😀done'); const projected = projectVisual(document, parseSource(document));
-	const patches = visualPatches(document, projected, VisualState.create({ doc: projected.document }).tr.insertText('😁', 1, 3));
-	assert.deepEqual(patches, [{ from: 0, to: 2, expected: '😀', insert: '😁' }]);
-	assert.equal(sourcePatchTransaction(createSourceState(document), projected, patches).state.field(sourceState).projection.document.read(), '😁done');
+	const document = source('\ud840\udc00done'); const projected = projectVisual(document, parseSource(document));
+	const patches = visualPatches(document, projected, VisualState.create({ doc: projected.document }).tr.insertText('\ud840\udc01', 1, 3));
+	assert.deepEqual(patches, [{ from: 0, to: 2, expected: '\ud840\udc00', insert: '\ud840\udc01' }]);
+	assert.equal(sourcePatchTransaction(createSourceState(document), projected, patches).state.field(sourceState).projection.document.read(), '\ud840\udc01done');
 });
 test('Raw replacement, block/anchor mutation, stale version and foreign source are rejected', () => {
 	const document = source('\\opaque{keep}'); const projected = projectVisual(document, parseSource(document));
@@ -128,7 +149,7 @@ test('source bridge refuses read-only state, stale expected bytes and CRLF-inter
 test('continuous visual edits map escaped punctuation, EOL and Unicode without reparsing; shared undo restores all bytes', () => {
 	const document = source('\uFEFFstart\r\nkeep'); let editor = createSourceState(document);
 	let projected = projectVisual(document, parseSource(document));
-	const values = ['start% &😀\nkeep', 'start &😀\nkeep', 'start &😁\nkeep', 'start &😁\nnew\nkeep'];
+	const values = ['start% &\ud840\udc00\nkeep', 'start &\ud840\udc00\nkeep', 'start &\ud840\udc01\nkeep', 'start &\ud840\udc01\nnew\nkeep'];
 	for (const value of values) {
 		const before = editor.field(sourceState).projection.document;
 		const transaction = VisualState.create({ doc: projected.document }).tr.insertText(value, 1, projected.document.firstChild!.nodeSize - 1);

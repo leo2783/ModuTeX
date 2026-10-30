@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EditorState } from 'prosemirror-state';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { projectVisual, visualPatches, advanceVisual } from '../../src/features/visual-editor/schema.ts';
 import { createSourceState, sourceState, sourcePatchTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
 
@@ -28,7 +28,7 @@ for (const marker of ['null', 'par']) test(`${marker} paragraph accepts consecut
 	assert.equal(edited.read(), original.read().replace(`\\${marker}${suffix}`, (marker === 'par' ? '\\par' + suffix : '') + 'a\\%').replace('a\\%\\end{document}', 'a\\%' + original.profile.preferredLineEnding + '\\end{document}'));
 	const reparsed = projectVisual(edited, parseSource(edited));
 	assert.equal(reparsed.document.childCount, 1);
-	assert.equal(reparsed.document.firstChild?.textContent, (marker === 'par' ? '\n' : '') + 'a%\n');
+	assert.equal(reparsed.document.firstChild?.textContent, marker === 'par' ? 'a%' : 'a%\n');
 	for (let count = 0; count < 2; count++) { const undo = historyTransaction(editor, 'undo'); assert.ok(undo); editor = undo.state; }
 	assert.deepEqual(editor.field(sourceState).projection.document.toBytes(), original.toBytes());
 });

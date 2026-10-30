@@ -21,7 +21,7 @@
 <div class="mt-10 space-y-10">
 	<Section
 		title={'1. Run ModuTeX'}
-		body={'After the 0.1.0 GitHub Release is published, install Node.js 24.19.0 with npm 11.17.0, download the attached .tgz and checksum, verify the SHA-256, then run the package. No release tarball or checksum is available yet. npx caches the package but does not install a permanent command.'}
+		body={'After the 0.1.0 GitHub Release is published, install Node.js 24.22.1 with npm 11.19.1, download the attached .tgz and checksum, verify the SHA-256, then run the package. No release tarball or checksum is available yet. npx caches the package but does not install a permanent command.'}
 	>
 		<pre class="border-surface-200 bg-surface-50 text-surface-800 overflow-x-auto rounded-lg border p-4 font-mono text-sm"><code
 				>npx --yes --package .\modutex-desktop-0.1.0.tgz -- modutex</code

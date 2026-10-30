@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { SourceDocument } from '@modutex/document-core';
+import type { SourceDocument } from '../../src/features/document-core/core.ts';
 import type { DiagnosticNavigationRequest } from '../../src/features/source-editor/diagnostics.ts';
 
 const { JSDOM } = createRequire(import.meta.url)('jsdom') as {
@@ -32,6 +32,7 @@ interface HarnessController {
 }
 
 interface ClientRuntime {
+	readonly SourceDocument: typeof import('../../src/features/document-core/core.ts').SourceDocument;
 	readonly SourceViewHarness: any;
 	readonly EditorView: { findFromDOM(node: Node): any };
 	readonly mount: (component: any, options: { target: Element; props?: any }) => any;
@@ -149,7 +150,7 @@ function cleanupBundleDirectory() {
 
 const harnessSource = (sourcePath: string, diagnosticsPath: string) => `<script lang="ts">
 	import SourceView from ${JSON.stringify(sourcePath)};
-	import type { SourceDocument } from '@modutex/document-core';
+	import type { SourceDocument } from '../../src/features/document-core/core.ts';
 	import type { DiagnosticNavigationRequest } from ${JSON.stringify(diagnosticsPath)};
 	type Props = {
 		document: SourceDocument;
@@ -206,13 +207,15 @@ async function compileClientHarness(): Promise<ClientRuntime> {
 		fs.writeFileSync(entryFile, [
 			`import { mount, unmount, flushSync, tick } from 'svelte';`,
 			`import { EditorView } from '@codemirror/view';`,
+			`import { SourceDocument } from ${JSON.stringify(fileURLToPath(new URL('../../src/features/document-core/core.ts', import.meta.url)).replaceAll('\\', '/'))};`,
 			`import SourceViewHarness from ${JSON.stringify(harnessFile.replace(/\\/g, '/'))};`,
-			'export { mount, unmount, flushSync, tick, EditorView, SourceViewHarness };'
+			'export { mount, unmount, flushSync, tick, EditorView, SourceViewHarness, SourceDocument };'
 		].join('\n'));
 
 		const buildPromise = build({
 			root: projectRoot,
 			configFile: false,
+			worker: { format: 'es' },
 			plugins: [svelte({ emitCss: false })],
 			build: {
 				write: true,
@@ -357,8 +360,8 @@ after(async () => {
 });
 
 test('mounted SourceView maps normalized UTF-16 positions through BOM and CRLF and reveals/focuses from visual mode', { timeout: 180_000 }, async () => {
-	const sourceText = '\uFEFFfirst\r\nconst 中😀x = 1;\r\nlast';
-	const source = SourceDocument.open(new TextEncoder().encode(sourceText));
+	const sourceText = '\uFEFFfirst\r\nconst 中\ud840\udc00x = 1;\r\nlast';
+	const source = (await getCompiledHarness()).SourceDocument.open(new TextEncoder().encode(sourceText));
 	let harness: MountedHarness | undefined;
 	try {
 		harness = await createHarness(source);
@@ -373,7 +376,7 @@ test('mounted SourceView maps normalized UTF-16 positions through BOM and CRLF a
 		await harness.settle();
 		view = harness.getView();
 		const line = view.state.doc.line(2);
-		const from = line.from + 'const 中😀'.length;
+		const from = line.from + 'const 中\ud840\udc00'.length;
 		assert.equal(view.state.doc.sliceString(view.state.selection.main.from, view.state.selection.main.to), 'x');
 		assert.equal(view.state.selection.main.from, from);
 		assert.equal(view.state.selection.main.to, from + 1);
@@ -387,7 +390,7 @@ test('mounted SourceView maps normalized UTF-16 positions through BOM and CRLF a
 });
 
 test('mounted SourceView focuses the editor when navigation originates from its diagnostic button', { timeout: 180_000 }, async () => {
-	const source = SourceDocument.open(new TextEncoder().encode('first\nsecond\nlast'));
+	const source = (await getCompiledHarness()).SourceDocument.open(new TextEncoder().encode('first\nsecond\nlast'));
 	let harness: MountedHarness | undefined;
 	try {
 		harness = await createHarness(source);
@@ -410,7 +413,7 @@ test('mounted SourceView focuses the editor when navigation originates from its 
 });
 
 test('mounted SourceView preserves newer external input focus during queued diagnostic navigation', { timeout: 180_000 }, async () => {
-	const source = SourceDocument.open(new TextEncoder().encode('first\nsecond\nlast'));
+	const source = (await getCompiledHarness()).SourceDocument.open(new TextEncoder().encode('first\nsecond\nlast'));
 	let harness: MountedHarness | undefined;
 	try {
 		harness = await createHarness(source);
@@ -453,7 +456,7 @@ test('mounted SourceView preserves newer external input focus during queued diag
 });
 
 test('mounted SourceView does not steal focus after a newer editor selection supersedes diagnostic navigation before tick', { timeout: 180_000 }, async () => {
-	const source = SourceDocument.open(new TextEncoder().encode('first\nsecond\nlast'));
+	const source = (await getCompiledHarness()).SourceDocument.open(new TextEncoder().encode('first\nsecond\nlast'));
 	let harness: MountedHarness | undefined;
 	try {
 		harness = await createHarness(source);
@@ -479,7 +482,7 @@ test('mounted SourceView does not steal focus after a newer editor selection sup
 });
 
 test('mounted SourceView selects a line without a normalized column and ignores invalid coordinates without changing visual mode', { timeout: 180_000 }, async () => {
-	const source = SourceDocument.open(new TextEncoder().encode('\uFEFFfirst\r\n資料😀\r\nlast'));
+	const source = (await getCompiledHarness()).SourceDocument.open(new TextEncoder().encode('\uFEFFfirst\r\n資料\ud840\udc00\r\nlast'));
 	let harness: MountedHarness | undefined;
 	try {
 		harness = await createHarness(source);
@@ -490,7 +493,7 @@ test('mounted SourceView selects a line without a normalized column and ignores 
 		const line = view.state.doc.line(2);
 		assert.equal(view.state.selection.main.from, line.from);
 		assert.equal(view.state.selection.main.to, line.to);
-		assert.equal(view.state.doc.sliceString(line.from, line.to), '資料😀');
+		assert.equal(view.state.doc.sliceString(line.from, line.to), '資料\ud840\udc00');
 		assert.equal(view.hasFocus, true);
 
 		modeButton(dom.window.document, 'Visual').click();
@@ -521,8 +524,8 @@ test('mounted SourceView selects a line without a normalized column and ignores 
 });
 
 test('mounted SourceView defers inactive/read-only requests, rejects replaced source identity, and cancels scheduled focus on unmount', { timeout: 180_000 }, async () => {
-	const first = SourceDocument.open(new TextEncoder().encode('\uFEFFalpha\r\nbeta'));
-	const second = SourceDocument.open(new TextEncoder().encode('\uFEFFother\r\nnew'));
+	const first = (await getCompiledHarness()).SourceDocument.open(new TextEncoder().encode('\uFEFFalpha\r\nbeta'));
+	const second = (await getCompiledHarness()).SourceDocument.open(new TextEncoder().encode('\uFEFFother\r\nnew'));
 	assert.notEqual(second.documentId, first.documentId);
 	let harness: MountedHarness | undefined;
 	try {

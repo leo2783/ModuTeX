@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SourceDocument } from '@modutex/document-core';
+import { SourceDocument } from '../../src/features/document-core/core.ts';
 import type { CompileIdentity, Diagnostic } from '@modutex/frontend-contracts';
-import { diagnosticSpan, previewStatus } from '../../src/features/compile/navigation.ts';
+import { diagnosticSpan } from '../../src/features/compile/diagnostic-span.ts';
+import { previewStatus } from '../../src/features/compile/preview-status.ts';
 import { createSourceState, sourceState, sourceNavigationTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
 
 const open = (text: string) => SourceDocument.open(new TextEncoder().encode(text));
@@ -10,7 +11,7 @@ const identity = (source: SourceDocument): CompileIdentity => ({ runId: 'actual-
 const diagnostic: Diagnostic = { severity: 'error', message: 'Undefined control sequence', path: 'main.tex', line: 3, column: null };
 
 test('diagnostic line navigation uses actual CodeMirror state and preserves BOM, mixed EOL, bytes and history', () => {
-	const source = open('\uFEFF% 😀\r\none\rtarget 雪\nlast');
+	const source = open('\uFEFF% \ud840\udc00\r\none\rtarget 雪\nlast');
 	const span = diagnosticSpan(source, 'main.tex', identity(source), diagnostic)!;
 	assert.equal(source.read(span.from, span.to), 'target 雪');
 	const state = createSourceState(source), navigated = sourceNavigationTransaction(state, span).state;

@@ -1,4 +1,4 @@
-import type { SourceDocument, SourcePatch, SourceProjection } from '@modutex/document-core';
+import type { SourceDocument, SourcePatch, SourceProjection } from '../document-core/core.ts';
 import type { ParserReply, ParserRequest } from './engine.ts';
 
 export interface ParserTransport {

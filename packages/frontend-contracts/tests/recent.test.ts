@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { ContractError, parseRecentDocuments, recentDocumentId } from '../src/index.ts';
 
 const uuid = (index = 1) => '12345678-abcd-4def-8123-' + String(index).padStart(12, '0');
-const entry = (index = 1) => ({ id: uuid(index), label: '論文😀', entryPath: '第1章.tex', openedAt: 0 });
+const entry = (index = 1) => ({ id: uuid(index), label: '論文\ud840\udc00', entryPath: '第1章.tex', openedAt: 0 });
 const rejects = (operation: () => unknown) => assert.throws(operation, ContractError);
 
 test('recent documents accept empty and 20-entry MRU payloads without changing order or exposing paths', () => {
@@ -39,13 +39,13 @@ test('display-name bounds count UTF-16 units and reject control characters or pa
 	}
 });
 
-test('entry paths accept only a bounded safe single TeX filename or null', () => {
-	for (const entryPath of [null, '論文😀.tex', 'MAIN.TEX', 'literal%2e%2e.tex', 'a'.repeat(4092) + '.tex']) {
+test('entry paths accept only a bounded safe single TeX or PDF filename or null', () => {
+	for (const entryPath of [null, '論文\ud840\udc00.tex', 'MAIN.TEX', 'literal%2e%2e.tex', 'a'.repeat(4092) + '.tex', '預覽.pdf', 'MAIN.PDF', 'a'.repeat(4092) + '.pdf']) {
 		assert.equal(parseRecentDocuments([{ ...entry(), entryPath }])[0]!.entryPath, entryPath);
 	}
 	for (const entryPath of ['', 'a'.repeat(4093) + '.tex', '../outside.tex', 'folder/main.tex', '/main.tex', 'C:/main.tex', 'C:\\main.tex',
 		'\\\\server\\main.tex', 'main.tex:stream', 'nul.tex', 'COM1.tex', 'main.tex.', 'main.tex ', './main.tex', 'main.js',
-		'main\u0000.tex', 'main\n.tex', 'main\u007f.tex', undefined, {}, 1]) rejects(() => parseRecentDocuments([{ ...entry(), entryPath }]));
+		'main\u0000.tex', 'main\n.tex', 'main\u007f.tex', '../outside.pdf', 'folder/main.pdf', 'main.pdf:stream', 'NUL.pdf', 'main.pdf.exe', 'a'.repeat(4093) + '.pdf', undefined, {}, 1]) rejects(() => parseRecentDocuments([{ ...entry(), entryPath }]));
 });
 
 test('recent timestamps must be nonnegative safe integers without date or string coercion', () => {

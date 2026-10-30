@@ -9,7 +9,9 @@ export interface Preferences {
 }
 export const DEFAULT_PREFERENCES: Preferences = Object.freeze({ language: 'zh-Hant', appearance: 'system', sourceFontSize: 14, showLineNumbers: true, wrapLines: false, compileShortcut: 'mod-enter' });
 const PREFIX = 'modutex.frontend.preferences.v1.';
+const SYNC_KEY = PREFIX + 'sync';
 const keys = Object.keys(DEFAULT_PREFERENCES) as (keyof Preferences)[];
+let syncSequence = 0;
 export function decodePreference<K extends keyof Preferences>(key: K, value: unknown): Preferences[K] {
 	const valid = key === 'language' ? ['zh-Hant', 'en'].includes(value as string) : key === 'appearance' ? ['system', 'light', 'dark'].includes(value as string) : key === 'sourceFontSize'
 		? typeof value === 'number' && Number.isInteger(value) && value >= 12 && value <= 24 : key === 'compileShortcut'
@@ -28,6 +30,19 @@ export function readPreferences(storage: Pick<Storage, 'getItem'>): { preference
 		} catch { invalid = true; } // Corrupt one field cannot overwrite valid peer fields or legacy settings.
 	}
 	return { preferences: Object.freeze(preferences), invalid };
+}
+/** Returns only the existing, owned preference keys for the native one-time import. */
+export function legacyPreferenceRecord(storage: Pick<Storage, 'getItem'>): Readonly<Record<string, string>> {
+	const record: Record<string, string> = {};
+	for (const key of keys) {
+		const encoded = storage.getItem(PREFIX + key);
+		if (encoded !== null) record[PREFIX + key] = encoded;
+	}
+	return record;
+}
+/** Signals other windows after a native preference write without treating the signal as a setting. */
+export function announcePreferenceChange(storage: Pick<Storage, 'setItem'>): void {
+	storage.setItem(SYNC_KEY, `${Date.now()}-${++syncSequence}`);
 }
 export function savePreference<K extends keyof Preferences>(storage: Pick<Storage, 'setItem'>, key: K, value: Preferences[K]): void {
 	storage.setItem(PREFIX + key, JSON.stringify(decodePreference(key, value)));
@@ -66,7 +81,8 @@ export function effectiveAppearance(value: Preferences['appearance'], systemDark
 export function subscribePreferences(target: Window, changed: (preferences: Preferences, invalid: boolean) => void): () => void {
 	const storage = target.localStorage; let disposed = false;
 	const handler = (event: StorageEvent) => {
-		if (disposed || event.storageArea !== storage || (event.key !== null && !keys.some((key) => event.key === PREFIX + key))) return;
+		if (disposed || event.storageArea !== storage ||
+			(event.key !== null && event.key !== SYNC_KEY && !keys.some((key) => event.key === PREFIX + key))) return;
 		const result = readPreferences(storage); changed(result.preferences, result.invalid);
 	};
 	target.addEventListener('storage', handler);

@@ -30,6 +30,12 @@ test('the shared language catalogue has unique safe identifiers and literal sour
 	}
 });
 
+test('listing alignment roundtrips and legacy listings remain editable', () => {
+	assert.match(codeSource('int main() {}',false,'cpp'), /xleftmargin=\\parindent/);
+	assert.deepEqual(parseCodeContent('[language=C++,name=cpp]\nint main() {}\n','lstlisting'),{code:'int main() {}',language:'cpp'});
+	assert.equal(parseCodeContent('[language=C++,name=cpp,xleftmargin=unknown]\ncode\n','lstlisting'),null);
+});
+
 test('syntax tokens preserve literal text and cancelled language loads cannot replace a newer draft', async () => {
 	const dom = new JSDOM('<pre></pre>'), host = dom.window.document.querySelector('pre')!;
 	const literal = 'const text = "<img src=x onerror=alert(1)>";\n// comment';

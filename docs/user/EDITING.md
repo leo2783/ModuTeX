@@ -11,8 +11,13 @@ The boundary `+` menu explicitly creates a separate cell.
 點選儲存格並放置游標後，工具在游標處插入內容；拖曳左側把手可排序，邊界 `+` 選單則另外新增儲存格。
 
 Choose body text, paper title, abstract or heading level from the structure menu.
-Text wraps with available width; Enter inserts paragraph breaks.
-文字層級選單提供正文、論文題目、摘要及標題；文字依可用寬度換行，Enter 插入段落分隔。
+Changing structure retains the cell's content and starts a new cancel-edit checkpoint. Each insertion above or below an existing cell adds one cell.
+Text wraps with available width. Enter in a heading continues as body text within the same cell. Moving or deleting that cell includes all its content. Text and abstract cells retain line breaks. The outline displays heading text without formatting commands.
+文字依可用寬度換行。標題內按 Enter 後接續正文，仍在同一儲存格；移動或刪除作用於整格內容。正文與摘要支援格內換行。大綱顯示標題文字，省略格式指令。
+切換層級會保留儲存格內容，並重新建立取消編輯的起點。在既有儲存格上方或下方插入文字時，每次只新增一格。
+
+Bold, underline and text color work on selected heading and abstract text. In cells containing a paper title and body content, images insert at the body caret.
+可對選取的標題與摘要文字套用粗體、底線與字色。儲存格同時包含文章標題與內文時，圖片會插入正文游標所在位置。
 
 ## Math / 數學
 
@@ -25,24 +30,25 @@ scripts and row/column size controls.
 
 ## Other content / 其他內容
 
-| Content | Operation / 操作 |
-|---|---|
-| Table / 表格 | Click to edit rows, columns, widths, borders, header and caption. / 點選編輯行列、欄寬、框線、表頭及說明。 |
+| Content       | Operation / 操作                                                                                                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table / 表格  | Click to edit rows, columns, widths, borders, header and caption. / 點選編輯行列、欄寬、框線、表頭及說明。                                                                                  |
 | Code / 程式碼 | Choose a language. Above 100,000 UTF-16 units, the complete code stays literal text without automatic highlighting. / 選擇語言；超過 100,000 個 UTF-16 units 時保留完整純文字，不自動高亮。 |
-| Image / 圖片 | Insert or Ctrl+V PNG/JPEG; select its cell and Ctrl+C to copy. Input limit: 5 MiB. / 插入或 Ctrl+V 貼上 PNG/JPEG，選取圖片格後 Ctrl+C 複製；輸入上限 5 MiB。 |
+| Image / 圖片  | Insert or Ctrl+V PNG/JPEG; select its cell and Ctrl+C to copy. Input limit: 5 MiB. / 插入或 Ctrl+V 貼上 PNG/JPEG，選取圖片格後 Ctrl+C 複製；輸入上限 5 MiB。                                |
 
 Save to persist image assets with the workspace. Unsupported commands remain editable in Source mode.
 儲存可將圖片資產保存到工作區；不支援的語法仍可在原始碼修改。
 
 ## Shortcuts / 快捷鍵
 
-| Keys | Action / 操作 |
-|---|---|
-| Ctrl+O / Ctrl+S | Open / Save · 開啟／儲存 |
-| Ctrl+Z / Ctrl+Shift+Z | Undo / Redo · 復原／重做 |
-| Ctrl+Enter | Compile PDF; configurable. / 編譯 PDF，可在設定調整。 |
-| Escape | Cancel a draft or enter cell navigation. / 取消草稿或進入儲存格導航。 |
-| Up / Down | Navigate selected cells. / 導航選取儲存格。 |
-| Alt+Up / Alt+Down | Move the selected cell. / 移動選取儲存格。 |
+| Keys                  | Action / 操作                                                                                                               |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Ctrl+O / Ctrl+S       | Open / Save · 開啟／儲存                                                                                                    |
+| Ctrl+Z / Ctrl+Shift+Z | Undo / Redo · 復原／重做                                                                                                    |
+| Ctrl+Enter            | Compile PDF; configurable. / 編譯 PDF，可在設定調整。                                                                       |
+| Escape                | Cancel a draft or enter cell navigation. / 取消草稿或進入儲存格導航。                                                       |
+| Delete / Backspace    | Delete a cell in cell navigation mode, with confirmation for nonempty content. / 在儲存格導航模式刪除整格，非空內容需確認。 |
+| Up / Down             | Navigate selected cells. / 導航選取儲存格。                                                                                 |
+| Alt+Up / Alt+Down     | Move the selected cell. / 移動選取儲存格。                                                                                  |
 
 [Compilation / 編譯](COMPILATION.md) · [Limitations / 限制](KNOWN_LIMITATIONS.md)

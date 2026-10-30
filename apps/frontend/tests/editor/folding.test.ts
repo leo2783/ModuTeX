@@ -4,13 +4,21 @@ import { createRequire } from 'node:module';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { foldable, foldEffect, foldedRanges, unfoldEffect, foldCode, unfoldAll } from '@codemirror/language';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { createSourceState, sourceState, historyTransaction } from '../../src/features/source-editor/state.ts';
 import { foldProjection, foldIndex, sourceFolding } from '../../src/features/source-editor/folding.ts';
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
 const source = (text: string) => SourceDocument.open(new TextEncoder().encode(text));
 const publish = (state: EditorState) => state.update({ effects: foldProjection.of(parseSource(state.field(sourceState).projection.document)) }).state;
 const rangeAt = (state: EditorState, text: string) => { const line = state.doc.lineAt(state.doc.toString().indexOf(text)); return foldable(state, line.from, line.to); };
+
+test('chapter folding contains its sections and ends before the next chapter', () => {
+	const original = source('\\begin{document}\n\\chapter{One}\nintro\n\\section{Child}\nbody\n\\chapter*{Two}\nnext\n\\end{document}');
+	const state = publish(createSourceState(original, undefined, sourceFolding()));
+	const chapter = rangeAt(state, '\\chapter{One}')!;
+	assert.equal(state.doc.sliceString(chapter.from, chapter.to), '\nintro\n\\section{Child}\nbody');
+	assert.equal(state.doc.sliceString(rangeAt(state, '\\section{Child}')!.from, chapter.to), '\nbody');
+});
 
 test('real folding service respects heading hierarchy and matched environment delimiters with mixed EOL', () => {
 	const original = source('\uFEFF\\begin{document}\r\n\\section{One}\nfirst\r\\subsection{Child}\r\nchild\n\\section*{Two}\nlast\n\\end{document}');
@@ -25,7 +33,7 @@ test('real folding service respects heading hierarchy and matched environment de
 	assert.deepEqual(state.field(sourceState).projection.document.toBytes(), original.toBytes());
 });
 test('comments, literal bodies, unmatched syntax and surrogate prefixes cannot invent fold ranges', () => {
-	const original = source('% \\section{Comment}\n\\begin{verbatim}\n\\section{Literal}\n\\end{verbatim}\n\\x{ab😀}\n\\begin{broken}\nvalue');
+	const original = source('% \\section{Comment}\n\\begin{verbatim}\n\\section{Literal}\n\\end{verbatim}\n\\x{ab\ud840\udc00}\n\\begin{broken}\nvalue');
 	const state = publish(createSourceState(original, undefined, sourceFolding()));
 	assert.equal(rangeAt(state, '% \\section'), null);
 	assert.equal(rangeAt(state, '\\section{Literal}'), null);

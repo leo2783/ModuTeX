@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-frontend-mcp"
+description = "Allow the trusted document window to opt in to the local MCP service, answer host-scoped editor requests, and manage the default-off MCP compile-command permission."
+commands.allow = [
+    "frontend_get_mcp_compile_command_permission",
+    "frontend_set_mcp_compile_command_permission",
+    "frontend_mcp_set_enabled",
+    "frontend_mcp_reply"
+]

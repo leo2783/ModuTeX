@@ -183,7 +183,12 @@ export function editInlineEquation(host: HTMLElement, draft: EquationDraft, text
 	const focusFrame = owner.defaultView!.requestAnimationFrame(() => {
 		if (disposed) return;
 		field.focus();
-		if (inline) { const paragraph = (host.closest('.source-block') ?? host.parentElement)!.getBoundingClientRect(); tools.style.left = Math.min(0, paragraph.right - host.getBoundingClientRect().left - tools.getBoundingClientRect().width) + 'px'; }
+		if (inline) {
+			const paragraph = (host.closest('.source-block') ?? host.parentElement)!.getBoundingClientRect();
+			tools.style.left = Math.min(0, paragraph.right - host.getBoundingClientRect().left - tools.getBoundingClientRect().width) + 'px';
+			const viewport = host.closest('.visual')?.getBoundingClientRect();
+			if (viewport && tools.getBoundingClientRect().top < viewport.top) host.classList.add('tools-below');
+		}
 	});
 	return () => { previews.forEach(dispose => dispose()); disposed = true; owner.defaultView!.cancelAnimationFrame(focusFrame); field.removeEventListener('input', changed); field.removeEventListener('keydown', keydown, true); field.removeEventListener('paste', paste); disposeMathField(field); host.replaceChildren(); };
 }

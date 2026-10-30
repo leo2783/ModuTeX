@@ -1,7 +1,8 @@
 import { Fragment, Schema, type Node as VisualNode, type Mark } from 'prosemirror-model';
 import type { Transaction } from 'prosemirror-state';
+import { explicitCellRanges, type CellBoundary } from './cell-boundaries.ts';
 import { parseTable } from '../tables/source.ts';
-import { mapPosition, parseSource, projectionIsCurrent, type SourceDocument, type SourceProjection, type SyntaxNode, type SourcePatch, type SourceChange } from '@modutex/document-core';
+import { mapPosition, parseSource, projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan, type SyntaxNode, type SourcePatch, type SourceChange } from '../document-core/core.ts';
 
 const anchors = { from: {}, to: {}, editFrom: {}, editTo: {}, role: { default: 'paragraph' }, name: { default: '' }, level: { default: 2 } };
 const visualFormatMarks: Record<string, string> = { textbf: 'strong', textit: 'em', emph: 'em', underline: 'underline' };
@@ -46,11 +47,14 @@ interface InlineWrapper { readonly open: string; readonly close: string; readonl
 
 export interface VisualProjection {
 	readonly documentId: string; readonly version: number; readonly document: VisualNode;
+	readonly bodyStart?: number; readonly bodyEnd?: number;
 	/** Presentation snapshot: source-coordinate changes never invalidate unchanged DOM nodes. */
 	readonly viewDocument?: VisualNode;
 	/** Relative source offset at every visual UTF-16 boundary; formatted blocks use segments, Raw has neither. */
 	readonly boundaries: readonly (readonly number[] | null)[];
 	readonly segments?: readonly (readonly InlineSegment[] | null)[];
+	/** Multiple presentation blocks can belong to one explicit notebook cell. */
+	readonly cellBounds?: readonly (CellBoundary | null)[];
 }
 const normalized = (value: string) => value.replace(/\r\n|\r/g, '\n');
 function sourceWrapper(source: SourceDocument, node: SyntaxNode): InlineWrapper {
@@ -75,6 +79,7 @@ function literalBoundaries(value: string): readonly number[] {
 	return Object.freeze(result);
 }
 const decodedEscapes: Record<string, string> = { '\\%': '%', '\\&': '&', '\\$': '$', '\\#': '#', '\\_': '_', '\\{': '{', '\\}': '}',
+	'\\\\': '\n',
 	'\\textbackslash{}': '\\', '\\textasciicircum{}': '^', '\\textasciitilde{}': '~' };
 function decodePlain(source: SourceDocument, nodes: readonly SyntaxNode[], from: number, to: number): { text: string; boundaries: readonly number[] } | null {
 	let text = '', cursor = from; const boundaries = [0];
@@ -137,28 +142,122 @@ function decodeInline(source: SourceDocument, nodes: readonly SyntaxNode[]): { c
 	};
 	return walk(nodes, [], []) ? { content: Fragment.from(children), segments: Object.freeze(segments) } : null;
 }
+type MaketitleRole = 'heading' | 'paragraph';
+type DecodedInline = NonNullable<ReturnType<typeof decodeInline>>;
+interface MaketitleField {
+	readonly node: SyntaxNode;
+	readonly role: MaketitleRole;
+	readonly contentFrom: number;
+	readonly contentTo: number;
+	readonly inline: DecodedInline;
+}
+interface MaketitleMetadata {
+	readonly fields: readonly MaketitleField[];
+	readonly fallbackNodes: readonly SyntaxNode[];
+}
+const maketitleFieldRoles: Readonly<Record<string, MaketitleRole>> = Object.freeze({
+	title: 'heading', author: 'paragraph', date: 'paragraph'
+});
+function sourceSpanIsCurrent(source: SourceDocument, span: SourceSpan): boolean {
+	return span.documentId === source.documentId && span.version === source.version &&
+		Number.isSafeInteger(span.from) && Number.isSafeInteger(span.to) &&
+		span.from >= 0 && span.to >= span.from && span.to <= source.length;
+}
+function hasSimpleMaketitleArgument(source: SourceDocument, node: SyntaxNode): boolean {
+	if (!node.content || !sourceSpanIsCurrent(source, node.span) || !sourceSpanIsCurrent(source, node.content)) return false;
+	const content = node.content;
+	if (content.from < node.span.from || content.to > node.span.to) return false;
+	return source.read(node.span.from, content.from) === `\\${node.name}{` &&
+		source.read(content.to, node.span.to) === '}';
+}
+function decodeMaketitleInline(source: SourceDocument, node: SyntaxNode): DecodedInline | null {
+	if (!node.content) return null;
+	const inline = decodeInline(source, node.children);
+	if (!inline) return null;
+	if (inline.segments.length) return inline;
+	const emptySegment: InlineSegment = Object.freeze({
+		from: 0, to: 0, editFrom: node.content.from, editTo: node.content.to,
+		boundaries: Object.freeze([0]), marks: Object.freeze([]), wrapped: false, wrappers: Object.freeze([])
+	});
+	return Object.freeze({ content: inline.content, segments: Object.freeze([emptySegment]) });
+}
+function projectMaketitleMetadata(
+	source: SourceDocument, parsed: SourceProjection, body: SyntaxNode
+): MaketitleMetadata | null {
+	if (!projectionIsCurrent(source, parsed) || !sourceSpanIsCurrent(source, body.span)) throw new Error('STALE_VISUAL');
+	const preamble: SyntaxNode[] = [];
+	for (const node of parsed.nodes) {
+		if (node === body) continue;
+		if (!sourceSpanIsCurrent(source, node.span)) throw new Error('STALE_VISUAL');
+		if (node.span.to <= body.span.from) preamble.push(node);
+	}
+	const candidates = preamble.filter(node => Object.hasOwn(maketitleFieldRoles, node.name));
+	if (!candidates.length) return null;
+	const counts = new Map<string, number>();
+	for (const node of candidates) counts.set(node.name, (counts.get(node.name) ?? 0) + 1);
+	const fieldsByName = new Map<string, MaketitleField>();
+	const fallbackNodes: SyntaxNode[] = [];
+	for (const node of candidates) {
+		if (!sourceSpanIsCurrent(source, node.span) ||
+			(node.content !== null && !sourceSpanIsCurrent(source, node.content))) throw new Error('STALE_VISUAL');
+		const role = maketitleFieldRoles[node.name]!;
+		const expectedKind = node.name === 'title' ? 'heading' : 'raw';
+		if (counts.get(node.name) !== 1 || node.kind !== expectedKind || !hasSimpleMaketitleArgument(source, node)) {
+			fallbackNodes.push(node);
+			continue;
+		}
+		const inline = decodeMaketitleInline(source, node);
+		if (!inline || !node.content) {
+			fallbackNodes.push(node);
+			continue;
+		}
+		fieldsByName.set(node.name, Object.freeze({
+			node, role, contentFrom: node.content.from, contentTo: node.content.to, inline
+		}));
+	}
+	const fields: MaketitleField[] = [];
+	for (const name of ['title', 'author', 'date']) {
+		const field = fieldsByName.get(name);
+		if (field) fields.push(field);
+	}
+	return Object.freeze({ fields: Object.freeze(fields), fallbackNodes: Object.freeze(fallbackNodes) });
+}
 export function projectVisual(source: SourceDocument, parsed: SourceProjection): VisualProjection {
 	if (!projectionIsCurrent(source, parsed)) throw new Error('STALE_VISUAL');
+	const body = parsed.nodes.find((node) => node.kind === 'environment' && node.name === 'document');
+	const headingNames = new Set((body?.children ?? parsed.nodes).filter(node => node.kind === 'heading').map(node => node.name.replace(/\*$/, '')));
+	const sectionLevel = headingNames.has('part') ? 4 : headingNames.has('chapter') ? 3 : 2;
 	const blocks: VisualNode[] = [];
 	const boundaries: (readonly number[] | null)[] = [];
 	const segments: (readonly InlineSegment[] | null)[] = [];
 	const titleMarkers = new Set<number>();
+	let bodyHasContent = false;
 	const add = (node: SyntaxNode) => {
 		if (node.kind === 'environment' && node.name === 'document') { for (const child of node.children) add(child); return; }
+		bodyHasContent = true;
 		const content = node.kind === 'text' ? node.span : node.content;
 		const attrs = { from: node.span.from, to: node.span.to, editFrom: content?.from ?? node.span.from,
 			editTo: content?.to ?? node.span.to, role: node.kind === 'heading' ? 'heading' : node.kind === 'format' ? 'format' : 'paragraph', name: node.name,
-			level: ({ title: 1, section: 2, subsection: 3, subsubsection: 4 } as Record<string, number>)[node.name.replace(/\*$/, '')] ?? 2 };
+		level: ({ title: 1, part: 2, chapter: headingNames.has('part') ? 3 : 2, section: sectionLevel, subsection: sectionLevel + 1, subsubsection: sectionLevel + 2 } as Record<string, number>)[node.name.replace(/\*$/, '')] ?? 2 };
 		if (node.kind === 'heading' && node.name === 'title') {
 			const marker = /^\s*\\maketitle(?![A-Za-z])/.exec(source.read(node.span.to, source.length));
 			if (marker) { attrs.to += marker[0].length; titleMarkers.add(node.span.to + marker[0].indexOf('\\maketitle')); }
 		}
 		if (node.name === 'abstract' && content && ['raw', 'environment'].includes(node.kind)) {
-			const offset = content.from;
+			// One source line break frames each environment delimiter. Keep explicit
+			// TeX line breaks and user whitespace inside the editable content intact.
+			const value = source.read(content.from, content.to);
+			const leading = /^(?:\r\n|\r|\n)/.exec(value)?.[0].length ?? 0;
+			const trailing = /(?:\r\n|\r|\n)$/.exec(value.slice(leading))?.[0].length ?? 0;
+			const offset = content.from + leading, end = content.to - trailing;
 			const shift = (item: SyntaxNode): SyntaxNode => ({ ...item, span: { ...item.span, from: item.span.from + offset, to: item.span.to + offset }, content: item.content && { ...item.content, from: item.content.from + offset, to: item.content.to + offset }, children: item.children.map(shift) });
-			const children = parseSource({ read: () => source.read(content.from, content.to), documentId: source.documentId, version: source.version }).nodes.map(shift);
+			const children = parseSource({ read: () => source.read(offset, end), documentId: source.documentId, version: source.version }).nodes.map(shift);
 			const inline = decodeInline(source, children);
-			if (inline) { boundaries.push(null); segments.push(inline.segments); blocks.push(visualSchema.nodes.source_block!.create({ ...attrs, role: 'abstract' }, inline.content)); return; }
+			if (inline) {
+				boundaries.push(inline.content.size ? null : Object.freeze([0]));
+				segments.push(inline.content.size ? inline.segments : null);
+				blocks.push(visualSchema.nodes.source_block!.create({ ...attrs, editFrom: offset, editTo: end, role: 'abstract' }, inline.content)); return;
+			}
 		}
 		if (node.kind === 'math' && node.content && node.content.to - node.content.from <= 65536 && ['$', '$$', '(', '['].includes(node.name)) {
 			boundaries.push(null); segments.push(null);
@@ -196,33 +295,112 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 			blocks.push(visualSchema.nodes.source_block!.create(attrs, plain.text ? visualSchema.text(plain.text) : undefined));
 		} else { boundaries.push(null); segments.push(null); blocks.push(visualSchema.nodes.raw_block!.create({ ...attrs, source: source.read(node.span.from, node.span.to) })); }
 	};
-	const body = parsed.nodes.find((node) => node.kind === 'environment' && node.name === 'document');
 	let plainNodes: SyntaxNode[] = [];
 	let paragraphMarker: SyntaxNode | null = null;
+	const maketitleMetadata = body ? projectMaketitleMetadata(source, parsed, body) : null;
+	let projectedMaketitleMetadata = false;
 	const flush = () => {
 		if (!plainNodes.length) { if (paragraphMarker) add(paragraphMarker); paragraphMarker = null; return; }
+		if (paragraphMarker) {
+			const separatorEnd = plainNodes.at(-1)!.span.to;
+			// Source line separators around \par do not add visual rows. Real Enter
+			// line breaks are explicit \\ nodes and remain part of the cell.
+			while (plainNodes[0]?.kind === 'text') {
+				const node = plainNodes[0], value = source.read(node.span.from,node.span.to);
+				const count = /^[\r\n]+/.exec(value)?.[0].length ?? 0;
+				if (!count) break;
+				if (count === value.length) { plainNodes.shift(); continue; }
+				plainNodes[0] = {...node,span:{...node.span,from:node.span.from + count}}; break;
+			}
+			while (plainNodes.at(-1)?.kind === 'text') {
+				const node = plainNodes.at(-1)!, value = source.read(node.span.from,node.span.to);
+				const count = /[\r\n]+$/.exec(value)?.[0].length ?? 0;
+				if (!count) break;
+				if (count === value.length) { plainNodes.pop(); continue; }
+				plainNodes[plainNodes.length-1] = {...node,span:{...node.span,to:node.span.to-count}}; break;
+			}
+			if (!plainNodes.length) {
+				const marker = paragraphMarker;
+				add(marker); const empty = blocks.pop()!;
+				blocks.push(empty.type.create({...empty.attrs,to:separatorEnd,editFrom:separatorEnd,editTo:separatorEnd},empty.content));
+				paragraphMarker = null; return;
+			}
+		}
 		const from = plainNodes[0]!.span.from, to = plainNodes.at(-1)!.span.to;
-		if (!paragraphMarker && plainNodes.every(node => node.kind === 'text') && !source.read(from, to).trim()) { plainNodes = []; return; }
+		if (paragraphMarker && plainNodes.every(node => node.kind === 'text') && /^[ \t\r\n]*$/.test(source.read(from, to))) {
+			// TeX source separators are not empty lines typed into the new cell.
+			const marker = paragraphMarker;
+			add(marker);
+			const empty = blocks.pop()!;
+			blocks.push(empty.type.create({...empty.attrs,to,editFrom:to,editTo:to},empty.content));
+			paragraphMarker = null; plainNodes = []; return;
+		}
+		if (!paragraphMarker && plainNodes.every(node => node.kind === 'text') && /^[ \t\r\n]*$/.test(source.read(from, to))) { plainNodes = []; return; }
 		const attrs = { from: paragraphMarker?.span.from ?? from, to, editFrom: from, editTo: to, name: paragraphMarker ? 'par' : '' };
 		paragraphMarker = null;
 		if (plainNodes.some((node) => node.kind === 'format' || node.kind === 'math')) {
 			const inline = decodeInline(source, plainNodes)!;
+			bodyHasContent = true;
 			blocks.push(visualSchema.nodes.source_block!.create(attrs, inline.content));
 			boundaries.push(null); segments.push(inline.segments); plainNodes = []; return;
 		}
 		const plain = decodePlain(source, plainNodes, from, to)!;
+		bodyHasContent = true;
 		blocks.push(visualSchema.nodes.source_block!.create(attrs, plain.text ? visualSchema.text(plain.text) : undefined));
 		boundaries.push(plain.boundaries); segments.push(null); plainNodes = [];
 	};
 	const nodes = body ? body.children : parsed.nodes;
+	const cellRanges = explicitCellRanges(source, nodes);
+	const cellMarkers = new Set(cellRanges.flatMap(range => [range.from, range.contentTo]));
 	for (const node of nodes) {
-		if (node.kind === 'raw' && node.name === 'maketitle' && titleMarkers.has(node.span.from)) { flush(); continue; }
+		if (cellMarkers.has(node.span.from) && node.kind === 'comment') { flush(); continue; }
+		if (node.kind === 'raw' && node.name === 'maketitle') {
+			flush();
+			if (titleMarkers.has(node.span.from)) continue;
+			const exactMaketitle = node.content === null && source.read(node.span.from, node.span.to) === '\\maketitle';
+			if (exactMaketitle && !projectedMaketitleMetadata && maketitleMetadata &&
+				(maketitleMetadata.fields.length > 0 || maketitleMetadata.fallbackNodes.length > 0)) {
+				for (const field of maketitleMetadata.fields) {
+					// Empty metadata directives retain their source bytes without blank notebook cells.
+					if (field.node.name !== 'title' && field.inline.content.size === 0) continue;
+					blocks.push(visualSchema.nodes.source_block!.create({
+						from: field.node.span.from, to: field.node.span.to,
+						editFrom: field.contentFrom, editTo: field.contentTo,
+						role: field.role, name: field.node.name, level: field.role === 'heading' ? 1 : 2
+					}, field.inline.content));
+					boundaries.push(null);
+					segments.push(field.inline.segments);
+				}
+				for (const item of maketitleMetadata.fallbackNodes) {
+					blocks.push(visualSchema.nodes.raw_block!.create({
+						from: item.span.from, to: item.span.to,
+						editFrom: item.span.from, editTo: item.span.to,
+						role: 'paragraph', name: item.name, level: 2,
+						source: source.read(item.span.from, item.span.to)
+					}));
+					boundaries.push(null);
+					segments.push(null);
+				}
+				projectedMaketitleMetadata = true;
+				continue;
+			}
+			add(node);
+			continue;
+		}
 		if (node.kind === 'raw' && node.name === 'par' && node.content === null && source.read(node.span.from, node.span.to) === '\\par') { flush(); paragraphMarker = node; continue; }
 		if (node.kind === 'text' || (node.kind === 'raw' && Object.hasOwn(decodedEscapes, source.read(node.span.from, node.span.to))) || (node.kind === 'format' || node.kind === 'math' && ['$', '('].includes(node.name)) && decodeInline(source, [node])) plainNodes.push(node);
 		else { flush(); add(node); }
 	}
 	flush();
-	if (!blocks.length) {
+	if (body && !bodyHasContent) {
+		const position = body.content?.to ?? body.span.to;
+		boundaries.push(Object.freeze([0]));
+		segments.push(null);
+		blocks.push(visualSchema.nodes.source_block!.create({
+			from: position, to: position, editFrom: position, editTo: position,
+			role: 'paragraph', name: '', level: 2
+		}));
+	} else if (!blocks.length) {
 		const from = body?.content ? body.content.from : 0;
 		const to = body?.content ? body.content.to : source.length;
 		boundaries.push(Object.freeze([0]));
@@ -232,7 +410,20 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 			role: 'paragraph', name: '', level: 2
 		}));
 	}
-	return { documentId: source.documentId, version: source.version, document: visualSchema.nodes.doc!.create(null, blocks), boundaries: Object.freeze(boundaries), segments: Object.freeze(segments) };
+	const cellBounds: (CellBoundary | null)[] = blocks.map(() => null);
+	let cursor = 0;
+	for (const range of cellRanges) {
+		while (cursor < blocks.length && blocks[cursor]!.attrs.to <= range.contentFrom) cursor++;
+		const first = cursor;
+		while (cursor < blocks.length && blocks[cursor]!.attrs.from >= range.contentFrom && blocks[cursor]!.attrs.to <= range.contentTo) cursor++;
+		if (cursor > first) {
+			const cell = Object.freeze({ first, last: cursor - 1, from: range.from, to: range.to });
+			for (let index = first; index < cursor; index++) cellBounds[index] = cell;
+		}
+	}
+	return { documentId: source.documentId, version: source.version, document: visualSchema.nodes.doc!.create(null, blocks), bodyStart: body?.content?.from, bodyEnd: body?.content?.to,
+		cellBounds: Object.freeze(cellBounds),
+		boundaries: Object.freeze(boundaries), segments: Object.freeze(segments) };
 }
 const escaped: Record<string, string> = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '$': '\\$', '%': '\\%', '&': '\\&', '#': '\\#', '_': '\\_', '^': '\\textasciicircum{}', '~': '\\textasciitilde{}' };
 export function escapeVisualText(value: string): string { return normalized(value).replace(/[\\{}$%&#_^~]/g, (character) => escaped[character]!); }
@@ -538,9 +729,10 @@ export function visualPatches(source: SourceDocument, projection: VisualProjecti
 /** One immutable, identity-bound edit analysis shared by patching and canonical advancement. */
 export function prepareVisualEdit(source: SourceDocument, projection: VisualProjection, transaction: Transaction): PreparedVisualEdit {
 	const edits = Object.freeze([...blockEdits(source, projection, transaction)]);
-	const patches = edits.map(edit => edit.patch);
+	const patches = edits.map(edit => edit.patch).sort((left, right) => left.from - right.from || left.to - right.to);
 	const end = projection.document.lastChild?.attrs.to;
-	if (edits.length && typeof end === 'number' && end > 0 && source.read(end, Math.min(source.length, end + 14)).startsWith('\\end{document}') && !/[\r\n]/.test(source.read(end - 1, end))) {
+	if (edits.length && typeof end === 'number' && end > 0 && source.read(end, Math.min(source.length, end + 14)).startsWith('\\end{document}') &&
+		(!/[\r\n]/.test(source.read(end - 1, end)) || patches.some(patch => patch.to === end && patch.insert.length > 0 && !/[\r\n]$/.test(patch.insert)))) {
 		const last = patches.at(-1);
 		if (last && last.to === end) patches[patches.length - 1] = { ...last, insert: last.insert + source.profile.preferredLineEnding };
 		else patches.push({ from: end, to: end, expected: '', insert: source.profile.preferredLineEnding });
@@ -584,7 +776,7 @@ export function advanceVisual(
 		delta += patch.insert.length - (patch.to - patch.from);
 	}
 	if (next.length !== source.length + delta) throw new Error('VISUAL_RECEIPT');
-	const separatedEnd = patches.length !== edits.length || patches.some((patch, index) => patch.insert !== edits[index]?.patch.insert);
+	const separatedEnd = patches.some((patch) => !edits.some((edit) => edit.patch === patch));
 	const blocks: VisualNode[] = [], boundaries: (readonly number[] | null)[] = [], segments: (readonly InlineSegment[] | null)[] = [];
 	const byIndex = new Map<number, BlockEdit[]>();
 	let firstEditedIndex = transaction.doc.childCount;
@@ -593,8 +785,17 @@ export function advanceVisual(
 		if (group) group.push(edit); else byIndex.set(edit.index, [edit]);
 		firstEditedIndex = Math.min(firstEditedIndex, edit.index);
 	}
-	// Earlier canonical nodes and their relative maps cannot move; retain them rather than
-	// recalculating their source anchors for a length-changing edit later in the document.
+	const positionMoved = (position: unknown, bias: 'before' | 'after') =>
+		typeof position === 'number' && Number.isSafeInteger(position) && mapPosition(change, position, bias) !== position;
+	for (let index = 0; index < firstEditedIndex; index++) {
+		const attrs = projection.document.child(index).attrs;
+		if (positionMoved(attrs.from, 'after') || positionMoved(attrs.editFrom, 'after') ||
+			positionMoved(attrs.to, 'before') || positionMoved(attrs.editTo, 'before')) {
+			firstEditedIndex = index;
+			break;
+		}
+	}
+	// Earlier canonical nodes are reusable only when their source anchors did not move.
 	for (let index = 0; index < firstEditedIndex; index++) {
 		blocks.push(projection.document.child(index));
 		boundaries.push(projection.boundaries[index] ?? null);
@@ -695,6 +896,15 @@ export function advanceVisual(
 		if (!edit || !old) { boundaries.push(old ?? null); continue; }
 		boundaries.push(editBoundaries(old, edit.from, edit.to, edit.insert, source.profile.preferredLineEnding));
 	}
-	return { documentId: next.documentId, version: next.version, document: visualSchema.nodes.doc!.create(null, blocks),
+	const movedCells = new Map<CellBoundary, CellBoundary>();
+	const cellBounds = projection.cellBounds?.map(cell => {
+		if (!cell) return null;
+		let moved = movedCells.get(cell);
+		if (!moved) { moved = Object.freeze({ ...cell, from: mapPosition(change, cell.from, 'before'), to: mapPosition(change, cell.to, 'after') }); movedCells.set(cell, moved); }
+		return moved;
+	});
+	return { documentId: next.documentId, version: next.version, document: visualSchema.nodes.doc!.create(null, blocks), cellBounds,
+		bodyStart: projection.bodyStart === undefined ? undefined : mapPosition(change, projection.bodyStart, 'before'),
+		bodyEnd: projection.bodyEnd === undefined ? undefined : mapPosition(change, projection.bodyEnd, 'after'),
 		viewDocument: transaction.doc, boundaries: Object.freeze(boundaries), segments: Object.freeze(segments) };
 }

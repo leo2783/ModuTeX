@@ -7,55 +7,55 @@
 	"references": [
 		{
 			"id": "frontend-caret-wrap-20261013",
-			"path": "docs/architecture/FRONTEND_CARET_PDF_WRAP_2026-10-13.md"
+			"path": "docs/architecture/FRONTEND_VISUAL_SOURCE.md"
 		},
 		{
 			"id": "frontend-apache-20261012",
-			"path": "docs/licensing/FRONTEND_APACHE_SCOPE_2026-10-12.md"
+			"path": "docs/licensing/SOURCE_REVIEW.md"
 		},
 		{
 			"id": "frontend-images-input-20261012",
-			"path": "docs/architecture/FRONTEND_IMAGES_INPUT_2026-10-12.md"
+			"path": "docs/architecture/FRONTEND_VISUAL_SOURCE.md"
 		},
 		{
 			"id": "frontend-math-structure-20261012",
-			"path": "docs/architecture/FRONTEND_MATH_STRUCTURE_2026-10-12.md"
+			"path": "docs/architecture/FRONTEND_VISUAL_SOURCE.md"
 		},
 		{
 			"id": "frontend-close-recovery-20261012",
-			"path": "docs/architecture/FRONTEND_CLOSE_RECOVERY_2026-10-12.md"
+			"path": "docs/architecture/FRONTEND_CONTRACTS.md"
 		},
 		{
 			"id": "frontend-cell-drag-code-20261011",
-			"path": "docs/architecture/FRONTEND_CELL_DRAG_CODE_2026-10-11.md"
+			"path": "docs/architecture/FRONTEND_VISUAL_SOURCE.md"
 		},
 		{
 			"id": "frontend-notebook-interaction-20261011",
-			"path": "docs/architecture/FRONTEND_NOTEBOOK_INTERACTION_2026-10-11.md"
+			"path": "docs/architecture/FRONTEND_VISUAL_SOURCE.md"
 		},
 		{
 			"id": "frontend-math-parity-20261011",
-			"path": "docs/architecture/FRONTEND_MATH_PARITY_2026-10-11.md"
+			"path": "docs/architecture/FRONTEND_VISUAL_SOURCE.md"
 		},
 		{
 			"id": "frontend-compile-errors-20261011",
-			"path": "docs/architecture/FRONTEND_COMPILE_ERRORS_2026-10-11.md"
+			"path": "docs/architecture/FRONTEND_CONTRACTS.md"
 		},
 		{
 			"id": "frontend-inline-20261011",
-			"path": "docs/architecture/FRONTEND_INLINE_ACCEPTANCE_2026-10-11.md"
+			"path": "docs/architecture/FRONTEND_REWRITE_STATUS.md"
 		},
 		{
 			"id": "frontend-notebook-20261011",
-			"path": "docs/architecture/FRONTEND_NOTEBOOK_ACCEPTANCE_2026-10-11.md"
+			"path": "docs/architecture/FRONTEND_REWRITE_STATUS.md"
 		},
 		{
 			"id": "core-comparison-20261010",
-			"path": "docs/licensing/DOCUMENT_CORE_EXPRESSION_COMPARISON_2026-10-10.md"
+			"path": "docs/licensing/SOURCE_REVIEW.md"
 		},
 		{
 			"id": "approved-plan",
-			"path": "docs/architecture/FRONTEND_REWRITE_PLAN.md"
+			"path": "docs/architecture/FRONTEND_REWRITE_STATUS.md"
 		},
 		{
 			"id": "encoding",
@@ -75,7 +75,7 @@
 		},
 		{
 			"id": "frontend-ux-20261011",
-			"path": "docs/architecture/FRONTEND_UX_ACCEPTANCE_2026-10-11.md"
+			"path": "docs/architecture/FRONTEND_REWRITE_STATUS.md"
 		}
 	],
 	"files": [
@@ -1010,7 +1010,7 @@
 			"version": "6.12.3",
 			"license": "MIT",
 			"basis": "installed public API declarations and LICENSE; no legacy application glue",
-			"evidence": "docs/licensing/FRONTEND_FOLDING_DEPENDENCIES.md",
+			"evidence": "docs/licensing/SOURCE_REVIEW.md",
 			"reviewStatus": "pending-independent-closure-review"
 		},
 		{
@@ -1018,10 +1018,10 @@
 			"version": "0.110.0",
 			"license": "MIT",
 			"basis": "installed public API declarations, LICENSE.txt and official integration guide; original lazy Svelte adapter, no legacy application glue; pinned input-only derivative omits eight virtual-keyboard modules at build time",
-			"evidence": "docs/architecture/FRONTEND_EQUATIONS.md",
+			"evidence": "docs/architecture/FRONTEND_VISUAL_SOURCE.md",
 			"reviewStatus": "20 font binaries matched to official 0.110.0 source commit; separate font notice obligations, transformed CSS and independent closure review pending",
-			"assetEvidence": "docs/licensing/FRONTEND_FONT_SOURCE_EVIDENCE_2026-10-08.md",
-			"inputOnlyEvidence": "docs/architecture/FRONTEND_IMAGES_INPUT_2026-10-12.md"
+			"assetEvidence": "docs/licensing/SOURCE_REVIEW.md",
+			"inputOnlyEvidence": "docs/architecture/FRONTEND_VISUAL_SOURCE.md"
 		}
 	],
 	"bundledDocuments": {

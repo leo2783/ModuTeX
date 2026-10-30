@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createServer } from 'vite';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { createTable, tableSource, parseTable } from '../../src/features/tables/source.ts';
 import { booktabsPlan, tableInsertionTransaction } from '../../src/features/tables/preamble.ts';
 import { createSourceState, sourceState, rangeInsertionTarget, historyTransaction } from '../../src/features/source-editor/state.ts';

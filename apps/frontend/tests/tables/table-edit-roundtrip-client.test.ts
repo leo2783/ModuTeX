@@ -12,7 +12,7 @@ const { JSDOM } = createRequire(import.meta.url)('jsdom') as {
 };
 import { build } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import {
 	createTable,
 	columnPercentages,

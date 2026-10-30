@@ -1,0 +1,10 @@
+[[permission]]
+identifier = "allow-frontend-draft"
+description = "Allows the trusted main window to use the owner-checked Draft commands."
+commands.allow = [
+  "frontend_draft_compile",
+  "frontend_draft_typeset_paragraph",
+  "frontend_draft_stop",
+  "frontend_draft_takeover",
+  "frontend_draft_save_pdf",
+]

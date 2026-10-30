@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SourceDocument } from '@modutex/document-core';
+import { SourceDocument } from '../../src/features/document-core/core.ts';
 import { createSourceState, sourceState, historyTransaction, savedCheckpoint } from '../../src/features/source-editor/state.ts';
 import { sourceLimit } from '../../src/features/files/read.ts';
 const bytes = (text: string) => new TextEncoder().encode(text);
@@ -61,9 +61,9 @@ test('selection and multi-range changes survive undo, and new edits invalidate r
 });
 test('invalid scalar edits are rejected atomically without adding history', () => {
 	let rejected = 0;
-	const state = createSourceState(SourceDocument.open(bytes('😀')), () => rejected++);
+	const state = createSourceState(SourceDocument.open(bytes('\ud840\udc00')), () => rejected++);
 	const next = state.update({ changes: { from: 1, insert: 'X' } }).state;
-	assert.equal(next.doc.toString(), '😀');
+	assert.equal(next.doc.toString(), '\ud840\udc00');
 	assert.equal(next.field(sourceState).undo.length, 0);
 	assert.equal(rejected, 1);
 });

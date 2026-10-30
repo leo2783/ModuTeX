@@ -368,10 +368,10 @@ test('compiled Svelte CLIENT Help page: focus targets on click navigation and no
 		// 5. Intentional route-prop update (e.g. hashchange navigation) moves focus to heading
 		editorInput.focus();
 		assert.equal(dom.window.document.activeElement, editorInput);
-		harnessApi.setTopic('installation');
+		harnessApi.setTopic('compilation');
 		flushSync();
 		assert.equal(dom.window.document.activeElement, heading, 'Intentional route-prop update moves activeElement to target heading');
-		assert.equal(heading.textContent, 'Installation guide');
+		assert.equal(heading.textContent, 'PDF compilation');
 
 		// 6. Switching locale back to zh-Hant preserves focus and updates heading text to Chinese
 		editorInput.focus();
@@ -379,7 +379,7 @@ test('compiled Svelte CLIENT Help page: focus targets on click navigation and no
 		harnessApi.setLocale('zh-Hant');
 		flushSync();
 		assert.equal(dom.window.document.activeElement, editorInput, 'Locale switch back must preserve focus without stealing');
-		assert.equal(heading.textContent, '安裝指南');
+		assert.equal(heading.textContent, 'PDF 編譯');
 
 		editorInput.remove();
 	} finally {
@@ -588,7 +588,7 @@ test('compiled Svelte Home page SSR renders rendered structure, actions, and con
 	}
 });
 
-test('compiled Svelte Help page SSR renders category navigation active semantics and code containers (SSR attributes coverage)', { timeout: 20000 }, async () => {
+test('compiled Svelte Help page SSR renders category navigation active semantics (SSR attributes coverage)', { timeout: 20000 }, async () => {
 	const server = await createServer({
 		root: frontendRoot,
 		server: { middlewareMode: true, hmr: false, ws: false },
@@ -614,6 +614,7 @@ test('compiled Svelte Help page SSR renders category navigation active semantics
 
 				const backLink = doc.querySelector('header a[href="#/workbench"]');
 				assert.ok(backLink);
+				assert.equal(doc.querySelector('nav a[href="#/help/installation"]'), null);
 			} finally {
 				domInstance.window.close();
 			}
@@ -629,14 +630,6 @@ test('compiled Svelte Help page SSR renders category navigation active semantics
 			domEn.window.close();
 		}
 
-		const installHtml = render(helpModule.default, { props: { topic: 'installation', locale: 'zh-Hant' } }).body;
-		const domInstall = new JSDOM(installHtml);
-		try {
-			const codeBlock = domInstall.window.document.querySelector('.code-container .code-block');
-			assert.ok(codeBlock, 'Installation code must render inside .code-container .code-block');
-		} finally {
-			domInstall.window.close();
-		}
 	} finally {
 		await server.close();
 	}

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readSource, readSourceBytes, readPdf, sourceLimit, pdfLimit } from '../../src/features/files/read.ts';
+import { parseSource } from '../../src/features/document-core/core.ts';
+import { projectionIsCurrent } from '../../src/features/document-core/projection-state.ts';
 
 test('actual File bytes retain BOM, CRLF, comments and unknown syntax', async () => {
 	const bytes = Uint8Array.from([0xef, 0xbb, 0xbf, ...new TextEncoder().encode('%keep\r\n\\opaque{a}\r\n')]);
@@ -25,4 +27,20 @@ test('browser and desktop byte readers accept exactly 5 MiB with BOM and reject 
 	assert.deepEqual((await readSource(new File([bytes], 'large.tex'))).toBytes(), bytes);
 	assert.deepEqual(readSourceBytes(bytes).toBytes(), bytes);
 	assert.throws(() => readSourceBytes(new Uint8Array(sourceLimit + 1)), /SOURCE_TOO_LARGE/);
+});
+
+test('an externally changed saved file is reopened at its new tracked version', () => {
+	const oldBytes = new TextEncoder().encode('old main source');
+	const newBytes = new TextEncoder().encode('externally changed main source');
+	const old = readSourceBytes(oldBytes, { documentId: 'document-main', version: 4 });
+	const oldProjection = parseSource(old);
+	const updated = readSourceBytes(newBytes, { documentId: 'document-main', version: 5 });
+	const updatedProjection = parseSource(updated);
+	assert.equal(old.read(), 'old main source');
+	assert.equal(old.version, 4);
+	assert.equal(updated.read(), 'externally changed main source');
+	assert.equal(updated.documentId, old.documentId);
+	assert.equal(updated.version, 5);
+	assert.equal(projectionIsCurrent(updated, oldProjection), false);
+	assert.equal(projectionIsCurrent(updated, updatedProjection), true);
 });

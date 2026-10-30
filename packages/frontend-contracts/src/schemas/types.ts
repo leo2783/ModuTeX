@@ -1,0 +1,141 @@
+// SPDX-License-Identifier: Apache-2.0
+export interface FileRef {
+	readonly workspaceId: string;
+	readonly path: string;
+}
+export interface WorkspaceInfo {
+	readonly id: string;
+	readonly label: string;
+	readonly entryPath: string | null;
+}
+export interface RecentDocument {
+	readonly id: string;
+	readonly label: string;
+	readonly entryPath: string | null;
+	readonly openedAt: number;
+}
+export interface FileEntry {
+	readonly path: string;
+	readonly kind: 'file' | 'directory';
+}
+export interface ReadReceipt extends FileRef {
+	readonly bytes: Uint8Array;
+	readonly revision: string;
+	readonly documentId: string | null;
+	readonly documentVersion: number | null;
+}
+export interface WriteRequest extends FileRef {
+	readonly bytes: Uint8Array;
+	readonly expectedRevision: string | null;
+	readonly documentId: string;
+	readonly documentVersion: number;
+}
+export interface WriteReceipt extends FileRef {
+	readonly revision: string;
+	readonly documentId: string;
+	readonly documentVersion: number;
+}
+export interface SaveAsRequest {
+	readonly images?: readonly { readonly path: string; readonly bytes: Uint8Array }[];
+	readonly workspaceId: string | null;
+	readonly bytes: Uint8Array;
+	readonly documentId: string;
+	readonly documentVersion: number;
+}
+export interface SaveAsReceipt {
+	readonly workspace: WorkspaceInfo;
+	readonly write: WriteReceipt;
+}
+export interface FileEvent extends FileRef {
+	readonly kind: 'changed' | 'removed';
+}
+export type FileWatchFailure =
+	| 'TREE_TOO_DEEP'
+	| 'TREE_TOO_LARGE'
+	| 'STALE_WORKSPACE'
+	| 'LINK_NOT_ALLOWED'
+	| 'FILE_OPERATION_FAILED';
+export type FileWatchResyncReason = 'PERIODIC_RECONCILE_DUE';
+export interface CompileIdentity {
+	readonly runId: string;
+	readonly workspaceId: string;
+	readonly entryPath: string;
+	readonly documentId: string;
+	readonly documentVersion: number;
+	readonly savedRevision: string;
+}
+export type CompileRequest = Omit<CompileIdentity, 'runId'> & { readonly engine: 'managed' | 'system' };
+export interface Diagnostic {
+	readonly severity: 'error' | 'warning' | 'info';
+	readonly message: string;
+	readonly path: string | null;
+	readonly line: number | null;
+	readonly column: number | null;
+}
+export type CompileResult =
+	| {
+			readonly status: 'success';
+			readonly identity: CompileIdentity;
+			readonly pdf: Uint8Array;
+			readonly log: string;
+			readonly diagnostics: readonly Diagnostic[];
+	  }
+	| {
+			readonly status: 'failure' | 'cancelled';
+			readonly identity: CompileIdentity;
+			readonly log: string;
+			readonly diagnostics: readonly Diagnostic[];
+	  };
+export type CompileProfile = 'managed' | 'system' | 'custom';
+export interface CompileConfig {
+	readonly workspaceId: string;
+	readonly revision: number;
+	readonly mainFile: string | null;
+	readonly profile: CompileProfile;
+	readonly engine: 'managed' | 'system';
+	readonly outputDir: string | null;
+	readonly pdf: string | null;
+	readonly log: string | null;
+	readonly customCommand: string | null;
+	readonly canSetCommand: boolean;
+}
+export interface CompileConfigUpdate {
+	readonly workspaceId: string;
+	readonly expectedRevision: number;
+	readonly mainFile: string | null;
+	readonly profile: CompileProfile;
+	readonly outputDir: string | null;
+	readonly pdf: string | null;
+	readonly log: string | null;
+	readonly customCommand: string | null;
+}
+export interface CompileHandle {
+	readonly identity: CompileIdentity;
+	readonly finished: Promise<CompileResult>;
+	cancel(): Promise<void>;
+}
+export type Unsubscribe = () => void;
+
+// Single platform seam. It declares no fake host and exposes no raw IPC,
+// executable paths, shell arguments, remote URL, or networking permission.
+export interface DesktopPort {
+	openWorkspace(kind: 'folder' | 'file'): Promise<WorkspaceInfo | null>;
+	listRecent(): Promise<readonly RecentDocument[]>;
+	openRecent(id: string): Promise<WorkspaceInfo>;
+	removeRecent(id: string): Promise<void>;
+	listFiles(workspaceId: string): Promise<readonly FileEntry[]>;
+	readFile(file: FileRef): Promise<ReadReceipt>;
+	writeFile(request: WriteRequest): Promise<WriteReceipt>;
+	saveAs(request: SaveAsRequest): Promise<SaveAsReceipt | null>;
+	watchFiles(
+		workspaceId: string,
+		listener: (event: FileEvent) => void,
+		onError?: (failure: FileWatchFailure) => void,
+		onResync?: (reason: FileWatchResyncReason) => void
+	): Promise<Unsubscribe>;
+	compile(request: CompileRequest): Promise<CompileHandle>;
+	takeCompileSynctex?(identity: CompileIdentity): Promise<Uint8Array | null>;
+	getCompileConfig(workspaceId: string): Promise<CompileConfig>;
+	updateCompileConfig(request: CompileConfigUpdate): Promise<CompileConfig>;
+	closeWorkspace(workspaceId: string): Promise<void>;
+}

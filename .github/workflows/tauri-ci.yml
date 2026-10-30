@@ -1,0 +1,287 @@
+name: Tauri CI
+on:
+  push: {}
+  pull_request: {}
+  workflow_dispatch:
+    inputs:
+      prior_installer_url:
+        description: Optional installer URL from a ModuTeX GitHub release
+        required: false
+        type: string
+        default: ''
+      prior_installer_version:
+        description: Stable version embedded in the prior installer
+        required: false
+        type: string
+        default: ''
+      prior_installer_sha256:
+        description: SHA-256 of the prior installer
+        required: false
+        type: string
+        default: ''
+      prior_executable_name:
+        description: Installed executable basename from the prior installer
+        required: false
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      formal_release:
+        description: Enforce formal release configuration (productName ModuTeX)
+        required: false
+        type: boolean
+        default: false
+      checkout_ref:
+        description: Full 40-character commit SHA to checkout
+        required: false
+        type: string
+        default: ''
+    outputs:
+      git_commit:
+        description: Source commit hash
+        value: ${{ jobs.source-identity.outputs.git_commit }}
+      built_exe_sha256:
+        description: Built release executable SHA256
+        value: ${{ jobs.desktop-build.outputs.built_exe_sha256 }}
+      built_exe_artifact_id:
+        description: Workflow artifact ID for the release executable
+        value: ${{ jobs.desktop-build.outputs.built_exe_artifact_id }}
+      built_exe_artifact_name:
+        description: Workflow artifact name for the release executable
+        value: ${{ jobs.desktop-build.outputs.built_exe_artifact_name }}
+      built_exe_artifact_run_id:
+        description: Workflow run ID containing the release executable artifact
+        value: ${{ jobs.desktop-build.outputs.built_exe_artifact_run_id }}
+      built_exe_artifact_digest:
+        description: SHA256 digest of the uploaded executable artifact
+        value: ${{ jobs.desktop-build.outputs.built_exe_artifact_digest }}
+      built_exe_workflow_sha:
+        description: Workflow run head SHA containing the executable artifact
+        value: ${{ jobs.desktop-build.outputs.built_exe_workflow_sha }}
+      built_exe_source_commit:
+        description: Verified source commit used to build the executable
+        value: ${{ jobs.desktop-build.outputs.built_exe_source_commit }}
+      built_exe_package_version:
+        description: Verified package version for the executable
+        value: ${{ jobs.desktop-build.outputs.built_exe_package_version }}
+      online_installer_sha256:
+        description: Built online installer SHA256
+        value: ${{ jobs.package-validation.outputs.online_installer_sha256 }}
+      offline_installer_sha256:
+        description: Built offline installer SHA256
+        value: ${{ jobs.package-validation.outputs.offline_installer_sha256 }}
+      package_version:
+        description: Verified package version
+        value: ${{ jobs.source-identity.outputs.package_version }}
+permissions:
+  actions: read
+  contents: read
+concurrency:
+  group: tauri-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  validate-source-ref:
+    name: Validate explicit source commit
+    runs-on: windows-2025
+    outputs:
+      checkout_ref: ${{ steps.ref.outputs.checkout_ref }}
+    steps:
+      - name: Validate full commit SHA before checkout
+        id: ref
+        env:
+          REQUESTED_CHECKOUT_REF: ${{ inputs.checkout_ref || github.sha }}
+        run: |
+          if ($env:REQUESTED_CHECKOUT_REF -notmatch '^[0-9a-fA-F]{40}$') {
+            throw 'checkout_ref must be a full 40-character commit SHA'
+          }
+          $commit = ([string]$env:REQUESTED_CHECKOUT_REF).ToLowerInvariant()
+          "checkout_ref=$commit" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+  changes:
+    name: Classify changed paths
+    needs: validate-source-ref
+    runs-on: ubuntu-24.04
+    outputs:
+      full_ci: ${{ steps.changes.outputs.full_ci }}
+    steps:
+      - name: Checkout validated comparison history
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ needs.validate-source-ref.outputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Setup Node.js 24.22.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          if ((node --version) -ne 'v24.22.1') { throw 'Node.js 24.22.1 required' }
+          if ((npm --version) -ne '11.19.1') { throw 'npm 11.19.1 required' }
+      - name: Classify the event's changed paths
+        id: changes
+        env:
+          FORCE_FULL_CI: ${{ inputs.formal_release || inputs.checkout_ref != '' || github.event_name == 'workflow_dispatch' }}
+        run: node tests/scripts/classify-ci-changes.mjs
+  source-identity:
+    name: Verify source and release metadata
+    needs:
+      - validate-source-ref
+      - changes
+    if: needs.changes.outputs.full_ci == 'true'
+    runs-on: windows-2025
+    outputs:
+      git_commit: ${{ steps.identity.outputs.git_commit }}
+      package_version: ${{ steps.identity.outputs.package_version }}
+    steps:
+      - name: Checkout validated source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ needs.validate-source-ref.outputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify checked-out identity and package metadata
+        id: identity
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ needs.validate-source-ref.outputs.checkout_ref }}
+          FORMAL_RELEASE: ${{ inputs.formal_release }}
+        run: |
+          $commit = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Source revision unavailable' }
+          if ($commit -ne $env:EXPECTED_SOURCE_COMMIT) {
+            throw "Checked-out commit ($commit) differs from requested source ($env:EXPECTED_SOURCE_COMMIT)"
+          }
+          $pkg = Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json
+          $conf = Get-Content -LiteralPath 'apps/desktop-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
+          if (-not $pkg.version -or $pkg.version -ne $conf.version) {
+            throw "package.json version ($($pkg.version)) does not match tauri.conf.json version ($($conf.version))"
+          }
+          if ($env:FORMAL_RELEASE -eq 'true') {
+            if ($conf.productName -ne 'ModuTeX') {
+              throw "formal_release requested but tauri.conf.json productName is '$($conf.productName)', expected 'ModuTeX'"
+            }
+            if ($conf.identifier -ne 'io.github.leo2783.modutex.tauri') {
+              throw "formal_release requested but tauri.conf.json identifier is '$($conf.identifier)', expected 'io.github.leo2783.modutex.tauri'"
+            }
+          }
+          "git_commit=$commit" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "package_version=$($pkg.version)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+  markdown:
+    name: Maintained Markdown
+    needs:
+      - validate-source-ref
+      - changes
+    uses: ./.github/workflows/tauri-markdown.yml
+    with:
+      checkout_ref: ${{ needs.validate-source-ref.outputs.checkout_ref }}
+  frontend:
+    name: Frontend, Svelte, contracts, and frontend assets
+    needs:
+      - source-identity
+    uses: ./.github/workflows/tauri-frontend.yml
+    with:
+      checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
+  rust:
+    name: Rust, WASM, formatting, Clippy, and tests
+    needs:
+      - source-identity
+      - frontend
+    uses: ./.github/workflows/tauri-rust.yml
+    with:
+      frontend_artifact_name: ${{ needs.frontend.outputs.frontend_artifact_name }}
+      checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
+  supply-chain:
+    name: Dependency and registry security
+    needs:
+      - source-identity
+    uses: ./.github/workflows/tauri-supply-chain.yml
+    with:
+      checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
+  desktop-build:
+    name: Build and attest Windows desktop executable
+    needs:
+      - source-identity
+      - frontend
+    uses: ./.github/workflows/tauri-desktop-build.yml
+    with:
+      frontend_artifact_name: ${{ needs.frontend.outputs.frontend_artifact_name }}
+      checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
+      package_version: ${{ needs.source-identity.outputs.package_version }}
+  native-e2e:
+    name: Native Windows WebView E2E lanes
+    needs:
+      - frontend
+      - source-identity
+      - desktop-build
+    uses: ./.github/workflows/tauri-native-e2e.yml
+    with:
+      frontend_artifact_name: ${{ needs.frontend.outputs.frontend_artifact_name }}
+      checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
+      package_version: ${{ needs.source-identity.outputs.package_version }}
+      built_exe_sha256: ${{ needs.desktop-build.outputs.built_exe_sha256 }}
+      built_exe_artifact_id: ${{ needs.desktop-build.outputs.built_exe_artifact_id }}
+      built_exe_artifact_name: ${{ needs.desktop-build.outputs.built_exe_artifact_name }}
+      built_exe_artifact_run_id: ${{ needs.desktop-build.outputs.built_exe_artifact_run_id }}
+      built_exe_artifact_digest: ${{ needs.desktop-build.outputs.built_exe_artifact_digest }}
+      built_exe_workflow_sha: ${{ needs.desktop-build.outputs.built_exe_workflow_sha }}
+      built_exe_source_commit: ${{ needs.desktop-build.outputs.built_exe_source_commit }}
+      built_exe_package_version: ${{ needs.desktop-build.outputs.built_exe_package_version }}
+  distribution-policy:
+    name: Distribution and workflow policy
+    needs:
+      - source-identity
+      - desktop-build
+    uses: ./.github/workflows/tauri-distribution-policy.yml
+    with:
+      checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
+      package_version: ${{ needs.source-identity.outputs.package_version }}
+      built_exe_sha256: ${{ needs.desktop-build.outputs.built_exe_sha256 }}
+      built_exe_artifact_id: ${{ needs.desktop-build.outputs.built_exe_artifact_id }}
+      built_exe_artifact_name: ${{ needs.desktop-build.outputs.built_exe_artifact_name }}
+      built_exe_artifact_run_id: ${{ needs.desktop-build.outputs.built_exe_artifact_run_id }}
+      built_exe_artifact_digest: ${{ needs.desktop-build.outputs.built_exe_artifact_digest }}
+      built_exe_workflow_sha: ${{ needs.desktop-build.outputs.built_exe_workflow_sha }}
+      built_exe_source_commit: ${{ needs.desktop-build.outputs.built_exe_source_commit }}
+      built_exe_package_version: ${{ needs.desktop-build.outputs.built_exe_package_version }}
+  package-validation:
+    name: Validate online and offline Windows packages
+    needs:
+      - source-identity
+      - markdown
+      - supply-chain
+      - frontend
+      - rust
+      - distribution-policy
+      - desktop-build
+      - native-e2e
+    uses: ./.github/workflows/tauri-package-validation.yml
+    with:
+      frontend_artifact_name: ${{ needs.frontend.outputs.frontend_artifact_name }}
+      checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
+      package_version: ${{ needs.source-identity.outputs.package_version }}
+      built_exe_sha256: ${{ needs.desktop-build.outputs.built_exe_sha256 }}
+      built_exe_artifact_id: ${{ needs.desktop-build.outputs.built_exe_artifact_id }}
+      built_exe_artifact_name: ${{ needs.desktop-build.outputs.built_exe_artifact_name }}
+      built_exe_artifact_run_id: ${{ needs.desktop-build.outputs.built_exe_artifact_run_id }}
+      built_exe_artifact_digest: ${{ needs.desktop-build.outputs.built_exe_artifact_digest }}
+      built_exe_workflow_sha: ${{ needs.desktop-build.outputs.built_exe_workflow_sha }}
+      built_exe_source_commit: ${{ needs.desktop-build.outputs.built_exe_source_commit }}
+      built_exe_package_version: ${{ needs.desktop-build.outputs.built_exe_package_version }}
+  installer-lifecycle:
+    name: Online and offline NSIS installer lifecycle
+    needs:
+      - source-identity
+      - desktop-build
+      - package-validation
+    uses: ./.github/workflows/tauri-installer-lifecycle.yml
+    with:
+      checkout_ref: ${{ needs.source-identity.outputs.git_commit }}
+      package_version: ${{ needs.source-identity.outputs.package_version }}
+      built_exe_sha256: ${{ needs.desktop-build.outputs.built_exe_sha256 }}
+      built_exe_source_commit: ${{ needs.desktop-build.outputs.built_exe_source_commit }}
+      built_exe_package_version: ${{ needs.desktop-build.outputs.built_exe_package_version }}
+      online_installer_sha256: ${{ needs.package-validation.outputs.online_installer_sha256 }}
+      offline_installer_sha256: ${{ needs.package-validation.outputs.offline_installer_sha256 }}

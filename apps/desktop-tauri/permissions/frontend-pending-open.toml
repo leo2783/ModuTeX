@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-frontend-pending-open"
+description = "Allows a trusted window to consume its host-assigned operating-system open request."
+commands.allow = ["frontend_take_pending_open"]

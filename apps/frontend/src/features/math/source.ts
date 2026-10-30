@@ -1,4 +1,4 @@
-import { projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan, type SyntaxNode } from '@modutex/document-core';
+import { projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan, type SyntaxNode } from '../document-core/core.ts';
 export interface EquationDraft { readonly latex: string; readonly inline: boolean }
 export interface LocatedEquation { readonly draft: EquationDraft; readonly span: SourceSpan; readonly content: SourceSpan }
 /** Only closed delimiter math from the current parser grants editing authority. */

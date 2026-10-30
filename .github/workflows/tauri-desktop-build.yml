@@ -1,0 +1,215 @@
+name: Tauri CI - Desktop executable build
+on:
+  workflow_call:
+    inputs:
+      frontend_artifact_name:
+        description: Exact artifact name emitted by the frontend producer job.
+        required: true
+        type: string
+      checkout_ref:
+        description: Validated full source commit SHA from source admission.
+        required: true
+        type: string
+      package_version:
+        description: Package version verified by source admission.
+        required: true
+        type: string
+    outputs:
+      built_exe_sha256:
+        description: Built release executable SHA256
+        value: ${{ jobs.desktop-build.outputs.built_exe_sha256 }}
+      built_exe_artifact_id:
+        description: Workflow artifact ID for the release executable
+        value: ${{ jobs.desktop-build.outputs.built_exe_artifact_id }}
+      built_exe_artifact_name:
+        description: Workflow artifact name for the release executable
+        value: ${{ jobs.desktop-build.outputs.built_exe_artifact_name }}
+      built_exe_artifact_run_id:
+        description: Workflow run ID containing the release executable artifact
+        value: ${{ jobs.desktop-build.outputs.built_exe_artifact_run_id }}
+      built_exe_artifact_digest:
+        description: SHA256 digest of the uploaded executable artifact
+        value: ${{ jobs.desktop-build.outputs.built_exe_artifact_digest }}
+      built_exe_workflow_sha:
+        description: Workflow run head SHA containing the executable artifact
+        value: ${{ jobs.desktop-build.outputs.built_exe_workflow_sha }}
+      built_exe_source_commit:
+        description: Verified source commit used to build the executable
+        value: ${{ jobs.desktop-build.outputs.built_exe_source_commit }}
+      built_exe_package_version:
+        description: Verified package version for the executable
+        value: ${{ jobs.desktop-build.outputs.built_exe_package_version }}
+permissions:
+  actions: read
+  contents: read
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  desktop-build:
+    name: Build and attest Windows desktop executable
+    runs-on: windows-2025
+    outputs:
+      built_exe_sha256: ${{ steps.exe_identity.outputs.sha256 }}
+      built_exe_artifact_id: ${{ steps.upload_release_exe.outputs.artifact-id }}
+      built_exe_artifact_name: ${{ steps.exe_identity.outputs.artifact_name }}
+      built_exe_artifact_run_id: ${{ steps.exe_identity.outputs.run_id }}
+      built_exe_artifact_digest: ${{ steps.upload_release_exe.outputs.artifact-digest }}
+      built_exe_workflow_sha: ${{ steps.exe_identity.outputs.workflow_sha }}
+      built_exe_source_commit: ${{ steps.exe_identity.outputs.source_commit }}
+      built_exe_package_version: ${{ steps.exe_identity.outputs.package_version }}
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.22.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          if ((node --version) -ne 'v24.22.1') { throw 'Node.js 24.22.1 required' }
+          if ((npm --version) -ne '11.19.1') { throw 'npm 11.19.1 required' }
+      - name: Install locked build dependencies
+        run: npm ci --ignore-scripts
+      - name: Remove any pre-existing Tauri frontend output
+        run: |
+          $dist = 'apps/frontend/dist-tauri'
+          if (Test-Path -LiteralPath $dist) { Remove-Item -LiteralPath $dist -Recurse -Force }
+      - name: Download frontend assets built for this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FRONTEND_ARTIFACT_NAME: ${{ inputs.frontend_artifact_name }}
+        run: |
+          $artifactDirectory = Join-Path $env:RUNNER_TEMP ('modutex-tauri-frontend-' + [guid]::NewGuid().ToString('N'))
+          if (Test-Path -LiteralPath $artifactDirectory) {
+            throw 'Frontend artifact staging directory unexpectedly exists'
+          }
+          New-Item -ItemType Directory -Path $artifactDirectory -ErrorAction Stop | Out-Null
+          & ./tests/scripts/helpers/download-workflow-artifact.ps1 -RunId $env:GITHUB_RUN_ID -ArtifactName $env:FRONTEND_ARTIFACT_NAME -Destination $artifactDirectory
+          if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
+          $dist = Join-Path $artifactDirectory 'apps/frontend/dist-tauri'
+          if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
+            throw 'Frontend build artifact did not contain apps/frontend/dist-tauri'
+          }
+          $frontendFiles = @(Get-ChildItem -LiteralPath $dist -File -Recurse -Force)
+          if ($frontendFiles.Count -eq 0) { throw 'Frontend build artifact is empty' }
+          if (-not (Test-Path -LiteralPath (Join-Path $dist 'index.html') -PathType Leaf)) {
+            throw 'Frontend build artifact did not contain the built Tauri index.html'
+          }
+          $required = @(
+            'LICENSE',
+            'apps/desktop-tauri/NOTICE',
+            'apps/frontend/LICENSE',
+            'apps/frontend/NOTICE',
+            'apps/frontend/THIRD_PARTY_NOTICES.md',
+            'packages/frontend-contracts/LICENSE',
+            'vendor/notices/TECTONIC-LICENSE.txt',
+            'vendor/notices/TECTONIC-NOTICE.md'
+          )
+          foreach ($path in $required) {
+            $artifactNotice = Join-Path $artifactDirectory $path
+            if (-not (Test-Path -LiteralPath $artifactNotice -PathType Leaf)) {
+              throw "Required frontend build artifact notice missing: $path"
+            }
+            if ((Get-Item -LiteralPath $artifactNotice).Length -le 0) {
+              throw "Required frontend build artifact notice is empty: $path"
+            }
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Required checked-out frontend notice missing: $path"
+            }
+            if ((Get-Item -LiteralPath $path).Length -le 0) {
+              throw "Required checked-out frontend notice is empty: $path"
+            }
+            $artifactHash = (Get-FileHash -LiteralPath $artifactNotice -Algorithm SHA256).Hash
+            $checkoutHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+            if ($artifactHash -ne $checkoutHash) {
+              throw "Frontend artifact notice does not match checked-out source: $path"
+            }
+          }
+          $checkoutDist = 'apps/frontend/dist-tauri'
+          if (Test-Path -LiteralPath $checkoutDist) {
+            Remove-Item -LiteralPath $checkoutDist -Recurse -Force -ErrorAction Stop
+          }
+          New-Item -ItemType Directory -Path $checkoutDist -ErrorAction Stop | Out-Null
+          Get-ChildItem -LiteralPath $dist -Force |
+            Copy-Item -Destination $checkoutDist -Recurse -Force -ErrorAction Stop |
+            Out-Null
+          if (-not (Test-Path -LiteralPath (Join-Path $checkoutDist 'index.html') -PathType Leaf)) {
+            throw 'The staged Tauri frontend index.html was not installed in the checkout'
+          }
+      - name: Install Rust toolchain 1.97.1
+        run: |
+          rustup toolchain install 1.97.1 --profile minimal --component rustfmt,clippy --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain installation failed with exit code $LASTEXITCODE" }
+          rustup default 1.97.1-x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain selection failed with exit code $LASTEXITCODE" }
+      - name: Verify Rust toolchain versions
+        run: |
+          $rustcVer = rustc --version
+          if ($LASTEXITCODE -ne 0) { throw 'rustc is unavailable' }
+          if ($rustcVer -notmatch 'rustc 1\.97\.1') { throw "rustc 1.97.1 required, got $rustcVer" }
+          $cargoVer = cargo --version
+          if ($LASTEXITCODE -ne 0) { throw 'cargo is unavailable' }
+          if ($cargoVer -notmatch 'cargo 1\.97\.1') { throw "cargo 1.97.1 required, got $cargoVer" }
+      - name: Remove stale executable output
+        run: |
+          $exe = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe'
+          if (Test-Path -LiteralPath $exe) { Remove-Item -LiteralPath $exe -Force }
+      - name: Build Windows x64 release executable
+        run: cargo build --manifest-path apps/desktop-tauri/Cargo.toml --locked --release --target x86_64-pc-windows-msvc
+      - name: Verify executable and capture tested build identity
+        id: exe_identity
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.checkout_ref }}
+          EXPECTED_PACKAGE_VERSION: ${{ inputs.package_version }}
+          WORKFLOW_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CI_RUN_ID: ${{ github.run_id }}
+        run: >
+          $commit = (git rev-parse HEAD).Trim()
+
+          if ($LASTEXITCODE -ne 0) { throw 'Source revision unavailable' }
+
+          if ($commit -ne $env:EXPECTED_SOURCE_COMMIT) { throw 'Desktop build checked out an unexpected source commit' }
+
+          if ($env:EXPECTED_PACKAGE_VERSION -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.]+)?$') { throw 'Verified
+          package version is invalid' }
+
+          if ($env:WORKFLOW_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Workflow run head SHA is invalid' }
+
+          $exe = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe'
+
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "Freshly built release binary not found at $exe"
+          }
+
+          $item = Get-Item -LiteralPath $exe
+
+          if ($item.Length -le 0) { throw 'Built release executable is empty' }
+
+          $sha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if (-not $sha256 -or $sha256 -eq 'none') { throw 'Failed to compute executable SHA-256' }
+
+          "sha256=$sha256" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          'artifact_name=ModuTeX-Release-Executable' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          "run_id=$env:CI_RUN_ID" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          "workflow_sha=$env:WORKFLOW_SHA" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          "source_commit=$commit" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          "package_version=$env:EXPECTED_PACKAGE_VERSION" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Upload immutable release executable artifact
+        id: upload_release_exe
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Release-Executable
+          path: apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe
+          if-no-files-found: error

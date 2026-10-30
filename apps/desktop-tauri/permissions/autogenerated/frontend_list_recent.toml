@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-frontend-list-recent"
+description = "Enables the frontend_list_recent command without any pre-configured scope."
+commands.allow = ["frontend_list_recent"]
+
+[[permission]]
+identifier = "deny-frontend-list-recent"
+description = "Denies the frontend_list_recent command without any pre-configured scope."
+commands.deny = ["frontend_list_recent"]

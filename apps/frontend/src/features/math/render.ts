@@ -4,6 +4,7 @@ import { createMathField, disposeMathField, toVisualLatex } from './field.ts';
 export function renderEquation(target: HTMLElement, latex: string): (() => void) & { update(latex: string): void } {
 	const field = createMathField(target);
 	field.readOnly = true;
+	field.inert = true;
 	field.setAttribute('aria-label', '公式'); field.setAttribute('tabindex', '-1');
 	field.setValue(toVisualLatex(latex), { silenceNotifications: true });
 	return Object.assign(() => disposeMathField(field), {

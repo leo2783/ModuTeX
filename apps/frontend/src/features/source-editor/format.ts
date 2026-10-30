@@ -1,5 +1,5 @@
 import { ChangeSet, type EditorState } from '@codemirror/state';
-import { projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan, type SyntaxNode } from '@modutex/document-core';
+import { parseSource, projectionIsCurrent, type SourceDocument, type SourceProjection, type SourceSpan, type SyntaxNode } from '../document-core/core.ts';
 import { rangeInsertionTarget, sourceState, sourcePatchTransaction } from './state.ts';
 import { packagePlan } from '../tables/preamble.ts';
 
@@ -7,6 +7,25 @@ export type TextFormat = 'strong' | 'em' | 'underline';
 const commands = { strong: 'textbf', em: 'textit', underline: 'underline' } as const;
 const formats: Record<string, TextFormat> = { textbf: 'strong', textit: 'em', emph: 'em', underline: 'underline' };
 const knownFormat = (name: string) => Object.hasOwn(formats, name) || /^color:[0-9A-F]{6}$/.test(name);
+
+/** Abstracts have a known editable body but remain opaque in the outer TeX tree. */
+function formattingNodes(nodes: readonly SyntaxNode[], source: SourceDocument, from: number, to: number): readonly SyntaxNode[] {
+	const expand = (node: SyntaxNode): SyntaxNode => {
+		if (['raw', 'environment'].includes(node.kind) && node.name === 'abstract' && node.content &&
+			from >= node.content.from && to <= node.content.to) {
+			const offset = node.content.from;
+			const parsed = parseSource({ read: () => source.read(offset, node.content!.to), documentId: source.documentId, version: source.version });
+			if (parsed.issues.length) throw new Error('FORMAT_RANGE');
+			const shift = (child: SyntaxNode): SyntaxNode => ({ ...child,
+				span: { ...child.span, from: child.span.from + offset, to: child.span.to + offset },
+				content: child.content && { ...child.content, from: child.content.from + offset, to: child.content.to + offset },
+				children: child.children.map(shift) });
+			return { ...node, kind: 'environment', children: parsed.nodes.map(shift) };
+		}
+		return node.kind === 'environment' && node.name === 'document' ? { ...node, children: node.children.map(expand) } : node;
+	};
+	return nodes.map(expand);
+}
 
 /** Find a source range contained by exactly one decoded text leaf under known format nodes. */
 function selectedTextPath(root: SyntaxNode, from: number, to: number): SyntaxNode[] | null {
@@ -148,7 +167,7 @@ function collectInlineRange(nodes: readonly SyntaxNode[], source: SourceDocument
 			for (const child of node.children) visit(child, wrappers);
 			return;
 		}
-		if (node.kind === 'environment' && node.name === 'document') {
+		if (node.kind === 'environment' && ['document', 'abstract'].includes(node.name)) {
 			for (const child of node.children) visit(child, wrappers);
 			return;
 		}
@@ -340,7 +359,7 @@ export function colorTransaction(state: EditorState, parsed: SourceProjection, h
 	if (!projectionIsCurrent(source, parsed)) throw new Error('STALE_FORMAT');
 	const selected = span ? rangeInsertionTarget(state, span) : state.selection.main;
 	const from = projection.toSource(selected.from), to = projection.toSource(selected.to);
-	if (!collectInlineRange(parsed.nodes, source, from, to)) throw new Error('FORMAT_RANGE');
+	if (!collectInlineRange(formattingNodes(parsed.nodes, source, from, to), source, from, to)) throw new Error('FORMAT_RANGE');
 	const plan = packagePlan(source, parsed, 'xcolor');
 	const patches = [{ from, to: from, insert: `\\textcolor[HTML]{${hex.toUpperCase()}}{`, expected: '' }, { from: to, to, insert: '}', expected: '' }];
 	if (plan) patches.unshift({ from: plan.span.from, to: plan.span.to, insert: plan.insert.replace(/\n/g, source.profile.preferredLineEnding), expected: '' });
@@ -370,12 +389,13 @@ export function formatTransaction(state: EditorState, parsed: SourceProjection, 
 				if (!match.wrapper || formats[match.wrapper.name] !== format || formats[node.name] === format) match.wrapper = node;
 			}
 			if (node.kind === 'format' && node.content && formats[node.name] === format && from >= node.content.from && to <= node.content.to) match.enclosing = node;
-			if (node.kind === 'format' || node.kind === 'heading' || node.kind === 'environment' && node.name === 'document') visit(node.children);
+			if (node.kind === 'format' || node.kind === 'heading' || node.kind === 'environment' && ['document', 'abstract'].includes(node.name)) visit(node.children);
 		}
 	};
-	visit(parsed.nodes);
+	const nodes = formattingNodes(parsed.nodes, source, from, to);
+	visit(nodes);
 	const wrapper = match.wrapper;
-	const inlineRange = selection.from === selection.to ? null : collectInlineRange(parsed.nodes, source, from, to);
+	const inlineRange = selection.from === selection.to ? null : collectInlineRange(nodes, source, from, to);
 	if (!match.plain && !wrapper && !inlineRange) throw new Error('FORMAT_RANGE');
 	if (wrapper && wrapper.content && formats[wrapper.name] === format && canCancelWrapper(inlineRange, wrapper, format)) {
 		const whole = rangeInsertionTarget(state, wrapper.span), inner = rangeInsertionTarget(state, wrapper.content);

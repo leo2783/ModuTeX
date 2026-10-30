@@ -6,7 +6,7 @@ import {
 	type SourceProjection,
 	type SourceSpan,
 	type SyntaxNode
-} from '@modutex/document-core';
+} from '../document-core/core.ts';
 import { insertionTransaction, rangeInsertionTarget, sourceState } from '../source-editor/state.ts';
 
 export interface CodeDraft {
@@ -58,7 +58,7 @@ export function codeSource(code: string, starred = false, language = 'text'): st
 	}
 	const normalized = code.replace(/\r\n|\r/g, '\n');
 	const env = language === 'text' ? (starred ? 'verbatim*' : 'verbatim') : 'lstlisting';
-	const options = env === 'lstlisting' ? `[language=${selected[3]},name=${selected[0]}]` : '';
+	const options = env === 'lstlisting' ? `[language=${selected[3]},name=${selected[0]},xleftmargin=\\parindent]` : '';
 	// LaTeX verbatim 會自動吸收 \begin{verbatim} 緊接的首個換行符；確保結尾換行使 \end{verbatim} 位於新行
 	const body = normalized.endsWith('\n')
 		? normalized
@@ -69,7 +69,7 @@ export function codeSource(code: string, starred = false, language = 'text'): st
 /** Read only our bounded language metadata; unsupported listing options stay Raw. */
 export function parseCodeContent(raw: string, environment: string): CodeDraft | null {
 	if (environment !== 'lstlisting') return { code: parseVerbatimContent(raw), language: 'text' };
-	const match = /^\[language=([A-Za-z+]*),name=([a-z0-9-]+)\](?=\r?\n)/.exec(raw);
+	const match = /^\[language=([A-Za-z+]*),name=([a-z0-9-]+)(?:,xleftmargin=\\parindent)?\](?=\r?\n)/.exec(raw);
 	if (!match) return null;
 	const entry = CODE_LANGUAGES.find(entry => entry[0] === match[2] && entry[3] === match[1]);
 	return entry ? { code: parseVerbatimContent(raw.slice(match[0].length)), language: entry[0] } : null;

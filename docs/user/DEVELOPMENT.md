@@ -1,55 +1,38 @@
-# Development / 開發與打包
+# 開發與打包
 
-Run commands from the repository root with Node.js **24.19.0** and npm **11.17.0**, as pinned in `package.json`.
-請在儲存庫根目錄使用 `package.json` 指定的版本。
-
-The desktop product and active frontend are **0.2.1**. Shared private libraries such as `@modutex/document-core` and `@modutex/frontend-contracts` retain independent **0.1.0** versions. npm build banners show the individual library version; `scripts/set-version.mjs` synchronizes only the desktop and active frontend.
-桌面程式與新版前端為 **0.2.1**；共用函式庫採獨立版本，因此建置訊息中的 `document-core@0.1.0` 不代表桌面程式是舊版。
+在儲存庫根目錄執行。使用 Node.js 24.22.1、npm 11.19.1、Rust 1.97.1 MSVC 與 wasm-bindgen-cli 0.2.126。
 
 ```powershell
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.126 --locked
 npm ci
-npm run electron:dev:frontend
+npm run build
+npm run tauri
 ```
 
-The new frontend uses Vite on `127.0.0.1:5174`; `npm run electron:dev` starts the earlier editor on 5173.
-Stop the existing process with Ctrl+C before switching.
-新版前端使用 5174 埠，先前編輯器使用 5173；切換前先 Ctrl+C 停止原程序。
+`npm run tauri` 啟動已建置的執行檔。修改程式後先重新建置。
 
-| Command | Purpose / 用途 |
-|---|---|
-| `npm run electron:frontend` | Build and run the new frontend from local files. / 靜態建置並啟動新版前端。 |
-| `npm run frontend:test` | New frontend tests; pretest builds shared packages. / 新前端測試，pretest 先建置共用套件。 |
-| `npm run verify:modutex` | Shared build, frontend types/tests, core/contracts and retained host/editor checks. / 共用建置、新前端、核心／契約及保留的 host／編輯器檢查。 |
-| `npm run test:ci-policy` | Workflow policy and real frontend failure propagation. / CI 政策與真前端故障傳遞。 |
-| `npm run test:frontend-origin` | Rebuild the frontend, then test source boundaries, artifact containment and font notices. / 先重建前端，再驗證來源邊界、產物路徑及字型通知。 |
-| `npm run app:build` | Production frontend and Electron build. / 正式前端與 Electron 建置。 |
+| 命令                            | 用途                                 |
+| ------------------------------- | ------------------------------------ |
+| `npm run frontend:check`        | Svelte 與 TypeScript 檢查            |
+| `npm run frontend:test`         | 前端功能測試                         |
+| `npm run frontend:build:tauri`  | 建置 Rust WASM 與 Tauri 前端         |
+| `npm run tauri:build`           | 建置前端與 Rust 桌面程式             |
+| `npm run tauri:package`         | 建置標準 Windows 安裝包              |
+| `npm run tauri:package:offline` | 建置含離線 WebView2 安裝資源的安裝包 |
 
-`npm run verify:frontend-origin` writes a JSON evidence report and intentionally exits with status 1 while independent source/license reviews remain unresolved. It is an investigation tool, not a release approval. Its `not-cleared` verdict does not change the scope documented in `LICENSING.md`.
-`verify:frontend-origin` 是證據收集工具；獨立來源／授權審查未結案時會輸出 `not-cleared` 並以狀態 1 結束，不可將其解讀成桌面已脫離 AGPL 或自動授權放行。
+桌面、前端、共用契約及 Rust 核心使用 0.3.0。版本更新使用 `npm run set-version -- 0.3.0`。
 
-For standalone type checking on a clean checkout:
+[CI](../../.github/workflows/tauri-ci.yml) 按 Markdown、前端、Rust、安全、原生 E2E 與打包驗證拆分。[發布流程](../../.github/workflows/tauri-release.yml) 使用 CI 驗證過的執行檔處理簽章與更新產物。
 
-```powershell
-npm run build:shared --workspace=modutex-frontend
-npm run frontend:check
-```
+一般 push 與既有 PR 新增提交時，只要本次變更全為 `.md`，便僅執行 Markdown 格式檢查；同時修改程式、工作流程或圖片等其他檔案時，執行完整 CI。新開或重開 PR 以整個 PR 差異判斷。無法取得比較歷史、新分支、標籤、手動驗證與發布流程一律執行完整 CI。Markdown 檢查涵蓋 Git 追蹤的文件，排除既有歷史／第三方授權聲明及自動產生的 notices。
 
-## Windows x64 builds / Windows x64 建置
+Rust 測試前執行 `node tests/scripts/prepare-tectonic-test-bundle.mjs`，從固定來源取得測試資源。暫時性連線中斷、逾時及指定 HTTP 錯誤最多嘗試三次，共用原有 240 秒期限；區段、長度或 SHA-256 不符立即失敗。回歸測試使用 `node --test tests/scripts/tectonic-test-bundle.test.mjs`。
 
-```powershell
-npm run dist:dir -- --win --x64 --publish never
-npm exec --no -- electron-builder --win nsis --x64 --prepackaged release/win-unpacked --publish never
-```
+原生編譯驗證執行 `node tests/scripts/tauri-compile-config-e2e.mjs`；設置 `MODUTEX_TEST_PERIODIC_WATCH=1` 可包含實際 60 秒監看週期。圖片案例透過視覺編輯器的 `Control+End` 定位文件末尾，避免換行後插圖拆開定位文字，並驗證原段落、圖片存檔與 PDF 像素。
 
-The payload is `release/win-unpacked/`; the installer is `release/ModuTeX-Setup-0.2.1.exe`.
-These commands do not publish to GitHub or npm. Native dependencies may need C++ build tools if no compatible prebuilt binary exists.
-產物為未壓縮應用及 `.exe` 安裝程式；指令不發布到 GitHub 或 npm，缺少相容預建原生依賴時可能需要 C++ 建置工具。
+CDP 程序歸屬同時檢查父程序 PID 與建立時間，排除 Windows 重用 PID 造成的過期父子關係。啟動診斷與監聽埠驗證共用此規則。
 
-The [Windows workflow](../../.github/workflows/modutex-ci.yml) validates the real app, installer and cold offline npx package before staging downloads.
-The [PR workflow](../../.github/workflows/test.yml) checks Windows and Linux without publishing.
-Windows 工作流程驗證真實應用、安裝程式及冷快取 npx，再整理下載物；PR 工作流程檢查兩個平台而不發布。
+線上與離線 NSIS 安裝包共用 `apps/desktop-tauri/windows/installer-hooks.nsh`。解除安裝先確認主程式已停止，再於約 10 秒內重試移除被暫時鎖定的主程式；持續鎖定會回傳失敗，保留解除安裝資訊。打包 CI 使用實際 NSIS 驗證原始殘留問題、短暫鎖定成功及持續鎖定失敗；本機可設置 `MODUTEX_TEST_MAKENSIS` 為 `makensis.exe` 路徑後，執行 `node --test tests/scripts/distribution/nsis-uninstall.test.mjs`。既有完整安裝／修復／解除安裝與文件保留驗收仍須通過。
 
-Cold npx acceptance separates large-archive preparation (10-minute bound) from application startup (45 seconds). npm 11.17 extracts local tarballs while reading manifests; timing diagnostics distinguish preparation stalls from application failures. Save/reopen, language, PDF and close assertions remain required.
-冷快取 npx 驗收分開限制大型壓縮檔準備（10 分鐘）與應用啟動（45 秒）。npm 11.17 讀取本機 `.tgz` manifest 時會完整解壓；timing 紀錄用來區分準備停滯與應用故障，儲存／重開、語言、PDF 與關閉斷言仍須通過。
-
-[Installation / 安裝](INSTALLATION.md) · [Limitations / 限制](KNOWN_LIMITATIONS.md)
+完整工作台瀏覽器回歸使用 `node --test --test-concurrency=1 apps/frontend/tests/app/*.test.mjs`。混合文章矩陣保留 24 種情境，透過真實滑鼠拖選標題並確認完整選取後操作格式工具列，避免 `Home`／`End` 隨版面位置選到部分文字。

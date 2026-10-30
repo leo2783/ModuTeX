@@ -1,9 +1,22 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Compartment, EditorState } from '@codemirror/state';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { sourceOutline } from '../../src/features/source-editor/outline.ts';
 import { createSourceState, sourceState, sourceNavigationTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
+
+test('outline labels unwrap nested formatting and explicit line breaks while retaining navigation spans', () => {
+	const source = SourceDocument.open(new TextEncoder().encode('\\begin{document}\\section{\\textbf{\\textit{\\underline{我葳 English}}}}\\subsection{\\underline{\\textit{252255 }}\\\\More \\& 50\\%}\\end{document}'));
+	const entries = sourceOutline(source, parseSource(source));
+	assert.deepEqual(entries.map(entry => entry.label), ['我葳 English', '252255 More & 50%']);
+	assert.match(source.read(entries[0]!.span.from, entries[0]!.span.to), /^\\section\{\\textbf/);
+});
+
+test('report and book headings retain part/chapter hierarchy including starred headings', () => {
+	const source = SourceDocument.open(new TextEncoder().encode('\\begin{document}\\part{Book}\\chapter*{Intro}\\section{Scope}\\subsection{Details}\\chapter{Next}\\end{document}'));
+	assert.deepEqual(sourceOutline(source, parseSource(source)).map(({label, level}) => [label, level]),
+		[['Book', 0], ['Intro', 1], ['Scope', 2], ['Details', 3], ['Next', 1]]);
+});
 
 test('outline uses current parser spans, preserves hierarchy/order and ignores comments/literal bodies', () => {
 	const source = SourceDocument.open(new TextEncoder().encode('\\title{Preamble}\n\\begin{document}\n% \\section{Comment}\n\\section*{First}\r\n\\subsection{Second}\n\\begin{verbatim}\n\\section{Literal}\n\\end{verbatim}\n\\subsubsection{Third}\n\\end{document}'));
@@ -16,7 +29,7 @@ test('outline uses current parser spans, preserves hierarchy/order and ignores c
 });
 
 test('bounded outline title preview does not split Unicode scalars or interpret HTML', () => {
-	const source = SourceDocument.open(new TextEncoder().encode('\\section{' + 'a'.repeat(159) + '😀 <script>literal</script>}\n\\section{<img src=x>}'));
+	const source = SourceDocument.open(new TextEncoder().encode('\\section{' + 'a'.repeat(159) + '\ud840\udc00 <script>literal</script>}\n\\section{<img src=x>}'));
 	const entries = sourceOutline(source, parseSource(source));
 	assert.equal(entries[0]!.label, 'a'.repeat(159) + '…');
 	assert.equal(entries[1]!.label, '<img src=x>');

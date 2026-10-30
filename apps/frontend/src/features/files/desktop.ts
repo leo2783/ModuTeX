@@ -1,7 +1,8 @@
 // Original renderer adapter. Only this module knows the narrow preload API.
-import { parseWorkspaceInfo, parseFileEntries, parseFileEvent, parseReadReceipt, parseWriteReceipt, parseSaveAsReceipt, parseCompileIdentity, parseCompileResult, recentDocumentId } from '@modutex/frontend-contracts';
+import { parseWorkspaceInfo, parseFileEntries, parseFileEvent, parseReadReceipt, parseWriteReceipt, parseSaveAsReceipt, parseCompileIdentity, parseCompileResult, parseCompileConfig, parseCompileConfigUpdate, recentDocumentId } from '@modutex/frontend-contracts';
 import type { DesktopPort, FileEvent, FileRef, FileWatchFailure, WriteRequest, SaveAsRequest, CompileRequest } from '@modutex/frontend-contracts';
 import { recentDocuments } from './recent.ts';
+import { tauriDesktopFiles } from './tauri-files.ts';
 
 interface NativeFiles {
 	openWorkspace(kind: 'file' | 'folder'): Promise<unknown>;
@@ -16,12 +17,14 @@ interface NativeFiles {
 	compileResult(id: string): Promise<unknown>;
 	cancelCompile(id: string): Promise<unknown>;
 	closeWorkspace(id: string): Promise<unknown>;
+	getCompileConfig?(id: string): Promise<unknown>;
+	updateCompileConfig?(request: unknown): Promise<unknown>;
 	startWatch(workspaceId: string, subscriptionId: string): Promise<unknown>;
 	stopWatch(subscriptionId: string): Promise<unknown>;
 	onWatchEvent(listener: (value: unknown) => void): () => void;
 	onWatchError(listener: (value: unknown) => void): () => void;
 }
-export type FileDesktopPort = Pick<DesktopPort, 'openWorkspace' | 'listRecent' | 'openRecent' | 'removeRecent' | 'listFiles' | 'readFile' | 'writeFile' | 'saveAs' | 'watchFiles' | 'compile' | 'closeWorkspace'>;
+export type FileDesktopPort = Pick<DesktopPort, 'openWorkspace' | 'listRecent' | 'openRecent' | 'removeRecent' | 'listFiles' | 'readFile' | 'writeFile' | 'saveAs' | 'watchFiles' | 'compile' | 'takeCompileSynctex' | 'getCompileConfig' | 'updateCompileConfig' | 'closeWorkspace'>;
 
 let watchSequence = 0;
 const watchFailureCodes: ReadonlySet<string> = new Set([
@@ -58,6 +61,8 @@ function fileWatchFailure(value: unknown): FileWatchFailure | null {
 }
 
 export function desktopFiles(signal?: AbortSignal): FileDesktopPort | null {
+	const tauri = tauriDesktopFiles(signal);
+	if (tauri) return tauri;
 	const native = (window as Window & { modutexFiles?: NativeFiles }).modutexFiles;
 	if (!native) return null;
 	const assertActive = () => { if (signal?.aborted) throw new Error('STALE_WORKSPACE'); };
@@ -224,6 +229,17 @@ export function desktopFiles(signal?: AbortSignal): FileDesktopPort | null {
 			signal?.addEventListener('abort', cancelOnAbort, { once: true });
 			void finished.finally(() => signal?.removeEventListener('abort', cancelOnAbort)).catch(() => {});
 			return { identity, finished, async cancel() { await requestCancellation(); } };
+		},
+		async getCompileConfig(id) {
+			assertActive();
+			if (!native.getCompileConfig) throw new Error('UNAVAILABLE');
+			return parseCompileConfig(await native.getCompileConfig(id), id);
+		},
+		async updateCompileConfig(request) {
+			assertActive();
+			if (!native.updateCompileConfig) throw new Error('UNAVAILABLE');
+			const parsed = parseCompileConfigUpdate(request);
+			return parseCompileConfig(await native.updateCompileConfig(parsed), parsed.workspaceId);
 		},
 		async closeWorkspace(id) { await stopWorkspaceWatches(id); await native.closeWorkspace(id); }
 	};

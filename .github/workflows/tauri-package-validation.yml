@@ -1,0 +1,718 @@
+name: Tauri CI - Online and offline package validation
+on:
+  workflow_call:
+    inputs:
+      frontend_artifact_name:
+        description: Exact artifact name emitted by the frontend producer job.
+        required: true
+        type: string
+      checkout_ref:
+        description: Validated full source commit SHA from source admission.
+        required: true
+        type: string
+      package_version:
+        description: Package version verified by source admission.
+        required: true
+        type: string
+      built_exe_sha256:
+        description: SHA-256 of the accepted release executable.
+        required: true
+        type: string
+      built_exe_artifact_id:
+        description: Artifact ID of the accepted release executable.
+        required: true
+        type: string
+      built_exe_artifact_name:
+        description: Artifact name of the accepted release executable.
+        required: true
+        type: string
+      built_exe_artifact_run_id:
+        description: Workflow run ID containing the accepted executable.
+        required: true
+        type: string
+      built_exe_artifact_digest:
+        description: Artifact digest of the accepted executable upload.
+        required: true
+        type: string
+      built_exe_workflow_sha:
+        description: Workflow source SHA associated with the executable.
+        required: true
+        type: string
+      built_exe_source_commit:
+        description: Source commit used to build the executable.
+        required: true
+        type: string
+      built_exe_package_version:
+        description: Package version associated with the executable.
+        required: true
+        type: string
+    outputs:
+      online_installer_sha256:
+        description: Built online installer SHA256
+        value: ${{ jobs.package-validation.outputs.online_installer_sha256 }}
+      offline_installer_sha256:
+        description: Built offline installer SHA256
+        value: ${{ jobs.package-validation.outputs.offline_installer_sha256 }}
+permissions:
+  actions: read
+  contents: read
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  package-validation:
+    name: Validate online and offline Windows packages
+    runs-on: windows-2025
+    outputs:
+      online_installer_sha256: ${{ steps.installer_identity.outputs.online_sha256 }}
+      offline_installer_sha256: ${{ steps.installer_identity.outputs.offline_sha256 }}
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.22.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          if ((node --version) -ne 'v24.22.1') { throw 'Node.js 24.22.1 required' }
+          if ((npm --version) -ne '11.19.1') { throw 'npm 11.19.1 required' }
+      - name: Install locked packaging dependencies
+        run: npm ci --ignore-scripts
+      - name: Prepare clean package artifact destinations
+        run: |
+          $dist = 'apps/frontend/dist-tauri'
+          if (Test-Path -LiteralPath $dist) { Remove-Item -LiteralPath $dist -Recurse -Force }
+          $targetExe = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe'
+          if (Test-Path -LiteralPath $targetExe) { Remove-Item -LiteralPath $targetExe -Force }
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $targetExe) | Out-Null
+      - name: Download frontend assets built for this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FRONTEND_ARTIFACT_NAME: ${{ inputs.frontend_artifact_name }}
+        run: |
+          $artifactDirectory = Join-Path $env:RUNNER_TEMP ('modutex-tauri-frontend-' + [guid]::NewGuid().ToString('N'))
+          if (Test-Path -LiteralPath $artifactDirectory) {
+            throw 'Frontend artifact staging directory unexpectedly exists'
+          }
+          New-Item -ItemType Directory -Path $artifactDirectory -ErrorAction Stop | Out-Null
+          & ./tests/scripts/helpers/download-workflow-artifact.ps1 -RunId $env:GITHUB_RUN_ID -ArtifactName $env:FRONTEND_ARTIFACT_NAME -Destination $artifactDirectory
+          if ($LASTEXITCODE -ne 0) { throw "Failed to download frontend artifact $env:FRONTEND_ARTIFACT_NAME" }
+          $dist = Join-Path $artifactDirectory 'apps/frontend/dist-tauri'
+          if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
+            throw 'Frontend build artifact did not contain apps/frontend/dist-tauri'
+          }
+          $frontendFiles = @(Get-ChildItem -LiteralPath $dist -File -Recurse -Force)
+          if ($frontendFiles.Count -eq 0) { throw 'Frontend build artifact is empty' }
+          if (-not (Test-Path -LiteralPath (Join-Path $dist 'index.html') -PathType Leaf)) {
+            throw 'Frontend build artifact did not contain the built Tauri index.html'
+          }
+          $required = @(
+            'LICENSE',
+            'apps/desktop-tauri/NOTICE',
+            'apps/frontend/LICENSE',
+            'apps/frontend/NOTICE',
+            'apps/frontend/THIRD_PARTY_NOTICES.md',
+            'packages/frontend-contracts/LICENSE',
+            'vendor/notices/TECTONIC-LICENSE.txt',
+            'vendor/notices/TECTONIC-NOTICE.md'
+          )
+          foreach ($path in $required) {
+            $artifactNotice = Join-Path $artifactDirectory $path
+            if (-not (Test-Path -LiteralPath $artifactNotice -PathType Leaf)) {
+              throw "Required frontend build artifact notice missing: $path"
+            }
+            if ((Get-Item -LiteralPath $artifactNotice).Length -le 0) {
+              throw "Required frontend build artifact notice is empty: $path"
+            }
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Required checked-out frontend notice missing: $path"
+            }
+            if ((Get-Item -LiteralPath $path).Length -le 0) {
+              throw "Required checked-out frontend notice is empty: $path"
+            }
+            $artifactHash = (Get-FileHash -LiteralPath $artifactNotice -Algorithm SHA256).Hash
+            $checkoutHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+            if ($artifactHash -ne $checkoutHash) {
+              throw "Frontend artifact notice does not match checked-out source: $path"
+            }
+          }
+          $checkoutDist = 'apps/frontend/dist-tauri'
+          if (Test-Path -LiteralPath $checkoutDist) {
+            Remove-Item -LiteralPath $checkoutDist -Recurse -Force -ErrorAction Stop
+          }
+          New-Item -ItemType Directory -Path $checkoutDist -ErrorAction Stop | Out-Null
+          Get-ChildItem -LiteralPath $dist -Force |
+            Copy-Item -Destination $checkoutDist -Recurse -Force -ErrorAction Stop |
+            Out-Null
+          if (-not (Test-Path -LiteralPath (Join-Path $checkoutDist 'index.html') -PathType Leaf)) {
+            throw 'The staged Tauri frontend index.html was not installed in the checkout'
+          }
+      - name: Verify and download the exact release executable artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXE_ARTIFACT_ID: ${{ inputs.built_exe_artifact_id }}
+          EXE_ARTIFACT_NAME: ${{ inputs.built_exe_artifact_name }}
+          EXE_ARTIFACT_RUN_ID: ${{ inputs.built_exe_artifact_run_id }}
+          EXE_ARTIFACT_DIGEST: ${{ inputs.built_exe_artifact_digest }}
+          EXE_WORKFLOW_SHA: ${{ inputs.built_exe_workflow_sha }}
+          EXPECTED_EXE_SHA: ${{ inputs.built_exe_sha256 }}
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.checkout_ref }}
+          EXPECTED_PACKAGE_VERSION: ${{ inputs.package_version }}
+          EXE_SOURCE_COMMIT: ${{ inputs.built_exe_source_commit }}
+          EXE_PACKAGE_VERSION: ${{ inputs.built_exe_package_version }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: >
+          if ($env:EXE_ARTIFACT_ID -notmatch '^\d+$') { throw 'Executable artifact ID is invalid' }
+
+          if ($env:EXE_ARTIFACT_NAME -ne 'ModuTeX-Release-Executable') { throw 'Executable artifact name mismatch' }
+
+          if ($env:EXE_ARTIFACT_RUN_ID -ne $env:CURRENT_RUN_ID) { throw 'Executable artifact belongs to another workflow
+          run' }
+
+          if ($env:EXPECTED_EXE_SHA -notmatch '^[0-9a-f]{64}$') { throw 'Verified executable SHA-256 is invalid' }
+
+          if (-not [string]::Equals($env:EXPECTED_SOURCE_COMMIT, $env:EXE_SOURCE_COMMIT,
+          [System.StringComparison]::Ordinal)) { throw 'Executable source commit differs from verified source identity'
+          }
+
+          if (-not [string]::Equals($env:EXPECTED_PACKAGE_VERSION, $env:EXE_PACKAGE_VERSION,
+          [System.StringComparison]::Ordinal)) { throw 'Executable version differs from verified package version' }
+
+          $expectedDigest = $env:EXE_ARTIFACT_DIGEST.ToLowerInvariant()
+
+          if ($expectedDigest -notmatch '^(sha256:)?[0-9a-f]{64}$') { throw 'Executable artifact digest is invalid' }
+
+          if (-not $expectedDigest.StartsWith('sha256:')) { $expectedDigest = "sha256:$expectedDigest" }
+
+          $artifactJson = gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:EXE_ARTIFACT_ID"
+
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to retrieve executable artifact metadata' }
+
+          $artifact = $artifactJson | ConvertFrom-Json
+
+          if ([string]$artifact.id -ne $env:EXE_ARTIFACT_ID) { throw 'Executable artifact ID differs from the verified
+          build output' }
+
+          if ($artifact.name -ne $env:EXE_ARTIFACT_NAME) { throw 'Executable artifact metadata name mismatch' }
+
+          if ($artifact.expired -ne $false -or $artifact.size_in_bytes -le 0) { throw 'Executable artifact is expired or
+          empty' }
+
+          if ($artifact.digest.ToLowerInvariant() -ne $expectedDigest) { throw 'Executable artifact digest differs from
+          the verified build output' }
+
+          if ([string]$artifact.workflow_run.id -ne $env:EXE_ARTIFACT_RUN_ID) { throw 'Executable artifact workflow run
+          mismatch' }
+
+          if ($artifact.workflow_run.head_sha -ne $env:EXE_WORKFLOW_SHA) { throw 'Executable artifact workflow source
+          SHA mismatch' }
+
+          $destDir = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release'
+
+          New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+
+          & ./tests/scripts/helpers/download-workflow-artifact.ps1 -RunId $env:EXE_ARTIFACT_RUN_ID -ArtifactName $env:EXE_ARTIFACT_NAME -Destination $destDir
+
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to download the release executable artifact from this run' }
+
+          $exe = Join-Path $destDir 'modutex-desktop-tauri.exe'
+
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Downloaded release executable is missing' }
+
+          $actualSha = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($actualSha -ne $env:EXPECTED_EXE_SHA) { throw 'Downloaded executable differs from the tested build output'
+          }
+      - name: Verify downloaded build artifacts and stage executable
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.checkout_ref }}
+          EXPECTED_EXE_SHA: ${{ inputs.built_exe_sha256 }}
+          EXPECTED_PACKAGE_VERSION: ${{ inputs.package_version }}
+        run: >
+          $commit = (git rev-parse HEAD).Trim()
+
+          if ($LASTEXITCODE -ne 0) { throw 'Source revision unavailable' }
+
+          if ($commit -ne $env:EXPECTED_SOURCE_COMMIT) { throw 'Package validation checked out an unexpected source
+          commit' }
+
+          $dist = 'apps/frontend/dist-tauri'
+
+          if (-not (Test-Path -LiteralPath $dist -PathType Container)) {
+            throw 'Package validation Tauri frontend artifact is missing'
+          }
+
+          if (@(Get-ChildItem -LiteralPath $dist -File -Recurse).Count -eq 0) {
+            throw 'Package validation Tauri frontend artifact is empty'
+          }
+
+          $required = @(
+            'LICENSE',
+            'apps/desktop-tauri/NOTICE',
+            'apps/frontend/LICENSE',
+            'apps/frontend/NOTICE',
+            'apps/frontend/THIRD_PARTY_NOTICES.md',
+            'packages/frontend-contracts/LICENSE',
+            'vendor/notices/TECTONIC-LICENSE.txt',
+            'vendor/notices/TECTONIC-NOTICE.md'
+          )
+
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Required package notice is missing: $path"
+            }
+            if ((Get-Item -LiteralPath $path).Length -le 0) { throw "Required package notice is empty: $path" }
+          }
+
+          $exe = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe'
+
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Downloaded release executable is missing' }
+
+          $actualSha = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($actualSha -ne $env:EXPECTED_EXE_SHA.ToLowerInvariant()) {
+            throw "Package executable SHA-256 ($actualSha) differs from build output ($env:EXPECTED_EXE_SHA)"
+          }
+
+          $releaseExe = 'apps/desktop-tauri/target/release/modutex-desktop-tauri.exe'
+
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $releaseExe) | Out-Null
+
+          if (Test-Path -LiteralPath $releaseExe) { Remove-Item -LiteralPath $releaseExe -Force }
+
+          Copy-Item -LiteralPath $exe -Destination $releaseExe -Force
+      - name: Verify actual executable PE metadata policy
+        env:
+          MODUTEX_TEST_PACKAGE_EXE: apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe
+        run: |
+          node --test tests/scripts/tauri-package-metadata.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw "Executable metadata policy failed with exit code $LASTEXITCODE" }
+      - name: Verify payload receipt policy against the built executable
+        env:
+          MODUTEX_TEST_PACKAGE_EXE: apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe
+        run: |
+          node --test tests/scripts/tauri-payload-receipt.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw "Payload receipt policy failed with exit code $LASTEXITCODE" }
+      - name: Build unsigned online Tauri Windows NSIS installer
+        env:
+          EXPECTED_EXE_SHA: ${{ inputs.built_exe_sha256 }}
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+        run: >
+          $version = $env:PACKAGE_VERSION
+
+          $exactInstaller =
+          "apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ModuTeX_${version}_x64-setup.exe"
+
+          if ($exactInstaller -notmatch '\.exe$') { throw "Invalid online installer path: $exactInstaller" }
+
+          if (Test-Path -LiteralPath $exactInstaller -PathType Leaf) {
+            Remove-Item -LiteralPath $exactInstaller -Force
+          }
+
+          $builtExe = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe'
+
+          $preBundleSha = (Get-FileHash -LiteralPath $builtExe -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($preBundleSha -ne $env:EXPECTED_EXE_SHA.ToLowerInvariant()) {
+            throw 'Online bundling input differs from the immutable desktop-build artifact'
+          }
+
+          Push-Location apps/desktop-tauri
+
+          try {
+            npx --no-install tauri bundle --target x86_64-pc-windows-msvc --bundles nsis --ci --no-sign --no-binary-patching
+            if ($LASTEXITCODE -ne 0) { throw "Online Tauri bundle failed with exit code $LASTEXITCODE" }
+          }
+
+          finally {
+            Pop-Location
+          }
+
+          if (-not (Test-Path -LiteralPath $exactInstaller -PathType Leaf)) {
+            throw "Fresh online NSIS installer not produced at $exactInstaller"
+          }
+
+          $postBundleSha = (Get-FileHash -LiteralPath $builtExe -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($postBundleSha -ne $preBundleSha) {
+            throw "Online bundling changed the verified executable: $preBundleSha -> $postBundleSha"
+          }
+
+          $staged =
+          "apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ModuTeX_${version}_x64-setup-online.exe"
+
+          if (Test-Path -LiteralPath $staged) { Remove-Item -LiteralPath $staged -Force }
+
+          Copy-Item -LiteralPath $exactInstaller -Destination $staged -Force
+      - name: Build unsigned offline Tauri Windows NSIS installer
+        env:
+          EXPECTED_EXE_SHA: ${{ inputs.built_exe_sha256 }}
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+        run: >
+          $version = $env:PACKAGE_VERSION
+
+          $exactInstaller =
+          "apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ModuTeX_${version}_x64-setup.exe"
+
+          if ($exactInstaller -notmatch '\.exe$') { throw "Invalid offline installer path: $exactInstaller" }
+
+          if (Test-Path -LiteralPath $exactInstaller -PathType Leaf) {
+            Remove-Item -LiteralPath $exactInstaller -Force
+          }
+
+          $builtExe = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe'
+
+          $preBundleSha = (Get-FileHash -LiteralPath $builtExe -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($preBundleSha -ne $env:EXPECTED_EXE_SHA.ToLowerInvariant()) {
+            throw 'Offline bundling input differs from the immutable desktop-build artifact'
+          }
+
+          Push-Location apps/desktop-tauri
+
+          try {
+            npx --no-install tauri bundle --target x86_64-pc-windows-msvc --bundles nsis --ci --no-sign --no-binary-patching --config tauri.offline.conf.json
+            if ($LASTEXITCODE -ne 0) { throw "Offline Tauri bundle failed with exit code $LASTEXITCODE" }
+          }
+
+          finally {
+            Pop-Location
+          }
+
+          if (-not (Test-Path -LiteralPath $exactInstaller -PathType Leaf)) {
+            throw "Fresh offline NSIS installer not produced at $exactInstaller"
+          }
+
+          $postBundleSha = (Get-FileHash -LiteralPath $builtExe -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($postBundleSha -ne $preBundleSha) {
+            throw "Offline bundling changed the verified executable: $preBundleSha -> $postBundleSha"
+          }
+
+          $staged =
+          "apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ModuTeX_${version}_x64-setup-offline.exe"
+
+          if (Test-Path -LiteralPath $staged) { Remove-Item -LiteralPath $staged -Force }
+
+          Copy-Item -LiteralPath $exactInstaller -Destination $staged -Force
+      - name: Verify NSIS uninstall lock handling with the bundled compiler
+        run: |
+          $env:MODUTEX_TEST_MAKENSIS = Join-Path $env:LOCALAPPDATA 'tauri/NSIS/makensis.exe'
+          if (-not (Test-Path -LiteralPath $env:MODUTEX_TEST_MAKENSIS -PathType Leaf)) {
+            throw 'The NSIS compiler used for packaging is required for uninstall regression tests'
+          }
+          node --test tests/scripts/distribution/nsis-uninstall.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS uninstall lock regression failed' }
+      - name: Verify online and offline installer payloads
+        env:
+          EXPECTED_EXE_SHA: ${{ inputs.built_exe_sha256 }}
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+        run: >
+          $rawConf = Get-Content -LiteralPath 'apps/desktop-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
+
+          $expectedProduct = [string]$rawConf.productName
+
+          $expectedVersion = [string]$rawConf.version
+
+          if ($expectedVersion -ne $env:PACKAGE_VERSION) {
+            throw "Installer version ($expectedVersion) differs from verified package version ($env:PACKAGE_VERSION)"
+          }
+
+          $expectedTectonicSha = (Get-FileHash -LiteralPath 'vendor/tectonic/windows-x64/tectonic.exe' -Algorithm
+          SHA256).Hash.ToLowerInvariant()
+
+          $sevenZip = Get-Command 7z -ErrorAction SilentlyContinue
+
+          if (-not $sevenZip) { throw '7z command is required for NSIS payload verification but was not found' }
+
+
+          function Assert-InstallerPayload {
+            param(
+              [string]$InstallerPath,
+              [string]$ReceiptPath
+            )
+            if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
+              throw "Installer not found: $InstallerPath"
+            }
+            $installerItem = Get-Item -LiteralPath $InstallerPath
+            if ($installerItem.Length -le 0) { throw "Installer is empty: $InstallerPath" }
+            $tempExtract = Join-Path $env:TEMP ('tauri-payload-' + [guid]::NewGuid().ToString('n'))
+            New-Item -ItemType Directory -Force -Path $tempExtract | Out-Null
+            try {
+              & 7z x -y "-o$tempExtract" $InstallerPath | Out-Null
+              if ($LASTEXITCODE -ne 0) {
+                throw "7z extraction failed for $InstallerPath with exit code $LASTEXITCODE"
+              }
+              $matchingExes = @(Get-ChildItem -LiteralPath $tempExtract -Filter 'modutex-desktop-tauri.exe' -Recurse | Where-Object { -not $_.PSIsContainer })
+              if ($matchingExes.Count -ne 1) {
+                throw "Expected exactly one modutex-desktop-tauri.exe in extracted payload, found $($matchingExes.Count)"
+              }
+              $extractedExe = $matchingExes[0].FullName
+              $extractedHash = (Get-FileHash -LiteralPath $extractedExe -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($extractedHash -ne $env:EXPECTED_EXE_SHA.ToLowerInvariant()) {
+                throw "Extracted payload hash ($extractedHash) does not match verified EXE hash ($env:EXPECTED_EXE_SHA)"
+              }
+              $builtVerInfo = (Get-Item -LiteralPath $extractedExe).VersionInfo
+              if ($builtVerInfo.ProductName -ne $expectedProduct) {
+                throw "Installer EXE ProductName mismatch: got '$($builtVerInfo.ProductName)', expected '$expectedProduct'"
+              }
+              $peProdVer = $builtVerInfo.ProductVersion.Trim()
+              if ($peProdVer -ne $expectedVersion -and $peProdVer -ne "$expectedVersion.0") {
+                throw "Installer EXE ProductVersion mismatch: got '$peProdVer', expected '$expectedVersion'"
+              }
+              $requiredInventory = @(
+                'vendor/tectonic/windows-x64/tectonic.exe',
+                'vendor/tectonic/VERSION',
+                'vendor/notices/TECTONIC-LICENSE.txt',
+                'vendor/notices/TECTONIC-NOTICE.md',
+                'LICENSE',
+                'NOTICE',
+                'apps/frontend/LICENSE',
+                'apps/frontend/NOTICE',
+                'apps/frontend/THIRD_PARTY_NOTICES.md',
+                'packages/frontend-contracts/LICENSE'
+              )
+              foreach ($invRel in $requiredInventory) {
+                $relativePath = $invRel.Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+                $invFull = Join-Path $tempExtract $relativePath
+                if (-not (Test-Path -LiteralPath $invFull -PathType Leaf)) {
+                  throw "Required installer inventory file missing: $invRel"
+                }
+                if ((Get-Item -LiteralPath $invFull).Length -le 0) {
+                  throw "Required installer inventory file is empty: $invRel"
+                }
+              }
+              $tectonicPayload = Join-Path $tempExtract 'vendor/tectonic/windows-x64/tectonic.exe'
+              $tectonicPayHash = (Get-FileHash -LiteralPath $tectonicPayload -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($tectonicPayHash -ne $expectedTectonicSha) {
+                throw "Bundled Tectonic hash ($tectonicPayHash) differs from source hash ($expectedTectonicSha)"
+              }
+              $tectonicSig = Get-AuthenticodeSignature -LiteralPath $tectonicPayload
+              if ($tectonicSig.Status -eq 'Valid' -and $tectonicSig.SignerCertificate.Subject -like '*ModuTeX*') {
+                throw 'Bundled third-party Tectonic was improperly signed using ModuTeX credentials'
+              }
+              pwsh -File scripts/distribution/verify-installer-payload.ps1 -InstallerPath $InstallerPath -ExpectedBundledExeSha256 $env:EXPECTED_EXE_SHA -ExpectedProductName $expectedProduct -ExpectedProductVersion $expectedVersion -ExpectedTectonicSha256 $expectedTectonicSha -ReceiptPath $ReceiptPath
+              if ($LASTEXITCODE -ne 0) { throw "Installer payload verification failed with exit code $LASTEXITCODE" }
+            }
+            finally {
+              if (Test-Path -LiteralPath $tempExtract) {
+                $canonicalTemp = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+                $canonicalExtract = [System.IO.Path]::GetFullPath($tempExtract)
+                if (-not $canonicalExtract.StartsWith($canonicalTemp, [System.StringComparison]::OrdinalIgnoreCase)) {
+                  throw "Extraction directory $canonicalExtract is not contained under TEMP $canonicalTemp"
+                }
+                $extractItem = Get-Item -LiteralPath $canonicalExtract -Force
+                if ($extractItem.Attributes.HasFlag([System.IO.FileAttributes]::ReparsePoint)) {
+                  throw "Extraction directory $canonicalExtract is an unexpected reparse point"
+                }
+                $reparseInside = @(Get-ChildItem -LiteralPath $canonicalExtract -Recurse -Force | Where-Object { $_.Attributes.HasFlag([System.IO.FileAttributes]::ReparsePoint) })
+                if ($reparseInside.Count -gt 0) {
+                  throw "Unexpected reparse point found in extraction directory $canonicalExtract"
+                }
+                Remove-Item -LiteralPath $canonicalExtract -Recurse -Force
+              }
+            }
+          }
+
+
+          New-Item -ItemType Directory -Force -Path .verification-artifacts/tauri | Out-Null
+
+          Assert-InstallerPayload -InstallerPath
+          "apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ModuTeX_$($env:PACKAGE_VERSION)_x64-setup-online.exe"
+          -ReceiptPath '.verification-artifacts/tauri/payload-receipt-online.json'
+
+          Assert-InstallerPayload -InstallerPath
+          "apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ModuTeX_$($env:PACKAGE_VERSION)_x64-setup-offline.exe"
+          -ReceiptPath '.verification-artifacts/tauri/payload-receipt-offline.json'
+      - name: Install Rust toolchain for clean-runner offline inventory metadata
+        run: >
+          rustup toolchain install 1.97.1 --profile minimal --target x86_64-pc-windows-msvc
+
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain installation failed with exit code $LASTEXITCODE" }
+
+          rustup default 1.97.1-x86_64-pc-windows-msvc
+
+          if ($LASTEXITCODE -ne 0) { throw "Rust toolchain selection failed with exit code $LASTEXITCODE" }
+
+          $rustcVer = rustc --version
+
+          if ($LASTEXITCODE -ne 0 -or $rustcVer -notmatch 'rustc 1\.97\.1') { throw "Rust 1.97.1 is required, got
+          $rustcVer" }
+      - name: Fetch Rust registry data before offline inventory metadata
+        run: |
+          cargo fetch --locked --manifest-path apps/desktop-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw "Cargo registry/cache fetch failed with exit code $LASTEXITCODE" }
+          cargo metadata --locked --offline --format-version 1 --manifest-path apps/desktop-tauri/Cargo.toml | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Offline Cargo metadata resolution failed with exit code $LASTEXITCODE" }
+      - name: Capture package hashes and source provenance
+        id: installer_identity
+        env:
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.checkout_ref }}
+          EXPECTED_EXE_SHA: ${{ inputs.built_exe_sha256 }}
+          PACKAGE_VERSION: ${{ inputs.package_version }}
+        run: >
+          $commit = (git rev-parse HEAD).Trim()
+
+          if ($LASTEXITCODE -ne 0) { throw 'Source revision unavailable' }
+
+          if ($commit -ne $env:EXPECTED_SOURCE_COMMIT) { throw 'Package provenance source commit mismatch' }
+
+          $cargoLockPath = 'apps/desktop-tauri/Cargo.lock'
+
+          $npmLockPath = 'package-lock.json'
+
+          foreach ($lockPath in @($cargoLockPath, $npmLockPath)) {
+            if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) { throw "Lockfile not found: $lockPath" }
+          }
+
+          $exePath = 'apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe'
+
+          $exeHash = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($exeHash -ne $env:EXPECTED_EXE_SHA.ToLowerInvariant()) { throw 'Final executable hash differs from
+          desktop-build output' }
+
+          $onlinePath =
+          "apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ModuTeX_$($env:PACKAGE_VERSION)_x64-setup-online.exe"
+
+          $offlinePath =
+          "apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ModuTeX_$($env:PACKAGE_VERSION)_x64-setup-offline.exe"
+
+          foreach ($installerPath in @($onlinePath, $offlinePath)) {
+            if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) { throw "Validated installer missing: $installerPath" }
+            if ((Get-Item -LiteralPath $installerPath).Length -le 0) { throw "Validated installer is empty: $installerPath" }
+          }
+
+          $onlineHash = (Get-FileHash -LiteralPath $onlinePath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          $offlineHash = (Get-FileHash -LiteralPath $offlinePath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if (-not $onlineHash -or $onlineHash -eq 'none') { throw 'Failed to compute online installer SHA-256' }
+
+          if (-not $offlineHash -or $offlineHash -eq 'none') { throw 'Failed to compute offline installer SHA-256' }
+
+          "online_sha256=$onlineHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          "offline_sha256=$offlineHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+
+          node scripts/distribution/generate-component-inventory.mjs --payload-receipt
+          .verification-artifacts/tauri/payload-receipt-online.json
+
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to generate component inventory' }
+
+          $inventoryPath = '.verification-artifacts/tauri/component-inventory.json'
+
+          if (-not (Test-Path -LiteralPath $inventoryPath -PathType Leaf)) { throw 'Component inventory was not
+          generated' }
+
+          $cargoLockHash = (Get-FileHash -LiteralPath $cargoLockPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          $npmLockHash = (Get-FileHash -LiteralPath $npmLockPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          $inventoryHash = (Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          $rawConf = Get-Content -LiteralPath 'apps/desktop-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
+
+          $onlineItem = Get-Item -LiteralPath $onlinePath
+
+          $offlineItem = Get-Item -LiteralPath $offlinePath
+
+          $timestamp = (Get-Date).ToUniversalTime().ToString('o')
+
+          $onlineEvidence = [ordered]@{
+            installerName = Split-Path -Leaf $onlinePath
+            installerPath = $onlinePath
+            installerSha256 = $onlineHash
+            installerSizeBytes = $onlineItem.Length
+            bundledExeSha256 = $exeHash
+            target = 'x86_64-pc-windows-msvc'
+            installMode = 'currentUser'
+            webviewMode = 'downloadBootstrapper'
+            signingStatus = 'unsigned-build-artifact'
+            signPathStatus = 'external-pending'
+            timestamp = $timestamp
+          } | ConvertTo-Json -Depth 4
+
+          $offlineEvidence = [ordered]@{
+            installerName = Split-Path -Leaf $offlinePath
+            installerPath = $offlinePath
+            installerSha256 = $offlineHash
+            installerSizeBytes = $offlineItem.Length
+            bundledExeSha256 = $exeHash
+            target = 'x86_64-pc-windows-msvc'
+            installMode = 'currentUser'
+            webviewMode = 'offlineInstaller'
+            signingStatus = 'unsigned-build-artifact'
+            signPathStatus = 'external-pending'
+            timestamp = $timestamp
+          } | ConvertTo-Json -Depth 4
+
+          Set-Content -LiteralPath '.verification-artifacts/tauri/package-identity-online.json' -Value $onlineEvidence
+          -Encoding utf8
+
+          Set-Content -LiteralPath '.verification-artifacts/tauri/package-identity-offline.json' -Value $offlineEvidence
+          -Encoding utf8
+
+          $evidence = [ordered]@{
+            sourceGitCommit = $commit
+            packageVersion = $env:PACKAGE_VERSION
+            cargoLockPath = $cargoLockPath
+            cargoLockSha256 = $cargoLockHash
+            npmLockPath = $npmLockPath
+            npmLockSha256 = $npmLockHash
+            componentInventoryPath = $inventoryPath
+            componentInventorySha256 = $inventoryHash
+            exePath = $exePath
+            exeSha256 = $exeHash
+            onlineInstallerPath = $onlinePath
+            onlineInstallerSha256 = $onlineHash
+            offlineInstallerPath = $offlinePath
+            offlineInstallerSha256 = $offlineHash
+            signingStatus = 'unsigned-build-artifact'
+            signPathStatus = 'external-pending'
+            timestamp = $timestamp
+          } | ConvertTo-Json -Depth 4
+
+          Set-Content -LiteralPath '.verification-artifacts/tauri/source-identity.json' -Value $evidence -Encoding utf8
+
+          Copy-Item -LiteralPath $cargoLockPath -Destination '.verification-artifacts/tauri/Cargo.lock' -Force
+
+          Copy-Item -LiteralPath $npmLockPath -Destination '.verification-artifacts/tauri/package-lock.json' -Force
+      - name: Upload validated online installer
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Tauri-Windows-x64-Online-Installer
+          path: >-
+            apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ModuTeX_${{ inputs.package_version
+            }}_x64-setup-online.exe
+          if-no-files-found: error
+      - name: Upload validated offline installer
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Tauri-Windows-x64-Offline-Installer
+          path: >-
+            apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ModuTeX_${{ inputs.package_version
+            }}_x64-setup-offline.exe
+          if-no-files-found: error
+      - name: Upload Tauri source, package, and failure evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: ModuTeX-Tauri-CI-Evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .verification-artifacts/tauri/source-identity.json
+            .verification-artifacts/tauri/package-identity-online.json
+            .verification-artifacts/tauri/package-identity-offline.json
+            .verification-artifacts/tauri/Cargo.lock
+            .verification-artifacts/tauri/package-lock.json
+            .verification-artifacts/tauri/component-inventory.json
+            .verification-artifacts/tauri/payload-receipt-online.json
+            .verification-artifacts/tauri/payload-receipt-offline.json
+          if-no-files-found: warn

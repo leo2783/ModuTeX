@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-prototype-pdf"
+description = "Enables the prototype_pdf command without any pre-configured scope."
+commands.allow = ["prototype_pdf"]
+
+[[permission]]
+identifier = "deny-prototype-pdf"
+description = "Denies the prototype_pdf command without any pre-configured scope."
+commands.deny = ["prototype_pdf"]

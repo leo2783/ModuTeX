@@ -27,13 +27,6 @@ export const DRAWIO_REQUIRED_WEBAPP_FILES = [
 	'templates/LICENSE'
 ];
 
-export const DRAWIO_FIXTURE_FILES = {
-	normal: 'normal.drawio',
-	cjk: 'cjk.drawio',
-	error: 'error.drawio',
-	offline: 'offline.drawio'
-};
-
 // SHA-256 over sorted retained paths and raw bytes (path + NUL + uint64 byte length + bytes).
 // This locks the installed static webapp to the bytes extracted from the reviewed archive.
 export const DRAWIO_RETAINED_FILE_COUNT = 3378;
@@ -99,43 +92,6 @@ const hashRetainedTree = async (vendorRoot, files) => {
 	return { bytes, sha256: hash.digest('hex') };
 };
 
-const verifyFixtureInventory = async (repositoryRoot) => {
-	const fixtureRoot = resolve(repositoryRoot, 'apps', 'texpile-editor', 'tests', 'fixtures', 'diagram');
-	const names = Object.values(DRAWIO_FIXTURE_FILES).sort();
-	let entries;
-	try {
-		entries = await readdir(fixtureRoot, { withFileTypes: true });
-	} catch {
-		throw new VendorVerificationError('drawio: diagram fixture inventory is missing');
-	}
-	const actual = entries
-		.filter((entry) => entry.isFile() && entry.name.endsWith('.drawio'))
-		.map((entry) => entry.name)
-		.sort();
-	if (actual.join('\n') !== names.join('\n')) {
-		throw new VendorVerificationError('drawio: fixture inventory does not match normal/CJK/error/offline set');
-	}
-	for (const [category, name] of Object.entries(DRAWIO_FIXTURE_FILES)) {
-		const path = resolve(fixtureRoot, name);
-		await requireRegularFile(path, `${category} fixture`);
-		const bytes = await readTextFile(path, 'utf8');
-		if (bytes.trim().length === 0) throw new VendorVerificationError(`drawio: empty ${category} fixture`);
-		if (category === 'cjk' && !/[\u3400-\u9fff]/u.test(bytes)) {
-			throw new VendorVerificationError('drawio: CJK fixture has no CJK content');
-		}
-		if (category === 'error' && bytes.includes('</mxfile>')) {
-			throw new VendorVerificationError('drawio: error fixture unexpectedly looks complete');
-		}
-		if (category === 'offline' && /https?:\/\//iu.test(bytes)) {
-			throw new VendorVerificationError('drawio: offline fixture contains an external URL');
-		}
-		if (category !== 'error' && !bytes.includes('<mxfile')) {
-			throw new VendorVerificationError(`drawio: ${category} fixture is not an mxfile`);
-		}
-	}
-	return { categories: Object.keys(DRAWIO_FIXTURE_FILES), files: names.length };
-};
-
 // Runtime resources omit repository test fixtures, but retain the exact reviewed bytes.
 export const verifyDrawioRuntimeResources = async (repositoryRoot, entry) => {
 	const vendorRoot = resolve(repositoryRoot, 'vendor', 'drawio');
@@ -194,11 +150,8 @@ export const verifyDrawioRuntimeResources = async (repositoryRoot, entry) => {
 	return { files: files.length, bytes: retained.bytes, sha256: retained.sha256, version, notices };
 };
 
-// Source verification always requires fixtures; no caller-controlled weakening flag.
 export const verifyDrawioInstallation = async (repositoryRoot, entry) => {
-	const runtime = await verifyDrawioRuntimeResources(repositoryRoot, entry);
-	const fixtures = await verifyFixtureInventory(repositoryRoot);
-	return { ...runtime, fixtures };
+	return verifyDrawioRuntimeResources(repositoryRoot, entry);
 };
 
 export const verifyRetainedVendor = async (repositoryRoot = root) => {

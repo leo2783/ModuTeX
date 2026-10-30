@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
-import { SourceDocument, parseSource, type SourceSpan } from '@modutex/document-core';
+import { SourceDocument, parseSource, type SourceSpan } from '../../src/features/document-core/core.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { createSourceState, sourceState, sourcePatchTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
 import { createTable, tableSource, type TableDraft } from '../../src/features/tables/source.ts';

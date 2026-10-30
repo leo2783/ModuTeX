@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { TextSelection, NodeSelection, AllSelection } from 'prosemirror-state';
-import { SourceDocument, parseSource, type SourceSpan } from '@modutex/document-core';
+import { SourceDocument, parseSource, type SourceSpan } from '../../src/features/document-core/core.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { createSourceState, sourceState, visualInsertionTransaction, historyTransaction } from '../../src/features/source-editor/state.ts';
 import { equationSource, matrixSource } from '../../src/features/math/source.ts';
 import { createTable, tableSource } from '../../src/features/tables/source.ts';
+import { withPackage } from '../../src/features/tables/preamble.ts';
 import { sourceLimit } from '../../src/features/files/read.ts';
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
 const bytes = (text: string) => new TextEncoder().encode(text);
@@ -32,7 +33,7 @@ function textPosition(view: VisualEditor, needle: string) {
 
 test('real visual text selection maps Unicode/escaped mixed-EOL source and does not use hidden CM selection', () => {
 	const fixture = domFixture();
-	const text = '\uFEFFleft😀\r\n雪\\%right\nlast\r', original = SourceDocument.open(bytes(text));
+	const text = '\uFEFFleft\ud840\udc00\r\n雪\\%right\nlast\r', original = SourceDocument.open(bytes(text));
 	let editor = createSourceState(original);
 	editor = editor.update({ selection: { anchor: editor.doc.length } }).state;
 	const view = new VisualEditor(fixture.target, 'insert.tex', { source: () => editor.field(sourceState).projection.document,
@@ -153,6 +154,72 @@ test('5 MiB visual tool insertion is atomically rejected by shared UTF-8 filter 
 	assert.deepEqual(reasons, ['SOURCE_TOO_LARGE']); assert.equal(historyTransaction(transaction.state, 'undo'), null);
 });
 
+test('boundary insertion menus are lazy, reusable, current-version gated, and removed on disposal', () => {
+	const fixture = domFixture();
+	let source = SourceDocument.open(bytes('left\nright'));
+	const original = source;
+	const insertions: { kind: string; span: SourceSpan; beforeText: boolean }[] = [];
+	let rejected = 0;
+	let retiredButton: HTMLButtonElement | null = null;
+	const view = new VisualEditor(fixture.target, 'boundary.tex', {
+		source: () => source,
+		apply: () => assert.fail('Boundary action must not edit source in this fixture'),
+		history: () => false, readOnly: () => false,
+		rejected: () => rejected++, status: () => {},
+		insertBlock: (kind, span, beforeText) => insertions.push({ kind, span, beforeText })
+	});
+	try {
+		view.sync(parseSource(source));
+		assert.ok(fixture.target.querySelectorAll('.visual-cell-boundary').length > 1);
+		assert.equal(fixture.target.querySelectorAll('.boundary-menu').length, 0, 'closed boundaries must not allocate their five-item menu');
+		const boundary = fixture.target.querySelector('.visual-cell-boundary') as HTMLElement | null;
+		assert.ok(boundary);
+		const trigger = boundary.querySelector('.boundary-trigger') as HTMLButtonElement | null;
+		assert.ok(trigger);
+		assert.equal(trigger.type, 'button', 'native button activation keeps keyboard Enter and Space support');
+		assert.ok(trigger.getAttribute('aria-label'));
+		assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+		trigger.click();
+		assert.equal(boundary.classList.contains('open'), true);
+		assert.equal(trigger.getAttribute('aria-expanded'), 'true');
+		const menu = boundary.querySelector('.boundary-menu') as HTMLElement | null;
+		assert.ok(menu);
+		assert.equal(trigger.getAttribute('aria-controls'), menu.id);
+		assert.equal(menu.querySelectorAll('.boundary-btn').length, 5);
+		const equation = menu.querySelector('.boundary-btn[aria-label="插入公式"]') as HTMLButtonElement | null;
+		assert.ok(equation);
+		retiredButton = equation;
+		equation.click();
+		assert.equal(insertions.length, 1);
+		assert.deepEqual(insertions[0], { kind: 'equation', span: sourceSpan(original, 0), beforeText: true });
+		assert.equal(boundary.classList.contains('open'), false);
+		assert.equal(trigger.getAttribute('aria-expanded'), 'false');
+
+		trigger.click();
+		assert.equal(boundary.querySelector('.boundary-menu'), menu, 'reopening reuses the one lazily created menu');
+		assert.equal(menu.querySelectorAll('.boundary-btn').length, 5);
+		const textItem = menu.querySelector('.boundary-btn[aria-label="插入文字段落"]') as HTMLButtonElement | null;
+		assert.ok(textItem);
+		source = source.apply({ expectedVersion: source.version, patches: [{ from: 0, to: 0, insert: 'new ' }] }).document;
+		textItem.click();
+		assert.equal(insertions.length, 1, 'a menu opened for an older source version cannot invoke an insertion');
+		assert.equal(rejected, 0);
+		view.sync(parseSource(source));
+		assert.equal(fixture.target.querySelectorAll('.boundary-menu').length, 1, 'only the already-opened boundary retains its menu');
+		assert.equal(boundary.querySelector('.boundary-menu'), menu, 'a stable boundary widget can reuse its menu across projections');
+		trigger.click();
+		textItem.click();
+		assert.deepEqual(insertions[1], { kind: 'text', span: sourceSpan(source, 0), beforeText: true }, 'the reused menu resolves the latest source version');
+	} finally {
+		const insertionCount = insertions.length;
+		view.dispose();
+		assert.equal(fixture.target.querySelector('.ProseMirror'), null);
+		retiredButton?.click();
+		assert.equal(insertions.length, insertionCount, 'disposed boundary controls cannot invoke callbacks');
+		fixture.restore();
+	}
+});
+
 
 test('clicked cells retain all text and toolbar insertion captures the active caret, including reverse selections and empty placeholders', () => {
  const fixture = domFixture();
@@ -183,4 +250,43 @@ test('clicked cells retain all text and toolbar insertion captures the active ca
    } finally { view.dispose(); }
   }
  } finally { fixture.restore(); }
+});
+
+test('title-only documents expose a body placeholder for formulas without changing metadata', () => {
+ const fixture = domFixture();
+ const text = ['\\documentclass{article}', '\\usepackage[margin=2cm]{geometry}', '', '\\title{The Data efficiency of System 1 Decision model in fine-tuning: Take Laya for example}', '\\author{}', '\\date{}', '', '\\begin{document}', '\\maketitle', '\\end{document}', ''].join('\n');
+ const original = SourceDocument.open(bytes(text));
+ let state = createSourceState(original);
+ const view = new VisualEditor(fixture.target, 'main.tex', { source: () => state.field(sourceState).projection.document,
+  apply: () => assert.fail('Capturing insertion must not write'), history: () => false, readOnly: () => false, rejected: () => assert.fail('Unexpected rejection'), status: () => {} });
+ try {
+  view.sync(parseSource(original));
+  const bodyEnd = text.indexOf('\\end{document}');
+  const titleCaret = text.indexOf('\\title{') + 7;
+  let titlePosition = -1;
+  view.view.state.doc.forEach((node, offset) => {
+   assert.notEqual(node.attrs.name, 'date', 'empty date must not reserve a visual cell');
+   assert.notEqual(node.attrs.name, 'author', 'empty author must not reserve a visual cell');
+   if (node.attrs.name === 'title') titlePosition = offset + 1;
+  });
+  assert.ok(titlePosition >= 0);
+  view.view.dispatch(view.view.state.tr.setSelection(TextSelection.create(view.view.state.doc, titlePosition)));
+  assert.equal(view.toolInsertionSelection(true)?.span.from, titleCaret, 'inline math can still edit metadata');
+  assert.equal(view.toolInsertionSelection(false)?.span.from, bodyEnd, 'block math belongs in the document body');
+  assert.equal(view.cellInsertionBoundary()?.from, bodyEnd);
+  assert.equal(view.navigate(sourceSpan(original, bodyEnd)), true, 'a title-only document needs an editable body cell');
+  const target = view.insertionSelection();
+  assert.ok(target);
+  assert.equal(target.inlineOnly, false);
+  assert.equal(target.span.from, bodyEnd);
+  const formula = equationSource('\\frac{\\partial^2}{\\partial x}', false);
+  state = withPackage(state, visualInsertionTransaction(state, target.span, formula), ['amsmath', 'amssymb']).state;
+  const updated = state.field(sourceState).projection.document.read();
+  assert.match(updated, /\\author\{\}/);
+  assert.match(updated, /\\date\{\}/);
+  assert.equal(updated.slice(updated.indexOf('\\title{'), updated.indexOf('\\begin{document}')).replace(/\\usepackage\{amsmath\}\n|\\usepackage\{amssymb\}\n/g, ''), text.slice(text.indexOf('\\title{'), text.indexOf('\\begin{document}')));
+  assert.ok(updated.indexOf(formula) > updated.indexOf('\\maketitle'));
+  assert.ok(updated.indexOf(formula) < updated.indexOf('\\end{document}'));
+  assert.deepEqual(historyTransaction(state, 'undo')!.state.field(sourceState).projection.document.toBytes(), original.toBytes());
+ } finally { view.dispose(); fixture.restore(); }
 });

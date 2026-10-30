@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { createTable, columnPercentages, changeTableAxis, tableSource, parseTable, tableAt } from '../../src/features/tables/source.ts';
 import { createSourceState, insertionTarget, rangeInsertionTarget, insertionTransaction, sourceState, historyTransaction } from '../../src/features/source-editor/state.ts';
 

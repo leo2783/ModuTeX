@@ -6,10 +6,10 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { mkdtemp, mkdir, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import fs from 'node:fs';
-import { build, createServer } from 'vite';
+import { build } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import type { FileEvent, FileRef, FileWatchFailure, WriteRequest } from '@modutex/frontend-contracts';
-import type { FrontendFiles as FilesHost } from '../../../../electron/src/frontend-files.ts';
+import { NativeFilesFixture, type NativeFilesWatch } from '../helpers/native-files-fixture.ts';
 
 type BrowserWindow = Window & typeof globalThis & { close(): void };
 type ClientModule = {
@@ -141,25 +141,20 @@ function restoreGlobals(previous: Map<string, PropertyDescriptor | undefined>) {
 test('mounted App reconciles real host watch events and preserves source ownership', { timeout: 180_000 }, async () => {
 	const frontendRoot = fileURLToPath(new URL('../../', import.meta.url));
 	const appPath = fileURLToPath(new URL('../../src/App.svelte', import.meta.url)).replaceAll('\\', '/');
-	const server = await createServer({
-		root: frontendRoot,
-		server: { middlewareMode: true, hmr: false, ws: false },
-		logLevel: 'error'
-	});
 	const previousGlobals = new Map<string, PropertyDescriptor | undefined>();
 	const buildDir = fs.mkdtempSync(join(tmpdir(), 'workbench-file-watch-client-'));
 	let fixtureDir: string | null = null;
 	let dom: { window: BrowserWindow } | null = null;
 	let client: ClientModule | null = null;
 	let mounted: unknown;
-	let files: FilesHost | null = null;
+	let files: NativeFilesFixture | null = null;
 	let readGate: {
 		readonly path: string;
 		readonly entered: Deferred<void>;
 		readonly release: Deferred<void>;
 		used: boolean;
 	} | null = null;
-	const activeWatches = new Map<string, InstanceType<any>>();
+	const activeWatches = new Map<string, NativeFilesWatch>();
 	const readyWatches = new Set<string>();
 	const startupGate = deferred<void>();
 	let delayFirstStartup = true;
@@ -191,13 +186,7 @@ test('mounted App reconciles real host watch events and preserves source ownersh
 			await writeFile(join(roots[i]!, fileNames[i]!), initialTexts[i]!, 'utf8');
 		}
 
-		const { FrontendFiles } = await server.ssrLoadModule(
-			fileURLToPath(new URL('../../../../electron/src/frontend-files.ts', import.meta.url))
-		);
-		const { FrontendWatch } = await server.ssrLoadModule(
-			fileURLToPath(new URL('../../../../electron/src/frontend-watch.ts', import.meta.url))
-		);
-		files = new FrontendFiles();
+		files = new NativeFilesFixture();
 		let openIndex = 0;
 		const pushWatchError = (subscriptionId: string, failure: unknown) => {
 			for (const listener of errorListeners) listener({ subscriptionId, error: failure });
@@ -252,28 +241,16 @@ test('mounted App reconciles real host watch events and preserves source ownersh
 			},
 			startWatch: async (id, subscriptionId) => {
 				if (delayFirstStartup) { delayFirstStartup = false; await startupGate.promise; }
-				const owner = files!.compileOwner();
-				const assertWorkspace = files!.saveAsOwner(id);
-				let watcher!: InstanceType<typeof FrontendWatch>;
-				watcher = new FrontendWatch({
-					root: owner.root,
-					workspaceId: id,
-					assertCurrent() {
-						assertWorkspace();
-						owner.assertCurrent();
-						if (activeWatches.get(subscriptionId) !== watcher) throw new Error('STALE_WORKSPACE');
-					},
-					emit(event: FileEvent) {
+				let watcher!: NativeFilesWatch;
+				watcher = files!.watch(id, (event) => {
 						if (activeWatches.get(subscriptionId) !== watcher) return;
 						if (holdNativeDelivery) delayedEvents.push({ subscriptionId, event });
 						else deliverEvent(subscriptionId, event);
-					},
-					onError(failure: FileWatchFailure) {
+					}, (failure) => {
 						if (activeWatches.get(subscriptionId) !== watcher) return;
 						activeWatches.delete(subscriptionId);
 						readyWatches.delete(subscriptionId);
 						pushWatchError(subscriptionId, failure);
-					}
 				});
 				activeWatches.set(subscriptionId, watcher);
 				try {
@@ -311,6 +288,7 @@ export { mount, unmount, flushSync, tick, App };
 `);
 		await build({
 			configFile: false,
+			worker: { format: 'es' },
 			root: frontendRoot,
 			plugins: [svelte({ emitCss: false })],
 			resolve: { dedupe: ['svelte'], conditions: ['browser', 'default'] },
@@ -613,7 +591,6 @@ export { mount, unmount, flushSync, tick, App };
 			dom = null;
 		}
 		restoreGlobals(previousGlobals);
-		await server.close();
 		fs.rmSync(buildDir, { recursive: true, force: true });
 		if (fixtureDir) {
 			if (dirname(fixtureDir) !== tmpdir() || !basename(fixtureDir).startsWith('modutex-workbench-files-')) {
@@ -624,7 +601,7 @@ export { mount, unmount, flushSync, tick, App };
 	}
 });
 
-function stopAllNativeWatchesForCleanup(watches: Map<string, InstanceType<any>>) {
+function stopAllNativeWatchesForCleanup(watches: Map<string, NativeFilesWatch>) {
 	for (const watcher of watches.values()) watcher.stop();
 	watches.clear();
 }

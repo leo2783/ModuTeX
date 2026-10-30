@@ -1,4 +1,4 @@
-import { SourceDocument, parseSource } from '@modutex/document-core';
+import { SourceDocument, parseSource } from '../../src/features/document-core/core.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
 import { createSourceState, sourcePatchTransaction, sourceState } from '../../src/features/source-editor/state.ts';
 import { TextSelection } from 'prosemirror-state';

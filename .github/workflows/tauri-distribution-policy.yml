@@ -1,0 +1,169 @@
+name: Tauri CI - Distribution and workflow policy
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Validated full source commit SHA from source admission.
+        required: true
+        type: string
+      package_version:
+        description: Package version verified by source admission.
+        required: true
+        type: string
+      built_exe_sha256:
+        description: SHA-256 of the accepted release executable.
+        required: true
+        type: string
+      built_exe_artifact_id:
+        description: Artifact ID of the accepted release executable.
+        required: true
+        type: string
+      built_exe_artifact_name:
+        description: Artifact name of the accepted release executable.
+        required: true
+        type: string
+      built_exe_artifact_run_id:
+        description: Workflow run ID containing the accepted executable.
+        required: true
+        type: string
+      built_exe_artifact_digest:
+        description: Artifact digest of the accepted executable upload.
+        required: true
+        type: string
+      built_exe_workflow_sha:
+        description: Workflow source SHA associated with the executable.
+        required: true
+        type: string
+      built_exe_source_commit:
+        description: Source commit used to build the executable.
+        required: true
+        type: string
+      built_exe_package_version:
+        description: Package version associated with the executable.
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  distribution-policy:
+    name: Distribution and workflow policy
+    runs-on: windows-2025
+    steps:
+      - name: Checkout verified source commit
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ inputs.checkout_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Setup Node.js 24.22.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.22.1
+          package-manager-cache: false
+      - name: Verify Node and npm runtime versions
+        run: |
+          if ((node --version) -ne 'v24.22.1') { throw 'Node.js 24.22.1 required' }
+          if ((npm --version) -ne '11.19.1') { throw 'npm 11.19.1 required' }
+      - name: Install policy-test dependencies
+        run: npm ci --ignore-scripts
+      - name: Verify and download the exact tested executable for signature-policy fixtures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXE_ARTIFACT_ID: ${{ inputs.built_exe_artifact_id }}
+          EXE_ARTIFACT_NAME: ${{ inputs.built_exe_artifact_name }}
+          EXE_ARTIFACT_RUN_ID: ${{ inputs.built_exe_artifact_run_id }}
+          EXE_ARTIFACT_DIGEST: ${{ inputs.built_exe_artifact_digest }}
+          EXE_WORKFLOW_SHA: ${{ inputs.built_exe_workflow_sha }}
+          EXPECTED_EXE_SHA: ${{ inputs.built_exe_sha256 }}
+          EXPECTED_SOURCE_COMMIT: ${{ inputs.checkout_ref }}
+          EXPECTED_PACKAGE_VERSION: ${{ inputs.package_version }}
+          EXE_SOURCE_COMMIT: ${{ inputs.built_exe_source_commit }}
+          EXE_PACKAGE_VERSION: ${{ inputs.built_exe_package_version }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: >
+          if ($env:EXE_ARTIFACT_ID -notmatch '^\d+$') { throw 'Executable artifact ID is invalid' }
+
+          if ($env:EXE_ARTIFACT_NAME -ne 'ModuTeX-Release-Executable') { throw 'Executable artifact name mismatch' }
+
+          if ($env:EXE_ARTIFACT_RUN_ID -ne $env:CURRENT_RUN_ID) { throw 'Executable artifact belongs to another workflow
+          run' }
+
+          if ($env:EXPECTED_SOURCE_COMMIT -notmatch '^[0-9a-f]{40}$') { throw 'Verified source commit is invalid' }
+
+          if ($env:EXPECTED_EXE_SHA -notmatch '^[0-9a-f]{64}$') { throw 'Verified executable SHA-256 is invalid' }
+
+          if (-not [string]::Equals($env:EXPECTED_SOURCE_COMMIT, $env:EXE_SOURCE_COMMIT,
+          [System.StringComparison]::Ordinal)) { throw 'Executable source commit differs from verified source identity'
+          }
+
+          if (-not [string]::Equals($env:EXPECTED_PACKAGE_VERSION, $env:EXE_PACKAGE_VERSION,
+          [System.StringComparison]::Ordinal)) { throw 'Executable package version differs from verified package
+          identity' }
+
+          $expectedDigest = $env:EXE_ARTIFACT_DIGEST.ToLowerInvariant()
+
+          if ($expectedDigest -notmatch '^(sha256:)?[0-9a-f]{64}$') { throw 'Executable artifact digest is invalid' }
+
+          if (-not $expectedDigest.StartsWith('sha256:')) { $expectedDigest = "sha256:$expectedDigest" }
+
+          $artifactJson = gh api "repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:EXE_ARTIFACT_ID"
+
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to retrieve executable artifact metadata' }
+
+          $artifact = $artifactJson | ConvertFrom-Json
+
+          if ([string]$artifact.id -ne $env:EXE_ARTIFACT_ID) { throw 'Executable artifact ID differs from the verified
+          build output' }
+
+          if ($artifact.name -ne $env:EXE_ARTIFACT_NAME) { throw 'Executable artifact metadata name mismatch' }
+
+          if ($artifact.expired -ne $false -or $artifact.size_in_bytes -le 0) { throw 'Executable artifact is expired or
+          empty' }
+
+          if ($artifact.digest.ToLowerInvariant() -ne $expectedDigest) { throw 'Executable artifact digest differs from
+          the verified build output' }
+
+          if ([string]$artifact.workflow_run.id -ne $env:EXE_ARTIFACT_RUN_ID) { throw 'Executable artifact workflow run
+          mismatch' }
+
+          if ($artifact.workflow_run.head_sha -ne $env:EXE_WORKFLOW_SHA) { throw 'Executable artifact workflow source
+          SHA mismatch' }
+
+          $destDir = 'apps/desktop-tauri/target/release'
+
+          New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+
+          & ./tests/scripts/helpers/download-workflow-artifact.ps1 -RunId $env:EXE_ARTIFACT_RUN_ID -ArtifactName $env:EXE_ARTIFACT_NAME -Destination $destDir
+
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to download the tested executable fixture' }
+
+          $fixture = Join-Path $destDir 'modutex-desktop-tauri.exe'
+
+          if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) { throw 'Tested executable fixture is missing' }
+
+          $actualSha = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          if ($actualSha -ne $env:EXPECTED_EXE_SHA) { throw 'Downloaded signature-policy fixture differs from the tested
+          executable' }
+      - name: Run Tauri CI policy tests
+        run: npm run test:tauri-ci-policy
+      - name: Run distribution inventory policy tests
+        run: >-
+          node --test --test-concurrency=1 tests/scripts/distribution/inventory.test.mjs tests/scripts/distribution/updater-manifest.test.mjs
+          tests/scripts/distribution/installer-lifecycle.test.mjs tests/scripts/distribution/nsis-uninstall.test.mjs
+      - name: Run owned-dialog interop regression tests
+        run: node --test --test-concurrency=1 tests/scripts/owned-native-popups.test.mjs tests/scripts/terminal-node-trace.test.mjs
+      - name: Run static CD and PowerShell policy tests
+        run: >-
+          node --test tests/scripts/tauri-cd-execution.test.mjs tests/scripts/tauri-powershell-parse.test.mjs
+          tests/scripts/frontend-artifact-download.test.mjs tests/scripts/artifact-transport.test.mjs tests/scripts/tauri-ci-runtime.test.mjs
+          tests/scripts/tectonic-test-bundle.test.mjs tests/scripts/classify-ci-changes.test.mjs tests/scripts/markdown-workflow.test.mjs
+      - name: Run signature policy tests against the downloaded executable fixture
+        env:
+          MODUTEX_TEST_SIGNATURE_SAMPLE: apps/desktop-tauri/target/release/modutex-desktop-tauri.exe
+          MODUTEX_TEST_SIGNATURE_VERSION: ${{ inputs.package_version }}
+        run: node --test tests/scripts/tauri-signature-policy.test.mjs
