@@ -26,7 +26,7 @@
 		"@lezer/highlight": "1.2.3",
 		"@modutex/frontend-contracts": "0.3.0",
 		"mathlive": "0.110.0",
-		"pdfjs-dist": "6.2.108",
+		"pdfjs-dist": "6.4.299",
 		"prosemirror-model": "1.25.12",
 		"prosemirror-state": "1.4.4",
 		"prosemirror-view": "1.42.6",
