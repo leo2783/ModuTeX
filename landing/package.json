@@ -13,7 +13,7 @@
 	"dependencies": {
 		"@fontsource/poppins": "5.2.7",
 		"@inlang/paraglide-js": "2.29.2",
-		"@lucide/svelte": "0.562.0"
+		"@lucide/svelte": "1.64.0"
 	},
 	"devDependencies": {
 		"@inlang/plugin-m-function-matcher": "2.2.17",
