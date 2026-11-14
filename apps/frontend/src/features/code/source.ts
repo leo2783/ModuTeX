@@ -8,6 +8,7 @@ import {
 	type SyntaxNode
 } from '../document-core/core.ts';
 import { insertionTransaction, rangeInsertionTarget, sourceState } from '../source-editor/state.ts';
+import { CODE_WRAPPING_OPTIONS } from './latex.ts';
 
 export interface CodeDraft {
 	readonly code: string;
@@ -41,12 +42,18 @@ export interface LocatedCode {
 	readonly span: SourceSpan;
 	readonly content: SourceSpan;
 	readonly starred?: boolean;
+	readonly inheritedListing?: boolean;
 }
 
-/**
- * 安全序列化為 LaTeX 內建 verbatim 環境。
- * 嚴格禁止內嵌 \end{verbatim} 結束標記以防止 TeX 語法逃逸。
- */
+export const inheritedListingOptions = `[${CODE_WRAPPING_OPTIONS.slice(1)}]`;
+
+function inheritedListingHeader(raw: string): string | null {
+	if (/^[\r\n]/.test(raw)) return '';
+	if (raw.startsWith(inheritedListingOptions) && /^[\r\n]/.test(raw.slice(inheritedListingOptions.length))) return inheritedListingOptions;
+	return null;
+}
+
+/** Serialize literal code into a non-floating listing that wraps long tokens. */
 export function codeSource(code: string, starred = false, language = 'text'): string {
 	const selected = codeLanguage(language);
 	if (typeof code !== 'string' || code.length > 1048576 || code.includes('\0')) {
@@ -57,22 +64,23 @@ export function codeSource(code: string, starred = false, language = 'text'): st
 		throw new Error('CODE_END_DELIMITER');
 	}
 	const normalized = code.replace(/\r\n|\r/g, '\n');
-	const env = language === 'text' ? (starred ? 'verbatim*' : 'verbatim') : 'lstlisting';
-	const options = env === 'lstlisting' ? `[language=${selected[3]},name=${selected[0]},xleftmargin=\\parindent]` : '';
-	// LaTeX verbatim 會自動吸收 \begin{verbatim} 緊接的首個換行符；確保結尾換行使 \end{verbatim} 位於新行
+	const options = `[language=${selected[3]},name=${selected[0]},xleftmargin=\\parindent${CODE_WRAPPING_OPTIONS}${language === 'text' && starred ? ',showspaces=true' : ''}]`;
+	// Keep the closing environment marker on its own line without changing code bytes.
 	const body = normalized.endsWith('\n')
 		? normalized
 		: (normalized.length > 0 ? normalized + '\n' : '');
-	return `\\begin{${env}}${options}\n${body}\\end{${env}}`;
+	return `\\begin{lstlisting}${options}\n${body}\\end{lstlisting}`;
 }
 
 /** Read only our bounded language metadata; unsupported listing options stay Raw. */
 export function parseCodeContent(raw: string, environment: string): CodeDraft | null {
 	if (environment !== 'lstlisting') return { code: parseVerbatimContent(raw), language: 'text' };
-	const match = /^\[language=([A-Za-z+]*),name=([a-z0-9-]+)(?:,xleftmargin=\\parindent)?\](?=\r?\n)/.exec(raw);
+	const inherited = inheritedListingHeader(raw);
+	if (inherited !== null) return { code: parseVerbatimContent(raw.slice(inherited.length)), language: 'text' };
+	const match = /^\[language=([A-Za-z+]*),name=([a-z0-9-]+)(?:,xleftmargin=\\parindent(?:(,breaklines=true,breakatwhitespace=false,columns=fullflexible,keepspaces=true,showstringspaces=false(?:,basicstyle=\\ModuTeXCodeWrap)?)(,showspaces=true)?)?)?\](?=\r\n|\r|\n)/.exec(raw);
 	if (!match) return null;
 	const entry = CODE_LANGUAGES.find(entry => entry[0] === match[2] && entry[3] === match[1]);
-	return entry ? { code: parseVerbatimContent(raw.slice(match[0].length)), language: entry[0] } : null;
+	return entry && (!match[4] || entry[0] === 'text') ? { code: parseVerbatimContent(raw.slice(match[0].length)), language: entry[0] } : null;
 }
 
 /**
@@ -116,7 +124,8 @@ export function codeAt(
 					draft,
 					span: node.span,
 					content: node.content,
-					starred: node.name === 'verbatim*'
+					inheritedListing: node.name === 'lstlisting' && inheritedListingHeader(raw) !== null,
+					starred: node.name === 'verbatim*' || (node.name === 'lstlisting' && draft.language === 'text' && /^\[[^\r\n]*,showspaces=true\](?=\r\n|\r|\n)/.test(raw))
 				};
 			}
 			const childMatch = visit(node.children);
@@ -141,7 +150,11 @@ export function codeReplacement(source: SourceDocument, located: LocatedCode, dr
 	) {
 		throw new Error('STALE_CODE');
 	}
-	return codeSource(draft.code, located.starred, draft.language ?? located.draft.language);
+	const language = draft.language ?? located.draft.language;
+	const generated = codeSource(draft.code, located.starred, language);
+	if (!located.inheritedListing || language !== 'text') return generated;
+	const header = source.read(located.content.from, located.content.to).startsWith(inheritedListingOptions) ? inheritedListingOptions : '';
+	return '\\begin{lstlisting}' + header + generated.slice(generated.indexOf('\n'));
 }
 
 /**

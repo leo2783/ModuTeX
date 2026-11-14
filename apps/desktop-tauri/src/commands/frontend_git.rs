@@ -242,3 +242,8 @@ pub(crate) async fn frontend_git_user_name(
     let git = git.inner().clone();
     spawn_git(move || git.user_name(&owner, &request.workspace_id)).await
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/frontend_git.rs"]
+mod tests;
+

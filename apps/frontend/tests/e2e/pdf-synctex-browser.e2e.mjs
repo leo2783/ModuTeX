@@ -41,7 +41,7 @@ window.pdfHarness = {
 	await server.listen();
 	const address = server.httpServer.address();
 	assert.equal(typeof address, 'object');
-	browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'msedge' } : {}) });
+	browser = await chromium.launch({ headless: true, ...(process.env.MODUTEX_TEST_BROWSER_CHANNEL ? { channel: process.env.MODUTEX_TEST_BROWSER_CHANNEL } : process.platform === 'win32' ? { channel: 'msedge' } : {}) });
 	const page = await browser.newPage({ viewport: { width: 1000, height: 800 }, deviceScaleFactor: 1.5 });
 	const pageErrors = [];
 	page.on('pageerror', error => pageErrors.push(error.message));
@@ -99,6 +99,11 @@ window.pdfHarness = {
 	assert.equal(await page.locator('select').inputValue(), '200', 'PDF reload preserves zoom');
 	assert.equal(await page.locator('input[type="number"]').inputValue(), '2', 'PDF reload preserves current page');
 	assert.equal(await page.evaluate(() => document.querySelector('canvas') === window.retainedPdfCanvas), true, 'PDF reload retains the canvas');
+	await page.locator('.pdf-scroll').evaluate(element => { element.scrollTop = 200; });
+	assert.ok(await page.locator('.pdf-scroll').evaluate(element => element.scrollTop > 0));
+	await page.getByRole('button', { name: 'Previous page' }).click();
+	await page.getByRole('button', { name: 'PDF page 1' }).waitFor();
+	assert.equal(await page.locator('.pdf-scroll').evaluate(element => element.scrollTop), 0, 'changing pages starts at the top of the new page');
 	await page.evaluate(() => window.pdfHarness.active(false));
 	await page.waitForTimeout(50);
 	await page.keyboard.press('Enter');

@@ -925,3 +925,8 @@ impl State {
         self.owner_usage = owners;
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/binary_tokens.rs"]
+mod tests;
+

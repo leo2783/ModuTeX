@@ -336,6 +336,28 @@ function updatedOptionBlock(source: string, masked: string, block: OptionBlock, 
 	return value;
 }
 
+function needsFooterSpace(masked: string, geometry: GeometrySource, bottom: number): boolean {
+	// Round the standard 30 pt footer skip up to leave room for the page number.
+	return bottom < 1.25 && !geometry.blocks.some(block => optionSegments(masked, block.from, block.to).some(segment =>
+		/^(?:includefoot|ignorefoot|includeheadfoot|ignoreheadfoot|includeall|ignoreall|footskip)(?:\s*=|$)/i.test(masked.slice(segment.from, segment.to).trim())
+	));
+}
+
+export function planFooterSpacePatch(source: string): readonly SourcePatch[] {
+	if (source.length > MAX_SOURCE_CHARS) return [];
+	try {
+		const masked = maskComments(source);
+		const geometry = collectGeometry(source, masked);
+		const last = geometry.blocks.at(-1);
+		if (!last) return [];
+		const margins = { ...DEFAULT_MARGINS }, known = new Set<string>();
+		for (const block of geometry.blocks) readOptionBlock(masked, block, margins, known);
+		if (!known.has('bottom') || !needsFooterSpace(masked, geometry, margins.bottom)) return [];
+		const separator = masked.slice(last.from, last.to).trimEnd().endsWith(',') ? '' : ',';
+		return [{ from: last.to, to: last.to, expected: '', insert: separator + 'includefoot' }];
+	} catch { return []; }
+}
+
 export function planPageMarginPatches(source: string, margins: PageMarginsCm, lineEnding?: LineEnding): readonly SourcePatch[] {
 	if (source.length > MAX_SOURCE_CHARS) throw new Error('SOURCE_TOO_LARGE');
 	const masked = maskComments(source);
@@ -343,7 +365,7 @@ export function planPageMarginPatches(source: string, margins: PageMarginsCm, li
 	const inspected = { ...DEFAULT_MARGINS };
 	const known = new Set<string>();
 	for (const block of geometry.blocks) readOptionBlock(masked, block, inspected, known);
-	const options = marginOptions(margins);
+	const options = (needsFooterSpace(masked, geometry, margins.bottom) ? 'includefoot,' : '') + marginOptions(margins);
 	const last = geometry.blocks.at(-1);
 	if (last) {
 		const patches: SourcePatch[] = [];

@@ -225,7 +225,9 @@ function projectMaketitleMetadata(
 export function projectVisual(source: SourceDocument, parsed: SourceProjection): VisualProjection {
 	if (!projectionIsCurrent(source, parsed)) throw new Error('STALE_VISUAL');
 	const body = parsed.nodes.find((node) => node.kind === 'environment' && node.name === 'document');
-	const headingNames = new Set((body?.children ?? parsed.nodes).filter(node => node.kind === 'heading').map(node => node.name.replace(/\*$/, '')));
+	const bodyNodes = body?.children ?? parsed.nodes;
+	const isColumns = (node: SyntaxNode) => node.kind === 'environment' && ['multicols', 'multicols*'].includes(node.name);
+	const headingNames = new Set(bodyNodes.flatMap(node => isColumns(node) ? node.children : [node]).filter(node => node.kind === 'heading').map(node => node.name.replace(/\*$/, '')));
 	const sectionLevel = headingNames.has('part') ? 4 : headingNames.has('chapter') ? 3 : 2;
 	const blocks: VisualNode[] = [];
 	const boundaries: (readonly number[] | null)[] = [];
@@ -349,48 +351,62 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 		blocks.push(visualSchema.nodes.source_block!.create(attrs, plain.text ? visualSchema.text(plain.text) : undefined));
 		boundaries.push(plain.boundaries); segments.push(null); plainNodes = [];
 	};
-	const nodes = body ? body.children : parsed.nodes;
-	const cellRanges = explicitCellRanges(source, nodes);
-	const cellMarkers = new Set(cellRanges.flatMap(range => [range.from, range.contentTo]));
-	for (const node of nodes) {
-		if (cellMarkers.has(node.span.from) && node.kind === 'comment') { flush(); continue; }
-		if (node.kind === 'raw' && node.name === 'maketitle') {
-			flush();
-			if (titleMarkers.has(node.span.from)) continue;
-			const exactMaketitle = node.content === null && source.read(node.span.from, node.span.to) === '\\maketitle';
-			if (exactMaketitle && !projectedMaketitleMetadata && maketitleMetadata &&
-				(maketitleMetadata.fields.length > 0 || maketitleMetadata.fallbackNodes.length > 0)) {
-				for (const field of maketitleMetadata.fields) {
-					// Empty metadata directives retain their source bytes without blank notebook cells.
-					if (field.node.name !== 'title' && field.inline.content.size === 0) continue;
-					blocks.push(visualSchema.nodes.source_block!.create({
-						from: field.node.span.from, to: field.node.span.to,
-						editFrom: field.contentFrom, editTo: field.contentTo,
-						role: field.role, name: field.node.name, level: field.role === 'heading' ? 1 : 2
-					}, field.inline.content));
-					boundaries.push(null);
-					segments.push(field.inline.segments);
+	const explicitRanges = explicitCellRanges(source, bodyNodes);
+	const cellRanges = [...explicitRanges];
+	const cellMarkers = new Set(explicitRanges.flatMap(range => [range.from, range.contentTo]));
+	const visit = (nodes: readonly SyntaxNode[], insideColumns = false) => {
+		for (const node of nodes) {
+			if (isColumns(node) && node.content) {
+				flush();
+				if (!insideColumns && !explicitRanges.some(range => range.contentFrom <= node.span.from && node.span.to <= range.contentTo)) {
+					cellRanges.push({ from: node.span.from, to: node.span.to, contentFrom: node.content.from, contentTo: node.content.to });
 				}
-				for (const item of maketitleMetadata.fallbackNodes) {
-					blocks.push(visualSchema.nodes.raw_block!.create({
-						from: item.span.from, to: item.span.to,
-						editFrom: item.span.from, editTo: item.span.to,
-						role: 'paragraph', name: item.name, level: 2,
-						source: source.read(item.span.from, item.span.to)
-					}));
-					boundaries.push(null);
-					segments.push(null);
-				}
-				projectedMaketitleMetadata = true;
+				const count = blocks.length;
+				visit(node.children, true);
+				flush();
+				if (blocks.length === count) add(node);
 				continue;
 			}
-			add(node);
-			continue;
+			if (cellMarkers.has(node.span.from) && node.kind === 'comment') { flush(); continue; }
+			if (node.kind === 'raw' && node.name === 'maketitle') {
+				flush();
+				if (titleMarkers.has(node.span.from)) continue;
+				const exactMaketitle = node.content === null && source.read(node.span.from, node.span.to) === '\\maketitle';
+				if (exactMaketitle && !projectedMaketitleMetadata && maketitleMetadata &&
+					(maketitleMetadata.fields.length > 0 || maketitleMetadata.fallbackNodes.length > 0)) {
+					for (const field of maketitleMetadata.fields) {
+						// Empty metadata directives retain their source bytes without blank notebook cells.
+						if (field.node.name !== 'title' && field.inline.content.size === 0) continue;
+						blocks.push(visualSchema.nodes.source_block!.create({
+							from: field.node.span.from, to: field.node.span.to,
+							editFrom: field.contentFrom, editTo: field.contentTo,
+							role: field.role, name: field.node.name, level: field.role === 'heading' ? 1 : 2
+						}, field.inline.content));
+						boundaries.push(null);
+						segments.push(field.inline.segments);
+					}
+					for (const item of maketitleMetadata.fallbackNodes) {
+						blocks.push(visualSchema.nodes.raw_block!.create({
+							from: item.span.from, to: item.span.to,
+							editFrom: item.span.from, editTo: item.span.to,
+							role: 'paragraph', name: item.name, level: 2,
+							source: source.read(item.span.from, item.span.to)
+						}));
+						boundaries.push(null);
+						segments.push(null);
+					}
+					projectedMaketitleMetadata = true;
+					continue;
+				}
+				add(node);
+				continue;
+			}
+			if (node.kind === 'raw' && node.name === 'par' && node.content === null && source.read(node.span.from, node.span.to) === '\\par') { flush(); paragraphMarker = node; continue; }
+			if (node.kind === 'text' || (node.kind === 'raw' && Object.hasOwn(decodedEscapes, source.read(node.span.from, node.span.to))) || (node.kind === 'format' || node.kind === 'math' && ['$', '('].includes(node.name)) && decodeInline(source, [node])) plainNodes.push(node);
+			else { flush(); add(node); }
 		}
-		if (node.kind === 'raw' && node.name === 'par' && node.content === null && source.read(node.span.from, node.span.to) === '\\par') { flush(); paragraphMarker = node; continue; }
-		if (node.kind === 'text' || (node.kind === 'raw' && Object.hasOwn(decodedEscapes, source.read(node.span.from, node.span.to))) || (node.kind === 'format' || node.kind === 'math' && ['$', '('].includes(node.name)) && decodeInline(source, [node])) plainNodes.push(node);
-		else { flush(); add(node); }
-	}
+	};
+	visit(bodyNodes);
 	flush();
 	if (body && !bodyHasContent) {
 		const position = body.content?.to ?? body.span.to;
@@ -412,7 +428,7 @@ export function projectVisual(source: SourceDocument, parsed: SourceProjection):
 	}
 	const cellBounds: (CellBoundary | null)[] = blocks.map(() => null);
 	let cursor = 0;
-	for (const range of cellRanges) {
+	for (const range of cellRanges.sort((a, b) => a.from - b.from)) {
 		while (cursor < blocks.length && blocks[cursor]!.attrs.to <= range.contentFrom) cursor++;
 		const first = cursor;
 		while (cursor < blocks.length && blocks[cursor]!.attrs.from >= range.contentFrom && blocks[cursor]!.attrs.to <= range.contentTo) cursor++;

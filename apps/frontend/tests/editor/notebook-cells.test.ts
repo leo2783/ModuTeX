@@ -3,10 +3,11 @@ import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { EditorView as CodeMirrorView } from '@codemirror/view';
 import type { Node as VisualNode } from 'prosemirror-model';
-import { NodeSelection, TextSelection } from 'prosemirror-state';
+import { EditorState, NodeSelection, TextSelection } from 'prosemirror-state';
 import { SourceDocument, parseSource, type SourceSpan } from '../../src/features/document-core/core.ts';
+import { projectVisual, visualPatches, advanceVisual } from '../../src/features/visual-editor/schema.ts';
 import { VisualEditor } from '../../src/features/visual-editor/view.ts';
-import { createSourceState, historyTransaction, sourcePatchTransaction, sourceState } from '../../src/features/source-editor/state.ts';
+import { createSourceState, historyTransaction, paragraphInsertionTransaction, sourcePatchTransaction, sourceState } from '../../src/features/source-editor/state.ts';
 import { createTable, tableSource } from '../../src/features/tables/source.ts';
 
 const { JSDOM } = createRequire(import.meta.url)('jsdom');
@@ -604,4 +605,72 @@ test('a caret hit-tested from mounted visual text edits the matching source offs
 	} finally {
 		mounted.dispose();
 	}
+});
+
+for (const marker of ['null', 'par']) test(`${marker} paragraph accepts consecutive visual edits and exact shared undo`, () => {
+	const suffix = marker === 'par' ? '\r\n' : '';
+	const original = SourceDocument.open(new TextEncoder().encode(`\uFEFF\\documentclass{article}\r\n\\begin{document}\\${marker}${suffix}\\end{document}\n`));
+	let editor = createSourceState(original);
+	let projection = projectVisual(original, parseSource(original));
+	let visual = EditorState.create({ doc: projection.document });
+	let position = -1;
+	visual.doc.forEach((node, offset) => { if (node.attrs.name === marker) position = offset + 1 + node.content.size; });
+	assert.ok(position >= 0);
+	assert.equal(visual.doc.resolve(position).parent.type.name, 'source_block');
+	for (const value of ['a', '%']) {
+		const source = editor.field(sourceState).projection.document;
+		const transaction = visual.tr.insertText(value, position);
+		const patches = visualPatches(source, projection, transaction);
+		editor = sourcePatchTransaction(editor, projection, patches).state;
+		projection = advanceVisual(source, projection, transaction, editor.field(sourceState).projection.document);
+		visual = visual.apply(transaction);
+		position += value.length;
+	}
+	const edited = editor.field(sourceState).projection.document;
+	assert.equal(edited.read(), original.read().replace(`\\${marker}${suffix}`, (marker === 'par' ? '\\par' + suffix : '') + 'a\\%').replace('a\\%\\end{document}', 'a\\%' + original.profile.preferredLineEnding + '\\end{document}'));
+	const reparsed = projectVisual(edited, parseSource(edited));
+	assert.equal(reparsed.document.childCount, 1);
+	assert.equal(reparsed.document.firstChild?.textContent, marker === 'par' ? 'a%' : 'a%\n');
+	for (let count = 0; count < 2; count++) { const undo = historyTransaction(editor, 'undo'); assert.ok(undo); editor = undo.state; }
+	assert.deepEqual(editor.field(sourceState).projection.document.toBytes(), original.toBytes());
+});
+
+test('paragraph boundaries persist after editing while unknown command arguments stay raw', () => {
+	const source = SourceDocument.open(new TextEncoder().encode('\\begin{document}Before\\par After\\null{keep}\\end{document}'));
+	const projection = projectVisual(source, parseSource(source));
+	assert.equal(projection.document.child(0).textContent, 'Before');
+	assert.equal(projection.document.child(1).textContent, ' After');
+	assert.equal(projection.document.child(2).type.name, 'raw_block');
+	assert.equal(projection.document.child(2).attrs.source, '\\null{keep}');
+});
+
+test('paragraph source whitespace never becomes visual blank lines and repeated insertions add one cell', () => {
+	for (const eol of ['\n', '\r\n'] as const) {
+		const original = SourceDocument.open(new TextEncoder().encode('\ufeff\\begin{document}' + eol + '\\par\\textbf{Text}' + '\\\\'.repeat(8) + eol + '\\end{document}'));
+		let state = createSourceState(original);
+		for (let index = 0; index < 4; index++) {
+			const source = state.field(sourceState).projection.document;
+			const projection = projectVisual(source, parseSource(source));
+			const last = projection.document.lastChild!;
+			const from = index === 2 ? last.attrs.from : last.attrs.to;
+			const result = paragraphInsertionTransaction(state, { documentId: source.documentId, version: source.version, from, to: from }, false);
+			state = result.transaction.state;
+			const next = state.field(sourceState).projection.document;
+			const updated = projectVisual(next, parseSource(next));
+			assert.equal(updated.document.childCount, projection.document.childCount + 1);
+			const inserted = updated.document.content.content.find(node => node.attrs.from === result.paragraph.from)!;
+			assert(inserted); assert.equal(inserted.textContent, '');
+			assert.equal(inserted.attrs.editFrom, inserted.attrs.editTo);
+			assert(next.read().includes('\\textbf{Text}' + '\\\\'.repeat(8)), 'existing deliberate blank lines must remain unchanged');
+		}
+		for (let index = 0; index < 4; index++) state = historyTransaction(state, 'undo')!.state;
+		assert.deepEqual(state.field(sourceState).projection.document.toBytes(), original.toBytes());
+	}
+});
+
+test('empty paragraphs with any source separator whitespace project to one empty cell each', () => {
+	const source = SourceDocument.open(new TextEncoder().encode('\\begin{document}\n\\par\n\n\t\n\\par\r\n\r\n\\end{document}'));
+	const projection = projectVisual(source, parseSource(source));
+	assert.equal(projection.document.childCount, 2);
+	projection.document.forEach(node => assert.equal(node.textContent, ''));
 });

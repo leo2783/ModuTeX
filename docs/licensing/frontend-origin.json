@@ -76,6 +76,10 @@
 		{
 			"id": "frontend-ux-20261011",
 			"path": "docs/architecture/FRONTEND_REWRITE_STATUS.md"
+		},
+		{
+			"id": "code-math-031-20261114",
+			"path": "docs/architecture/CODE_MATH_031.md"
 		}
 	],
 	"files": [
@@ -912,6 +916,70 @@
 			"referenceIds": [
 				"approved-plan",
 				"frontend-ux-20261011"
+			]
+		},
+		{
+			"path": "apps/frontend/src/features/code/latex.ts",
+			"origin": "Original implementation or regression test for owner-requested code wrapping and Chinese fraction input; uses existing libraries without copying their implementation",
+			"reviewStatus": "Independently reviewed and locally verified by root; actual Tectonic, frontend unit and Chrome evidence recorded in the scoped implementation note; no application-wide license-clearance claim",
+			"referenceIds": [
+				"code-math-031-20261114"
+			]
+		},
+		{
+			"path": "apps/frontend/src/features/code/wrapping.ts",
+			"origin": "Original implementation or regression test for owner-requested code wrapping and Chinese fraction input; uses existing libraries without copying their implementation",
+			"reviewStatus": "Independently reviewed and locally verified by root; actual Tectonic, frontend unit and Chrome evidence recorded in the scoped implementation note; no application-wide license-clearance claim",
+			"referenceIds": [
+				"code-math-031-20261114"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/editor/code-wrapping.test.ts",
+			"origin": "Original implementation or regression test for owner-requested code wrapping and Chinese fraction input; uses existing libraries without copying their implementation",
+			"reviewStatus": "Independently reviewed and locally verified by root; actual Tectonic, frontend unit and Chrome evidence recorded in the scoped implementation note; no application-wide license-clearance claim",
+			"referenceIds": [
+				"code-math-031-20261114"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/app/chinese-input.test.mjs",
+			"origin": "Original implementation or regression test for owner-requested code wrapping and Chinese fraction input; uses existing libraries without copying their implementation",
+			"reviewStatus": "Independently reviewed and locally verified by root; actual Tectonic, frontend unit and Chrome evidence recorded in the scoped implementation note; no application-wide license-clearance claim",
+			"referenceIds": [
+				"code-math-031-20261114"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/compile/code-preparation.test.ts",
+			"origin": "Original regression test for guarded preparation of existing code blocks",
+			"reviewStatus": "Independently reviewed and locally verified by root; actual Tectonic, frontend unit and Chrome evidence recorded in the scoped implementation note; no application-wide license-clearance claim",
+			"referenceIds": [
+				"code-math-031-20261114"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/editor/code-badge.test.ts",
+			"origin": "Original DOM regression test for generated and legacy code cell labels",
+			"reviewStatus": "Independently reviewed and locally verified by root; actual Tectonic, frontend unit and Chrome evidence recorded in the scoped implementation note; no application-wide license-clearance claim",
+			"referenceIds": [
+				"code-math-031-20261114"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/app/math-editing-contrast.test.mjs",
+			"origin": "Original browser regression fixture for fraction caret and selection contrast",
+			"reviewStatus": "Verified with real MathLive in Chrome under explicit light and dark application themes",
+			"referenceIds": [
+				"code-math-031-20261114"
+			]
+		},
+		{
+			"path": "apps/frontend/tests/app/multicolumn-editing.test.mjs",
+			"origin": "Original full-app regression for multi-column visual editing and inherited listing settings",
+			"reviewStatus": "Reproduced against the prior parser and verified through the actual editor in Chrome",
+			"referenceIds": [
+				"code-math-031-20261114"
 			]
 		}
 	],

@@ -16,6 +16,7 @@
 	import ToolbarIcon from '../../components/ToolbarIcon.svelte';
 	import CodePanel from '../code/CodePanel.svelte';
 	import { codeAt, codeEditTransaction, type LocatedCode, type CodeDraft } from '../code/source.ts';
+	import { withCodePreamble } from '../code/wrapping.ts';
 	import { equationAt, equationSource, matrixSource, type EquationDraft, type LocatedEquation } from '../math/source.ts';
 	import { equationEditTransaction } from '../math/editor.ts';
 	import TablePanel from '../tables/TablePanel.svelte';
@@ -133,7 +134,11 @@
 	}
 	function applyCode(draft: CodeDraft) {
 		if (!editor || !active || saving || !codeDraft) return;
-		try { const transaction = codeEditTransaction(editor.state, codeDraft, draft); if (transaction) editor.dispatch(draft.language && draft.language !== 'text' ? withPackage(editor.state, transaction, 'listings') : transaction); closeTool(); }
+		try {
+			const transaction = codeEditTransaction(editor.state, codeDraft, draft);
+			if (transaction) editor.dispatch(codeDraft.inheritedListing && (!draft.language || draft.language === 'text') ? transaction : withCodePreamble(editor.state, transaction));
+			closeTool();
+		}
 		catch { toolError = 'raw-apply'; }
 	}
 	let rawSpan: SourceSpan | null = null;
@@ -782,7 +787,7 @@
 		try {
 			let transaction = visualInsertion ? visualInsertionTransaction(editor.state, visualInsertion.span, source, visualInsertion.inlineOnly) : insertionTransaction(editor.state, insertion, source);
 			if (tool === 'equation' || tool === 'matrix') transaction = withPackage(editor.state, transaction, ['amsmath', 'amssymb']);
-			if (tool === 'code' && source.startsWith('\\begin{lstlisting}')) transaction = withPackage(editor.state, transaction, 'listings');
+			if (tool === 'code' && source.startsWith('\\begin{lstlisting}')) transaction = withCodePreamble(editor.state, transaction);
 			if (!transaction.docChanged && editor.state.doc.sliceString(insertion.from, insertion.to) !== source) throw new Error('INSERTION_REJECTED');
 			editor.dispatch(transaction); if (tool !== 'code' && !insertInline) focusInsertedBlock('math_block'); closeTool();
 		} catch (error) { toolError = error instanceof Error && error.message === 'INSERTION_INLINE_ONLY' ? 'inline-only' : 'insert'; }

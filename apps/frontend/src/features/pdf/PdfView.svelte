@@ -241,6 +241,12 @@
 					canvas.style.width = viewport.width + 'px';
 					canvas.style.height = viewport.height + 'px';
 					displayContext.drawImage(renderCanvas, 0, 0);
+					// A new page starts at its top. Re-rendering the same page keeps
+					// its scroll position, and a SyncTeX reveal can override either.
+					if (displayedPage !== request.page) {
+						target.scrollTop = 0;
+						target.scrollLeft = 0;
+					}
 					displayedPage = request.page;
 					displayedRenderId = request.id;
 					currentViewport = viewport;

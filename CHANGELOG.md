@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1] — Unreleased
+
+### Fixed
+
+- Wrap long code lines across PDF pages while preserving following paragraphs; prepare supported existing code blocks through the shared undo history.
+- Enter Chinese fraction labels as text within mathematics so generated PDFs retain the characters.
+- Show headings, formulas and editable code inside multi-column documents while retaining their LaTeX layout settings.
+
 ## [0.2.1] — 2026-10-15
 
 ### Fixed

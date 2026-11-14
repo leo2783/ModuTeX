@@ -2710,3 +2710,8 @@ fn collect_workspace_images(root: &Path, fls: &str) -> Vec<DraftImageReference> 
     }
     images
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/draft_service.rs"]
+mod tests;
+

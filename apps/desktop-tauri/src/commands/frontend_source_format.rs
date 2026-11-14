@@ -106,3 +106,8 @@ pub(crate) async fn frontend_format_latex(
     })?;
     joined.map_err(format_error)
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/frontend_source_format.rs"]
+mod tests;
+
