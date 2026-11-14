@@ -162,6 +162,9 @@ jobs:
           node --test tests/scripts/tauri-cd-execution.test.mjs tests/scripts/tauri-powershell-parse.test.mjs
           tests/scripts/frontend-artifact-download.test.mjs tests/scripts/artifact-transport.test.mjs tests/scripts/tauri-ci-runtime.test.mjs
           tests/scripts/tectonic-test-bundle.test.mjs tests/scripts/classify-ci-changes.test.mjs tests/scripts/markdown-workflow.test.mjs
+          tests/scripts/vendor/*.test.mjs tests/scripts/verify-vendor-retained.test.mjs
+          tests/scripts/verify-authenticode-image.test.mjs tests/scripts/verify-tauri-package.test.mjs
+          tests/scripts/tauri-package-metadata.test.mjs tests/scripts/tauri-payload-receipt.test.mjs
       - name: Run signature policy tests against the downloaded executable fixture
         env:
           MODUTEX_TEST_SIGNATURE_SAMPLE: apps/desktop-tauri/target/release/modutex-desktop-tauri.exe
