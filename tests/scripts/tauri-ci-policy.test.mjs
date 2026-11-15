@@ -741,10 +741,11 @@ test('shared Rust dependency pins and the WASM CLI match their consumers', async
 		);
 	}
 	assert.equal(
-		frontendBuild.match(/version !== 'wasm-bindgen ([^']+)'/)?.[1],
+		frontendBuild.match(/^const bindgenVersion = '([^']+)';$/m)?.[1],
 		wasmPin,
 		'frontend CLI guard must accept the document-core WASM schema'
 	);
+	assert.ok(frontendBuild.includes('version !== `wasm-bindgen ${bindgenVersion}`'), 'the build must verify the selected CLI version');
 });
 
 test('MiKTeX prewarm uses bounded official mirrors and verifies the pinned archive before extraction', async () => {

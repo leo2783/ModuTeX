@@ -583,3 +583,7 @@ pub(crate) fn spawn_watch_bridge(
 
     Ok(active)
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/file_watch.rs"]
+mod tests;

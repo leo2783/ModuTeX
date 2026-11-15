@@ -4,13 +4,15 @@
 
 ```powershell
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.129 --locked
+cargo install wasm-bindgen-cli --version 0.2.129 --locked --root .verification-artifacts/toolchains/wasm-bindgen-0.2.129
 npm ci
 npm run build
 npm run tauri
 ```
 
 `npm run tauri` 啟動已建置的執行檔。修改程式後先重新建置。
+
+WASM 建置優先使用 `MODUTEX_WASM_BINDGEN` 指定的執行檔，其次使用上述專案本機工具，最後才查詢 `PATH`。建置會檢查 CLI 版本是否符合專案要求。
 
 更新依賴時，桌面與 document-core 的 `serde` 固定版本必須一致，並同步兩份 Cargo lockfile。`wasm-bindgen` crate、CI 安裝的 CLI 與前端建置版本檢查也必須同步；GitHub Actions 更新需核對官方標籤的完整 SHA，再更新 CI 政策白名單。
 

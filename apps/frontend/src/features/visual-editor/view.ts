@@ -54,6 +54,11 @@ function preloadMathRenderer(): Promise<typeof import('../math/render.ts')> {
 	return mathRendererPromise;
 }
 
+function codeDraftForNode(node: VisualNode) {
+	if (!['verbatim', 'verbatim*', 'lstlisting'].includes(node.attrs.name)) return null;
+	return parseCodeContent(String(node.attrs.source).replace(/^\\begin\{(?:verbatim\*?|lstlisting)\}/, '').replace(/\\end\{(?:verbatim\*?|lstlisting)\}$/, ''), node.attrs.name);
+}
+
 function changedSpansMatch(document: SourceDocument, source: SourceDocument, patches: readonly SourcePatch[]): boolean {
 	let delta = 0;
 	for (const patch of patches) {
@@ -428,7 +433,7 @@ export class VisualEditor {
 		let typeName = this.text('文字', 'Text');
 		if (node.type.name === 'math_block') typeName = this.text('公式', 'Equation');
 		else if (node.type.name === 'table_block') typeName = this.text('表格', 'Table');
-		else if (node.type.name === 'raw_block') typeName = ['verbatim', 'verbatim*'].includes(node.attrs.name) ? this.text('程式碼', 'Code') : this.text('原始碼', 'Raw LaTeX');
+		else if (node.type.name === 'raw_block') typeName = codeDraftForNode(node) ? this.text('程式碼', 'Code') : this.text('原始碼', 'Raw LaTeX');
 		typeBadge.textContent = typeName;
 
 		const leftGroup = doc.createElement('div');
@@ -713,8 +718,8 @@ export class VisualEditor {
 				let node = initial, destroyed = false;
 				const document = target.ownerDocument;
 				const dom = document.createElement('section'); dom.className = 'visual-raw'; dom.contentEditable = 'false';
-				const readCode = () => parseCodeContent(String(node.attrs.source).replace(/^\\begin\{(?:verbatim\*?|lstlisting)\}/, '').replace(/\\end\{(?:verbatim\*?|lstlisting)\}$/, ''), node.attrs.name);
-				const isCode = ['verbatim', 'verbatim*', 'lstlisting'].includes(node.attrs.name) && !!readCode();
+				const readCode = () => codeDraftForNode(node);
+				const isCode = !!readCode();
 				const code = document.createElement('pre'); code.className = isCode ? 'code-content' : 'raw-latex'; code.setAttribute('aria-label', isCode ? this.text('程式碼區塊', 'Code block') : 'Raw LaTeX');
 				const button = document.createElement('button'); button.type = 'button'; button.className = 'text-button'; button.textContent = isCode ? this.text('編輯程式碼', 'Edit code') : this.text('編輯原始碼', 'Edit source'); button.disabled = true;
 				button.dataset.code = String(isCode);

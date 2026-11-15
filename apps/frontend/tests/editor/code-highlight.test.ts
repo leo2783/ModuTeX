@@ -24,7 +24,7 @@ test('the shared language catalogue has unique safe identifiers and literal sour
 	for (const entry of CODE_LANGUAGES) {
 		const code = '<script>alert(1)</script>\n\tvalue = 1';
 		const serialized = codeSource(code, false, entry[0]);
-		const environment = entry[0] === 'text' ? 'verbatim' : 'lstlisting';
+		const environment = 'lstlisting';
 		const body = serialized.replace(new RegExp(`^\\\\begin\\{${environment}\\}`), '').replace(new RegExp(`\\\\end\\{${environment}\\}$`), '');
 		assert.deepEqual(parseCodeContent(body, environment), { code, language: entry[0] });
 	}
