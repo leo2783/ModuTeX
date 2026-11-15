@@ -929,4 +929,3 @@ impl State {
 #[cfg(test)]
 #[path = "../../tests/unit/binary_tokens.rs"]
 mod tests;
-

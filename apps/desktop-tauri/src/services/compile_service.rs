@@ -34,22 +34,6 @@ use std::{
 
 use uuid::Uuid;
 
-#[cfg(test)]
-#[allow(unused_imports)]
-use self::profiles::{resolve_custom_executable, validate_profile_environment};
-#[cfg(test)]
-#[allow(unused_imports)]
-use crate::schemas::protocol::{DocumentVersion, Severity};
-#[cfg(test)]
-#[allow(unused_imports)]
-use std::env;
-pub(crate) use self::{
-    profiles::{
-        resolve_trusted_executable, validate_custom_command_template, ManagedProfile,
-        SystemArgument, SystemProfile, SystemTool, TrustedCompileConfig,
-    },
-    staging::{CompileOverlay, CompileOverlayEntry, CompileOverlayFile},
-};
 use self::{
     diagnostics::{
         append_log_line, cancelled_result, failure_result, filesystem_failure_text,
@@ -67,6 +51,25 @@ use self::{
         PdfReadFailure,
     },
 };
+#[cfg(test)]
+#[allow(unused_imports)]
+use self::{
+    profiles::{resolve_custom_executable, validate_profile_environment},
+    staging::{CompileOverlayEntry, CompileOverlayFile},
+};
+pub(crate) use self::{
+    profiles::{
+        resolve_trusted_executable, validate_custom_command_template, ManagedProfile,
+        SystemArgument, SystemProfile, SystemTool, TrustedCompileConfig,
+    },
+    staging::CompileOverlay,
+};
+#[cfg(test)]
+#[allow(unused_imports)]
+use crate::schemas::protocol::{DocumentVersion, Severity};
+#[cfg(test)]
+#[allow(unused_imports)]
+use std::env;
 
 use crate::{
     compile_config::{CompileProfile, CompileWorkspaceConfig},

@@ -659,7 +659,8 @@ test('compiled Svelte ReleaseNotes page SSR renders version index active semanti
 			const activeItem = doc.querySelector('aside [aria-current="page"]');
 			const firstVersionLink = doc.querySelector('aside .version-nav-link');
 			assert.ok(activeItem);
-			assert.ok(firstVersionLink?.textContent?.trim());
+			assert.ok(firstVersionLink);
+			assert.ok(firstVersionLink.textContent?.trim());
 			assert.equal(activeItem.textContent?.trim(), firstVersionLink.textContent?.trim());
 
 			const limitationsLink = doc.querySelector('aside a[href="#/release-notes/limitations"]');

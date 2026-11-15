@@ -54,4 +54,3 @@ fn main_capability_is_the_exact_local_g2345_and_updater_union() {
     expected.sort();
     assert_eq!(actual, expected);
 }
-

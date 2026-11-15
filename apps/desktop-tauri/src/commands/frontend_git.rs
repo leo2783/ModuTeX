@@ -246,4 +246,3 @@ pub(crate) async fn frontend_git_user_name(
 #[cfg(test)]
 #[path = "../../tests/unit/frontend_git.rs"]
 mod tests;
-

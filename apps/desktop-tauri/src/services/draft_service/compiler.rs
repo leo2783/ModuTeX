@@ -586,10 +586,7 @@ pub(super) fn read_bounded_file(path: &Path, maximum: usize) -> std::io::Result<
     Ok(output)
 }
 
-pub(super) fn read_optional_bytes(
-    path: &Path,
-    maximum: usize,
-) -> std::io::Result<Option<Vec<u8>>> {
+pub(super) fn read_optional_bytes(path: &Path, maximum: usize) -> std::io::Result<Option<Vec<u8>>> {
     match read_bounded_file(path, maximum) {
         Ok(bytes) => Ok(Some(bytes)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),

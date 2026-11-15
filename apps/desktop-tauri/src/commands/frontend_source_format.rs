@@ -110,4 +110,3 @@ pub(crate) async fn frontend_format_latex(
 #[cfg(test)]
 #[path = "../../tests/unit/frontend_source_format.rs"]
 mod tests;
-

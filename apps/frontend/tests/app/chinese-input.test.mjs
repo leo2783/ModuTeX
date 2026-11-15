@@ -84,8 +84,8 @@ test('real MathLive keeps newly entered Chinese fraction labels as text without 
 		assert.equal(await value(), '\\frac{\\text{平均值}B}{2}');
 
 		await reset('\\frac{}{2}');
-		await page.keyboard.insertText('中文，A😀');
-		assert.equal(await value(), '\\frac{\\text{中文，}A😀}{2}');
+		await page.keyboard.insertText('中文，A𐐀');
+		assert.equal(await value(), '\\frac{\\text{中文，}A𐐀}{2}');
 		await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 		const boxes = await field.evaluate(element => [...element.shadowRoot.querySelectorAll('span')]
 			.filter(span => span.childElementCount === 0 && /[中文]/u.test(span.textContent ?? ''))

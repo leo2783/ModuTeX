@@ -168,4 +168,3 @@ pub(crate) async fn frontend_draft_save_pdf(
 #[cfg(test)]
 #[path = "../../tests/unit/frontend_draft.rs"]
 mod tests;
-

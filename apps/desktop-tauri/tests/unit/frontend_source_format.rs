@@ -17,13 +17,10 @@ fn validates_document_id_charset_and_length_bounds() {
 fn maps_source_format_errors_to_stable_prefixed_messages() {
     assert!(format_error(SourceFormatError::InputTooLarge).starts_with("SOURCE_FORMAT_LIMIT:"));
     assert!(format_error(SourceFormatError::ToolMissing).starts_with("LATEXINDENT_NOT_FOUND:"));
+    assert!(format_error(SourceFormatError::WorkspaceUnavailable)
+        .starts_with("SOURCE_FORMAT_WORKSPACE:"));
     assert!(
-        format_error(SourceFormatError::WorkspaceUnavailable)
-            .starts_with("SOURCE_FORMAT_WORKSPACE:")
-    );
-    assert!(
-        format_error(SourceFormatError::SettingsUnavailable)
-            .starts_with("SOURCE_FORMAT_SETTINGS:")
+        format_error(SourceFormatError::SettingsUnavailable).starts_with("SOURCE_FORMAT_SETTINGS:")
     );
     assert!(format_error(SourceFormatError::ProcessFailed).starts_with("SOURCE_FORMAT_FAILED:"));
     assert!(format_error(SourceFormatError::InvalidOutput).starts_with("SOURCE_FORMAT_FAILED:"));

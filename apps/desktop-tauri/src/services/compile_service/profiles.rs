@@ -14,9 +14,7 @@ use std::{
 
 use crate::shared::relative_path::RelativePath;
 
-use super::{
-    CompileServiceError, DEFAULT_COLD_TIMEOUT, DEFAULT_WARM_TIMEOUT, MAX_PROFILE_TIMEOUT,
-};
+use super::{CompileServiceError, DEFAULT_COLD_TIMEOUT, DEFAULT_WARM_TIMEOUT, MAX_PROFILE_TIMEOUT};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SystemTool {

@@ -11,7 +11,7 @@ test('confirmedWorkspaceFileRequest returns null until explicitly confirmed with
 		},
 		async delete() {
 			called++;
-			return { deletedFiles: 1, deletedDirectories: 0 };
+			return { token: 'tok-1', expiresInMs: 5000 };
 		}
 	};
 
@@ -31,7 +31,7 @@ test('confirmedWorkspaceFileRequest dispatches delete or recycle only when invok
 		},
 		async delete(workspaceId: string, path: string) {
 			log.push(`delete:${workspaceId}:${path}`);
-			return { deletedFiles: 1, deletedDirectories: 0 };
+			return { token: 'tok-2', expiresInMs: 5000 };
 		}
 	};
 
@@ -44,7 +44,7 @@ test('confirmedWorkspaceFileRequest dispatches delete or recycle only when invok
 	assert.ok(delReq);
 	assert.equal(log.length, 0);
 	const receipt = await delReq();
-	assert.deepEqual(receipt, { deletedFiles: 1, deletedDirectories: 0 });
+	assert.deepEqual(receipt, { token: 'tok-2', expiresInMs: 5000 });
 
 	const recReq = confirmedWorkspaceFileRequest(
 		files,

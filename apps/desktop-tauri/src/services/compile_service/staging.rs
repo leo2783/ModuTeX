@@ -487,7 +487,10 @@ pub(super) fn apply_overlay(
     Ok(CompileSourceSnapshot { entries, files })
 }
 
-pub(super) fn compile_synctex_path(control: &RunControl, output_directory: &Path) -> Option<PathBuf> {
+pub(super) fn compile_synctex_path(
+    control: &RunControl,
+    output_directory: &Path,
+) -> Option<PathBuf> {
     let stem = match &control.profile {
         ResolvedProfile::Managed { .. } => entry_stem(&control.request.entry_path).ok()?,
         ResolvedProfile::System {

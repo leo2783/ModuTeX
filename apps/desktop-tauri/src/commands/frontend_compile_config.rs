@@ -62,4 +62,3 @@ pub fn frontend_set_mcp_compile_command_permission(
 #[cfg(test)]
 #[path = "../../tests/unit/frontend_compile_config.rs"]
 mod tests;
-

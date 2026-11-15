@@ -20,6 +20,15 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+pub(crate) use self::exports::{parse_aux_exports, replace_source_range};
+use self::{
+    compiler::{append_bounded, compile_staged},
+    exports::{
+        collect_workspace_images, diagnostics_from_log, map_filesystem_error, sanitize_log,
+        valid_geometry, valid_page, validate_entry_path,
+    },
+    toolchain::Toolchain,
+};
 #[cfg(test)]
 #[allow(unused_imports)]
 use self::{
@@ -36,15 +45,6 @@ use crate::schemas::draft::DraftPageRecord;
 #[cfg(test)]
 #[allow(unused_imports)]
 use std::env;
-pub(crate) use self::exports::{parse_aux_exports, replace_source_range};
-use self::{
-    compiler::{append_bounded, compile_staged},
-    exports::{
-        collect_workspace_images, diagnostics_from_log, map_filesystem_error, sanitize_log,
-        valid_geometry, valid_page, validate_entry_path,
-    },
-    toolchain::Toolchain,
-};
 
 use crate::{
     platform::process_tree::{
@@ -82,8 +82,7 @@ const MAX_EXPORTED_ITEMS: usize = 4_096;
 const MAX_CACHED_PDFS: usize = 4;
 const MAX_CACHED_PDF_BYTES: usize = 64 * 1024 * 1024;
 const MAX_OVERLAY_BYTES: usize = 32 * 1024 * 1024;
-const LUA_SHIPOUT_RESOURCE: &str =
-    include_str!("../resources/draft/modutex-draft.lua");
+const LUA_SHIPOUT_RESOURCE: &str = include_str!("../resources/draft/modutex-draft.lua");
 
 static NEXT_RUN_NONCE: AtomicU64 = AtomicU64::new(1);
 
