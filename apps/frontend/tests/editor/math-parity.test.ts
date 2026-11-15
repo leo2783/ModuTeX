@@ -35,7 +35,7 @@ test('color plus package is one undo, preserves BOM/CRLF and typing retains colo
 test('verbatim code is literal and unchanged editing keeps bytes; closing marker is rejected', () => {
  const code = 'const html = "<script>";\nconsole.log(1);';
  assert.throws(() => codeSource('bad\\end{verbatim}'));
- const original = SourceDocument.open(new TextEncoder().encode('\ufeff\\documentclass{article}\r\n\\begin{document}\r\n'+codeSource(code).replace(/\n/g, '\r\n')+'\r\n\\end{document}'));
+ const original = SourceDocument.open(new TextEncoder().encode('\ufeff\\documentclass{article}\r\n\\begin{document}\r\n\\begin{verbatim}\r\n'+code.replace(/\n/g, '\r\n')+'\r\n\\end{verbatim}\r\n\\end{document}'));
  const state = createSourceState(original);
  const located = codeAt(original, parseSource(original), original.read().indexOf('\\begin{verbatim}'))!;
  assert.equal(located.draft.code, code);

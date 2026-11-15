@@ -312,6 +312,13 @@ button.primary {
 .inline-equation-tools button { display: inline-flex; align-items: center; justify-content: center; width: 30px; min-height: 30px; padding: 4px; border-color: transparent; background: transparent; }
 .inline-equation-input { display: block; }
 .inline-equation-input math-field { font-size: 22px; min-width: 4em; max-width: 100%; width: auto; padding: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); --caret-color: var(--accent); --selection-background-color: var(--selection); }
+.inline-equation-input math-field {
+	--selection-color: var(--ink);
+	--contains-highlight-color: var(--ink);
+	--contains-highlight-background-color: transparent;
+}
+.inline-equation-input math-field:focus-within { border-color: var(--accent); outline: 1px solid var(--accent); }
+.inline-equation-tools button > span { white-space: nowrap; }
 .inline-equation-draft:not(.is-inline) .inline-equation-tools, .inline-equation-draft:not(.is-inline) .inline-matrix-options { justify-content: center; }
 .inline-equation-draft:not(.is-inline) .inline-equation-input { text-align: center; }
 .inline-equation-draft.is-inline .inline-equation-input math-field { font-size: 1.125em; }

@@ -8,7 +8,8 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"sync": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --emit-ts-declarations && svelte-kit sync",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"test": "node --test tests/*.test.mjs"
 	},
 	"dependencies": {
 		"@fontsource/poppins": "5.2.7",

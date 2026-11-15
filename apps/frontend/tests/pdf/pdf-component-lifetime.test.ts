@@ -1,41 +1,22 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { File as NodeFile } from 'node:buffer';
 import fs from 'node:fs';
 import path from 'node:path';
 import { build } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { installNativeCanvasBridge, type NativeCanvasFactory } from '../helpers/native-canvas-bridge.ts';
+import {
+	deferred,
+	onePage,
+	setupPdfJsdomEnvironment,
+	twoPages,
+	within,
+	type DOMWindow,
+	type LoadingTaskRecord,
+	type PublicLoadingTask
+} from '../helpers/pdf-jsdom-harness.ts';
 
-const require = createRequire(import.meta.url);
-
-type DOMWindow = Window & typeof globalThis & {
-	close(): void;
-};
-
-const { JSDOM } = require('jsdom') as {
-	JSDOM: new (
-		html?: string,
-		options?: { url?: string; pretendToBeVisual?: boolean }
-	) => {
-		window: DOMWindow;
-	};
-};
-
-type TaskOutcome = { status: 'fulfilled' } | { status: 'rejected'; error: unknown };
-type LoadingTaskRecord = {
-	task: unknown;
-	promise: Promise<unknown>;
-	settled: Promise<TaskOutcome>;
-	destroyCalls: number;
-	destroyResults: Promise<TaskOutcome>[];
-};
-type PublicLoadingTask = {
-	promise: Promise<unknown>;
-	destroy(): Promise<void>;
-};
 type MountedPdfView = { setActive(value: boolean): void; setBytes(value: Uint8Array): void };
 type PdfViewHarnessApi = {
 	mount: {
@@ -61,33 +42,17 @@ const pdfViewPath = fileURLToPath(new URL('../../src/features/pdf/PdfView.svelte
 
 let tempDir: string | null = null;
 let dom: { window: DOMWindow } | null = null;
-const previousDescriptors = new Map<string, PropertyDescriptor | undefined>();
-
-function restoreGlobals(): void {
-	for (const [key, descriptor] of previousDescriptors) {
-		if (descriptor === undefined) {
-			if (!Reflect.deleteProperty(globalThis, key)) {
-				throw new Error(`Could not restore global ${key}`);
-			}
-		} else {
-			Object.defineProperty(globalThis, key, descriptor);
-		}
-	}
-	previousDescriptors.clear();
-}
+let restoreJsdom: (() => void) | null = null;
 
 test.after(() => {
 	try {
-		dom?.window.close();
+		restoreJsdom?.();
 	} finally {
 		dom = null;
-		try {
-			restoreGlobals();
-		} finally {
-			if (tempDir) {
-				fs.rmSync(tempDir, { recursive: true, force: true });
-				tempDir = null;
-			}
+		restoreJsdom = null;
+		if (tempDir) {
+			fs.rmSync(tempDir, { recursive: true, force: true });
+			tempDir = null;
 		}
 	}
 });
@@ -233,215 +198,16 @@ await build({
 	logLevel: 'silent'
 });
 
-const jsdom = new JSDOM(
-	'<!DOCTYPE html><html><body></body></html>',
-	{ url: 'https://pdf-view.test', pretendToBeVisual: true }
-);
-dom = jsdom;
-const win = jsdom.window;
-
-const explicitDomKeys = [
-	'window',
-	'document',
-	'navigator',
-	'location',
-	'Node',
-	'Element',
-	'HTMLElement',
-	'HTMLMediaElement',
-	'Document',
-	'DocumentFragment',
-	'Text',
-	'Comment',
-	'CharacterData',
-	'Attr',
-	'HTMLInputElement',
-	'HTMLSelectElement',
-	'HTMLOptionElement',
-	'HTMLButtonElement',
-	'HTMLAnchorElement',
-	'HTMLDivElement',
-	'HTMLLabelElement',
-	'HTMLSpanElement',
-	'HTMLCanvasElement',
-	'HTMLTemplateElement',
-	'HTMLStyleElement',
-	'HTMLLinkElement',
-	'Event',
-	'EventTarget',
-	'CustomEvent',
-	'KeyboardEvent',
-	'MouseEvent',
-	'UIEvent',
-	'MutationObserver',
-	'ImageData',
-	'DOMMatrix',
-	'Path2D'
-] as const;
-
-function exposeGlobal(key: string, value: unknown): void {
-	if (!previousDescriptors.has(key)) {
-		previousDescriptors.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
-	}
-	Object.defineProperty(globalThis, key, {
-		value,
-		writable: true,
-		configurable: true
-	});
-}
-
-for (const key of explicitDomKeys) {
-	if (!previousDescriptors.has(key)) {
-		previousDescriptors.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
-	}
-	if (key in win) {
-		Object.defineProperty(globalThis, key, {
-			value: win[key as keyof DOMWindow],
-			writable: true,
-			configurable: true
-		});
-	}
-}
-
-class JSDOMMediaQueryList extends EventTarget implements MediaQueryList {
-	readonly media: string;
-	readonly matches = false;
-	onchange: ((this: MediaQueryList, ev: MediaQueryListEvent) => void) | null = null;
-	constructor(query: string) { super(); this.media = query; }
-	addListener(callback: ((this: MediaQueryList, ev: MediaQueryListEvent) => void) | null): void {
-		if (callback) this.addEventListener('change', callback as unknown as EventListener);
-	}
-	removeListener(callback: ((this: MediaQueryList, ev: MediaQueryListEvent) => void) | null): void {
-		if (callback) this.removeEventListener('change', callback as unknown as EventListener);
-	}
-}
-win.matchMedia = (query: string): MediaQueryList => new JSDOMMediaQueryList(query);
-
-// Bridge only the DOM canvas surface to genuine installed native rasterization.
-// PDF.js itself and its task provider are unchanged; JSDOM has no layout engine.
-const nativeCanvas = require('@napi-rs/canvas') as Record<string, unknown> & NativeCanvasFactory;
-installNativeCanvasBridge(win, nativeCanvas);
-const windowRecord = win as unknown as Record<string, unknown>;
-const runtimeRecord = globalThis as unknown as Record<string, unknown>;
-for (const key of ['DOMMatrix', 'ImageData', 'Path2D']) {
-	const value = nativeCanvas?.[key];
-	if (typeof value !== 'function') continue;
-	if (typeof windowRecord[key] === 'undefined') {
-		Object.defineProperty(win, key, { value, writable: true, configurable: true });
-	}
-	if (typeof runtimeRecord[key] === 'undefined') exposeGlobal(key, value);
-}
-
-class ResizeObserverStub {
-	constructor(_callback: ResizeObserverCallback) {}
-	observe(_target: Element): void {}
-	unobserve(_target: Element): void {}
-	disconnect(): void {}
-}
-
-Object.defineProperty(win, 'ResizeObserver', {
-	value: ResizeObserverStub,
-	writable: true,
-	configurable: true
-});
-exposeGlobal('ResizeObserver', ResizeObserverStub);
-
-const requestFrame = (callback: FrameRequestCallback): number =>
-	setTimeout(() => callback(Date.now()), 0) as unknown as number;
-const cancelFrame = (handle: number): void => clearTimeout(handle);
-Object.defineProperty(win, 'requestAnimationFrame', {
-	value: requestFrame,
-	writable: true,
-	configurable: true
-});
-Object.defineProperty(win, 'cancelAnimationFrame', {
-	value: cancelFrame,
-	writable: true,
-	configurable: true
-});
-exposeGlobal('requestAnimationFrame', requestFrame);
-exposeGlobal('cancelAnimationFrame', cancelFrame);
-
-assert.ok(
-	win.document.createElement('canvas').getContext('2d'),
-	'JSDOM must provide the installed native Node canvas context for PdfView rendering'
-);
+const env = setupPdfJsdomEnvironment('https://pdf-view.test');
+dom = env.dom;
+restoreJsdom = env.restore;
+const win = env.win;
 
 const bundleUrl = pathToFileURL(path.join(buildDir, 'pdf-view-client.mjs')).href;
 // Node 24 lacks newer typed-array codecs used by the browser build. Load the
 // installed PDF.js legacy compatibility layer, without replacing the component's API.
 await import('pdfjs-dist/legacy/build/pdf.mjs');
 const api = (await import(bundleUrl)) as PdfViewHarnessApi;
-
-/** Original two-page vector fixture; offsets are calculated from its ASCII bytes. */
-function twoPages(): Uint8Array {
-	const commands = ['0 0 0 rg 10 10 20 20 re f', '0 0 0 rg 60 60 20 20 re f'];
-	const objects = [
-		'<< /Type /Catalog /Pages 2 0 R >>',
-		'<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>',
-		'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> /Contents 5 0 R >>',
-		'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> /Contents 6 0 R >>',
-		...commands.map((value) => `<< /Length ${value.length} >>\nstream\n${value}\nendstream`)
-	];
-	let value = '%PDF-1.7\n';
-	const offsets = [0];
-	for (const [index, object] of objects.entries()) {
-		offsets.push(value.length);
-		value += `${index + 1} 0 obj\n${object}\nendobj\n`;
-	}
-	const xref = value.length;
-	value += `xref\n0 ${offsets.length}\n0000000000 65535 f \n`;
-	value += offsets.slice(1).map((offset) => String(offset).padStart(10, '0') + ' 00000 n \n').join('');
-	value += `trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-	return new TextEncoder().encode(value);
-}
-
-function onePage(): Uint8Array {
-	const command = '0 0 0 rg 60 60 20 20 re f';
-	const objects = [
-		'<< /Type /Catalog /Pages 2 0 R >>',
-		'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-		'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> /Contents 4 0 R >>',
-		`<< /Length ${command.length} >>\nstream\n${command}\nendstream`
-	];
-	let value = '%PDF-1.7\n';
-	const offsets = [0];
-	for (const [index, object] of objects.entries()) {
-		offsets.push(value.length);
-		value += `${index + 1} 0 obj\n${object}\nendobj\n`;
-	}
-	const xref = value.length;
-	value += `xref\n0 ${offsets.length}\n0000000000 65535 f \n`;
-	value += offsets.slice(1).map((offset) => String(offset).padStart(10, '0') + ' 00000 n \n').join('');
-	value += `trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-	return new TextEncoder().encode(value);
-}
-
-async function within<T>(
-	promise: Promise<T>,
-	description: string,
-	timeoutMs = 15_000
-): Promise<T> {
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	try {
-		return await Promise.race([
-			promise,
-			new Promise<never>((_, reject) => {
-				timer = setTimeout(() => reject(new Error(`Timed out waiting for ${description}`)), timeoutMs);
-			})
-		]);
-	} finally {
-		if (timer !== undefined) clearTimeout(timer);
-	}
-}
-
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-	let resolve!: (value: T) => void;
-	const promise = new Promise<T>((complete) => {
-		resolve = complete;
-	});
-	return { promise, resolve };
-}
 
 async function waitUntil(
 	predicate: () => boolean,

@@ -164,3 +164,7 @@ pub(crate) async fn frontend_draft_save_pdf(
         })??;
     Ok(DraftSavedPdfReceipt { write })
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/frontend_draft.rs"]
+mod tests;

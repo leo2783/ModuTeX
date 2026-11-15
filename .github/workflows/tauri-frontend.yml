@@ -89,7 +89,8 @@ jobs:
       - name: Run focused Tauri IPC, production CSP, and source policy regressions
         run: >-
           node --test apps/frontend/tests/tauri-files.test.mjs apps/frontend/tests/production/tauri-csp.test.mjs
-          tests/scripts/source-no-emoji.test.mjs
+          tests/scripts/source-no-emoji.test.mjs tests/scripts/svelte-runtime-identity.test.mjs
+          tests/scripts/devalue-buffer-boundary.test.mjs
   frontend-browser-e2e:
     name: Frontend PDF and SyncTeX browser E2E
     runs-on: ubuntu-24.04

@@ -18,6 +18,8 @@ import type { DiagnosticNavigationRequest } from '../source-editor/diagnostics.t
 import type { BoundSynctexIndex, SynctexPdfLocation, SynctexSourceLocation } from './synctex.ts';
 import { sameCompileIdentity } from './identity.ts';
 import { planDefaultBilingualPatches } from './document-language.ts';
+import { mergePreparationPatches, planCodeWrappingPatches } from '../code/wrapping.ts';
+import { planFooterSpacePatch } from './page-margins.ts';
 
 export type NoticeDescriptor = [string, string] | { readonly raw: string };
 export type LineDiagnostic = Diagnostic & { readonly path: string; readonly line: number };
@@ -1151,10 +1153,10 @@ export async function runCompileSource(host: WorkbenchRuntimeHost): Promise<void
 	}
 	if (config.profile === 'managed' && path === host.sourceName) {
 		const document = host.source;
-		const patches = planDefaultBilingualPatches(document);
+		const patches = mergePreparationPatches(planDefaultBilingualPatches(document), planCodeWrappingPatches(document), planFooterSpacePatch(document.read()));
 		if (patches.length) {
 			if (!host.sourceViewInstance?.applySourcePatches?.(document, patches)) {
-				host.compileNoticeState = ['無法準備中英文排版，請完成目前編輯後再編譯。', 'Unable to prepare Chinese and English typesetting. Finish the current edit and compile again.'];
+				host.compileNoticeState = ['無法準備文件排版，請完成目前編輯後再編譯。', 'Unable to prepare document typesetting. Finish the current edit and compile again.'];
 				return;
 			}
 			await tick();

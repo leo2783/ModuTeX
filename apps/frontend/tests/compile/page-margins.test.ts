@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { performance } from 'node:perf_hooks';
-import { readPageMargins, planPageMarginPatches } from '../../src/features/compile/page-margins.ts';
+import { readPageMargins, planPageMarginPatches, planFooterSpacePatch } from '../../src/features/compile/page-margins.ts';
 import type { PageMarginsCm } from '../../src/features/compile/page-margins.ts';
 
 const target: PageMarginsCm = { top: 1.5, bottom: 2.5, left: 3, right: 4 };
@@ -51,6 +51,23 @@ test('page margins add one package when absent and retain CRLF', () => {
  assert.deepEqual(readPageMargins(output).margins, target);
  assert.equal((output.match(/\\usepackage/g) ?? []).length, 1);
  assert.equal(output.replaceAll('\r\n','').includes('\n'),false);
+});
+
+test('saving a narrow bottom margin reserves footer space unless the document controls its footer', () => {
+ const narrow = {...target, bottom:1};
+ const output = apply(document('\\usepackage[margin=2cm]{geometry}'), narrow);
+ assert.match(output, /includefoot,.*bottom=1cm,/);
+ assert.equal(apply(output,narrow),output);
+ const custom = apply(document('\\usepackage[margin=2cm,ignorefoot,footskip=15pt]{geometry}'), narrow);
+ assert.match(custom, /ignorefoot,footskip=15pt/);
+ assert.doesNotMatch(custom, /includefoot/);
+ const existing = document('\\usepackage[top=2cm,bottom=1cm]{geometry}');
+ const [patch] = planFooterSpacePatch(existing);
+ assert.ok(patch);
+ const prepared = existing.slice(0,patch.from) + patch.insert + existing.slice(patch.to);
+ assert.equal(prepared, existing.replace('bottom=1cm]', 'bottom=1cm,includefoot]'));
+ assert.deepEqual(planFooterSpacePatch(prepared), []);
+ assert.deepEqual(planFooterSpacePatch(custom), []);
 });
 
 test('page margins reject dynamic values and invalid dimensions without rewriting', () => {

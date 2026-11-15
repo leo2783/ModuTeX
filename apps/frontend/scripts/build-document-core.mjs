@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +15,11 @@ const wasmInput = path.join(
 	'release',
 	'modutex_document_core.wasm'
 );
-const wasmBindgen = process.env.MODUTEX_WASM_BINDGEN?.trim() || 'wasm-bindgen';
+const bindgenVersion = '0.2.129';
+const localBindgen = path.join(repositoryRoot, '.verification-artifacts', 'toolchains',
+	`wasm-bindgen-${bindgenVersion}`, 'bin', process.platform === 'win32' ? 'wasm-bindgen.exe' : 'wasm-bindgen');
+const wasmBindgen = process.env.MODUTEX_WASM_BINDGEN?.trim() ||
+	(existsSync(localBindgen) ? localBindgen : 'wasm-bindgen');
 const environment = { ...process.env, CARGO_TARGET_DIR: targetDirectory };
 
 function run(command, args, capture = false) {
@@ -42,8 +47,8 @@ function run(command, args, capture = false) {
 
 try {
 	const version = run(wasmBindgen, ['--version'], true);
-	if (version !== 'wasm-bindgen 0.2.129') {
-		throw new Error(`Expected wasm-bindgen 0.2.129; found ${version || 'no version output'}`);
+	if (version !== `wasm-bindgen ${bindgenVersion}`) {
+		throw new Error(`Expected wasm-bindgen ${bindgenVersion}; found ${version || 'no version output'} via ${wasmBindgen}`);
 	}
 
 	await mkdir(outputDirectory, { recursive: true });

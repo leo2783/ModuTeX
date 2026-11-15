@@ -622,9 +622,33 @@ impl Parser {
                         };
 
                         i = closing.to;
-                        let content = self.span(environment.end, closing.from);
-                        if is_container(&environment.name) {
-                            let children = self.parse(environment.end, closing.from, depth + 1)?;
+                        let columns =
+                            matches!(environment.name.as_str(), "multicols" | "multicols*");
+                        let inner = if columns {
+                            let argument = self.whitespace(environment.end, closing.from)?;
+                            self.balanced(argument, closing.from, '{', '}')?
+                                .filter(|end| {
+                                    self.text
+                                        .slice(argument + 1, end - 1)
+                                        .trim()
+                                        .parse::<u8>()
+                                        .is_ok_and(|count| (1..=20).contains(&count))
+                                })
+                                .filter(|end| {
+                                    !self
+                                        .text
+                                        .slice(*end, closing.from)
+                                        .trim_start()
+                                        .starts_with('[')
+                                })
+                        } else {
+                            Some(environment.end)
+                        };
+                        let content = self.span(inner.unwrap_or(environment.end), closing.from);
+                        if let Some(inner) =
+                            inner.filter(|_| columns || is_container(&environment.name))
+                        {
+                            let children = self.parse(inner, closing.from, depth + 1)?;
                             nodes.push(self.node(
                                 SyntaxKind::Environment,
                                 start,

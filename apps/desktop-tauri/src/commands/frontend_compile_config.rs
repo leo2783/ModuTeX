@@ -58,3 +58,7 @@ pub fn frontend_set_mcp_compile_command_permission(
     let _owner = verify_trusted_window(&window, &files)?;
     compile.set_mcp_compile_command_permission(enabled)
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/frontend_compile_config.rs"]
+mod tests;
