@@ -118,8 +118,16 @@ function change(fixture: ReturnType<typeof mount>, kind: TextStructure) {
 	return result;
 }
 
-for (const eol of ['\n', '\r\n', '\r']) for (const sample of ['', ...samples]) {
-	test(`all structure pairs preserve Unicode, neighbors, source history and editability (${JSON.stringify(eol)}, ${JSON.stringify(sample)})`, () => {
+const representative = samples.join(' ');
+const transitionFixtures = [
+	{ eol: '\n', sample: '' },
+	{ eol: '\n', sample: representative },
+	{ eol: '\r\n', sample: representative },
+	{ eol: '\r', sample: representative }
+];
+
+for (const { eol, sample } of transitionFixtures) {
+	test(`all structure pairs preserve neighbors, source history and editability (${JSON.stringify(eol)}, ${sample ? 'mixed Unicode' : 'empty'})`, () => {
 		const fixture = mount(`\\documentclass{article}${eol}\\unknown{keep}${eol}\\begin{document}${eol}\\section{Neighbor}${eol}\\par${eol}\\par${eol}tail${eol}\\end{document}`);
 		try {
 			fixture.select(1);

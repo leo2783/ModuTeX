@@ -6,11 +6,17 @@
 
 - Verify document parser depth and budget limits independently in the WASM regression suite.
 - Remove a production bundle check for the retired JavaScript parser.
+- Run the local production test command against the Tauri build that emits bundle evidence.
+- Point the landing site's GitHub and installation links to the current repository and guide.
 
 ### Changed
 
 - Run Windows package metadata, payload receipt and NSIS uninstall checks once each, and check repository Markdown formatting in its dedicated CI job.
 - Consolidate table initialization, PDF rendering and desktop capability coverage in the existing integration and regression suites.
+- Run the consolidated landing checks against the built site in Chromium CI.
+- Reduce repeated editor and browser scenarios while retaining all structure pairs, newline styles, document types, image formats and themes.
+- Consolidate locale and font-notice coverage, and clean up temporary vendor fixtures after each test.
+- Use the configured Node executable for Windows process tests and a portable path in the SyncTeX fixture.
 
 ## [0.3.1] — 2026-11-16
 

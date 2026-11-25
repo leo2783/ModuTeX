@@ -123,6 +123,10 @@ jobs:
         run: npm run frontend:build
       - name: Install Playwright Chromium and system dependencies
         run: npx --no-install playwright install --with-deps chromium
+      - name: Verify landing site routes, localization, and download boundaries in Chromium
+        run: |
+          npm run build --workspace=modutex-landing
+          npm run landing:test
       - name: Run PDF, SyncTeX, Draft, and Workbench Dock browser E2E
         run: |
           node --test --test-concurrency=1 \

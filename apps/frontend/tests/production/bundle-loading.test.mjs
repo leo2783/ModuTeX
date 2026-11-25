@@ -7,10 +7,10 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { inventoryFrontend } from '../../../../scripts/licensing/frontend-artifacts.mjs';
 import { consumeFrontendBuildEvidence } from '../../../../scripts/licensing/verify-frontend-origin.mjs';
 
-// Run after frontend:build: verify real emitted files, not a fabricated manifest.
+// Run after the Tauri build, which emits the bundle evidence.
 const dist = process.env.MODUTEX_TEST_FRONTEND_DIST
 	? pathToFileURL(resolve(process.env.MODUTEX_TEST_FRONTEND_DIST) + sep)
-	: new URL('../../dist/', import.meta.url);
+	: new URL('../../dist-tauri/', import.meta.url);
 const manifest = JSON.parse(await readFile(new URL('.vite/manifest.json', dist), 'utf8'));
 const entry = Object.values(manifest).filter((chunk) => chunk.isEntry);
 const root = fileURLToPath(new URL('../../../../', import.meta.url));

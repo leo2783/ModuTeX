@@ -3,6 +3,7 @@
 	import DocsHead from '$lib/docs/DocsHead.svelte';
 	import Section from '$lib/docs/Section.svelte';
 	import Note from '$lib/docs/Note.svelte';
+	import { PROJECT_INSTALLATION_GUIDE_URL } from '$lib/site-origin';
 </script>
 
 <DocsHead
@@ -34,8 +35,8 @@
 	</Section>
 
 	<p class="text-surface-600 text-sm">
-		<a href="https://github.com/leo2783/latex/blob/main/docs/INSTALLATION.md" target="_blank" rel="noopener noreferrer" class="anchor">
-			{'Repository installation guide (docs/INSTALLATION.md)'}
+		<a href={PROJECT_INSTALLATION_GUIDE_URL} target="_blank" rel="noopener noreferrer" class="anchor">
+			{'Repository installation guide'}
 		</a>
 	</p>
 

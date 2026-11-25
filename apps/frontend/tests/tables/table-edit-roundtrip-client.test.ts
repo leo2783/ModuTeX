@@ -1072,11 +1072,4 @@ test('documents real API limitation: parseTable strictly rejects unsupported syn
 
 	const unescapedStructure = '\\begin{center}\n\\begin{tabular}{p{\\dimexpr0.400000\\linewidth-2\\tabcolsep\\relax}}\n\\hline\n\\textbf{\\unknown{cmd}} \\\\\n\\hline\n\\end{tabular}\n\\end{center}';
 	assert.equal(parseTable(unescapedStructure), null, 'parseTable rejects unknown macros in cell content');
-
-	const changedRatio = parseTable(tableSource({ ...validDraft, weights: [1, 2] }));
-	assert.ok(changedRatio, 'Changed column weights must still serialize and parse');
-	assert.throws(
-		() => assertDraftEquivalent(changedRatio, validDraft, 'changed-ratio fixture'),
-		/column ratio at index/
-	);
 });

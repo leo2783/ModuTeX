@@ -499,15 +499,6 @@
 			]
 		},
 		{
-			"path": "scripts/licensing/frontend-font-notices.test.mjs",
-			"origin": "actual installed font bytes, extracted metadata, full notices and production collector tamper/unresolved fixtures",
-			"reviewStatus": "four behavior cases verified; independent font clearance pending",
-			"referenceIds": [
-				"approved-plan",
-				"typescript-runtime"
-			]
-		},
-		{
 			"path": "apps/frontend/tests/workspace/desktop-compile-lifetime.test.ts",
 			"origin": "new original renderer behavior fixture using actual FrontendFiles, FrontendCompiler and managed Tectonic; delays real host delivery and verifies stale cancellation, PDF bytes and rejection handling",
 			"reviewStatus": "behavior verified; independent provenance review pending",
@@ -677,15 +668,6 @@
 		{
 			"path": "apps/frontend/tests/content/language.test.ts",
 			"origin": "new-original-fixture; GPT-6 Luna max patch reviewed and integrated by project agent",
-			"reviewStatus": "pending-independent-review",
-			"referenceIds": [
-				"approved-plan",
-				"typescript-runtime"
-			]
-		},
-		{
-			"path": "apps/frontend/tests/content/language-behavior.test.ts",
-			"origin": "new-original-fixture; GPT-6 Luna max patch reviewed and integrated by project agent; real storage and Svelte SSR APIs",
 			"reviewStatus": "pending-independent-review",
 			"referenceIds": [
 				"approved-plan",

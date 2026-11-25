@@ -14,7 +14,7 @@
 		"build": "vite build",
 		"check": "svelte-check --tsconfig ./tsconfig.json",
 		"test": "node scripts/run-tests.mjs",
-		"test:production": "vite build && node --test tests/production/*.test.mjs"
+		"test:production": "npm run build -- --mode tauri && node --test tests/production/*.test.mjs"
 	},
 	"dependencies": {
 		"@tauri-apps/api": "2.12.4",

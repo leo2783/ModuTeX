@@ -1,8 +1,9 @@
 import { env } from '$env/dynamic/public';
 import { LOCALE_META } from '$lib/localeMeta';
 
-export const PROJECT_REPOSITORY_URL = 'https://github.com/leo2783/latex';
+export const PROJECT_REPOSITORY_URL = 'https://github.com/leo2783/ModuTeX';
 export const PROJECT_ISSUES_URL = `${PROJECT_REPOSITORY_URL}/issues`;
+export const PROJECT_INSTALLATION_GUIDE_URL = `${PROJECT_REPOSITORY_URL}/blob/main/docs/user/INSTALLATION.md`;
 
 export type SiteLocale = keyof typeof LOCALE_META;
 

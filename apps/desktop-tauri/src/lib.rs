@@ -648,6 +648,10 @@ pub fn run() {
 mod asset_tests;
 
 #[cfg(all(test, windows, target_arch = "x86_64"))]
+#[path = "../tests/helpers/node.rs"]
+mod test_node;
+
+#[cfg(all(test, windows, target_arch = "x86_64"))]
 #[path = "../tests/unit/frontend_terminal.rs"]
 mod frontend_terminal_tests;
 

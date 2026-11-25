@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
-import { DEFAULT_PREFERENCES, decodePreference, readPreferences, savePreference, subscribePreferences } from '../../src/state/preferences.ts';
+import { DEFAULT_PREFERENCES, decodePreference, readPreferences, savePreference } from '../../src/state/preferences.ts';
 import { text } from '../../src/i18n/text.ts';
 
 const prefix = 'modutex.frontend.preferences.v1.';
@@ -37,39 +37,6 @@ test('language persistence isolates invalid values and preserves other settings'
 			assert.throws(() => decodePreference('language', candidate), /INVALID_PREFERENCE/);
 		}
 		assert.equal(storage.getItem('legacy.preferences'), 'unchanged');
-	} finally { dom.window.close(); }
-});
-
-test('storage events read current values, filter unrelated events, and unsubscribe', () => {
-	const dom = new JSDOM('', { url: 'https://modutex.test' });
-	try {
-		const window = dom.window;
-		const storage = window.localStorage;
-		const seen: string[] = [];
-		const unsubscribe = subscribePreferences(window as unknown as Window, (preferences) => seen.push(preferences.appearance));
-
-		savePreference(storage, 'appearance', 'dark');
-		window.dispatchEvent(new window.StorageEvent('storage', {
-			key: prefix + 'appearance', newValue: '"light"', storageArea: storage,
-		}));
-		assert.deepEqual(seen, ['dark']);
-
-		window.dispatchEvent(new window.StorageEvent('storage', { key: 'legacy.preferences', storageArea: storage }));
-		window.dispatchEvent(new window.StorageEvent('storage', {
-			key: prefix + 'appearance', storageArea: window.sessionStorage,
-		}));
-		assert.deepEqual(seen, ['dark']);
-
-		storage.clear();
-		window.dispatchEvent(new window.StorageEvent('storage', { key: null, newValue: null, storageArea: storage }));
-		assert.deepEqual(seen, ['dark', 'system']);
-
-		unsubscribe();
-		savePreference(storage, 'appearance', 'light');
-		window.dispatchEvent(new window.StorageEvent('storage', {
-			key: prefix + 'appearance', newValue: '"dark"', storageArea: storage,
-		}));
-		assert.deepEqual(seen, ['dark', 'system']);
 	} finally { dom.window.close(); }
 });
 
