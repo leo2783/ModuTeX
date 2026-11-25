@@ -83,7 +83,6 @@ test('production startup defers the actual editor and retains its emitted assets
 		const { sources } = await chunkEvidence(file);
 		for (const source of sources) {
 			assert.equal(typeof source, 'string', `Invalid mapped startup source: ${file}`);
-			assert.doesNotMatch(source.replaceAll('\\', '/'), /(?:^|\/)packages\/document-core\/dist\/parser\.js(?:[?#]|$)/, `Complete parser must stay outside startup static closure: ${file}`);
 			assert.doesNotMatch(source.replaceAll('\\', '/'), /(?:^|\/)src\/pages\/Settings\.svelte(?:[?#]|$)/, `Settings must stay outside startup static closure: ${file}`);
 			assert.doesNotMatch(source.replaceAll('\\', '/'), /(?:^|\/)src\/pages\/ReleaseNotes\.svelte(?:[?#]|$)/, `Release notes must stay outside startup static closure: ${file}`);
 		}

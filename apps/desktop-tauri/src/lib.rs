@@ -648,10 +648,6 @@ pub fn run() {
 mod asset_tests;
 
 #[cfg(all(test, windows, target_arch = "x86_64"))]
-#[path = "../tests/unit/unified_host.rs"]
-mod unified_host_tests;
-
-#[cfg(all(test, windows, target_arch = "x86_64"))]
 #[path = "../tests/unit/frontend_terminal.rs"]
 mod frontend_terminal_tests;
 

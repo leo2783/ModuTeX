@@ -835,7 +835,6 @@ test(
 		active: true,
 		locked: false,
 		initialDraft: initialDraft1,
-		sessionKey: 'insert',
 		editing: false,
 		locale: 'zh-Hant',
 		onInsert: (source, booktabs) => {

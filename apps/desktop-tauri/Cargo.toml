@@ -1,6 +1,6 @@
 [package]
 name = "modutex-desktop-tauri"
-version = "0.3.1"
+version = "0.3.2"
 description = "ModuTeX Tauri desktop host"
 default-run = "modutex-desktop-tauri"
 license = "Apache-2.0"

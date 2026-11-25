@@ -154,7 +154,7 @@ jobs:
       - name: Run distribution inventory policy tests
         run: >-
           node --test --test-concurrency=1 tests/scripts/distribution/inventory.test.mjs tests/scripts/distribution/updater-manifest.test.mjs
-          tests/scripts/distribution/installer-lifecycle.test.mjs tests/scripts/distribution/nsis-uninstall.test.mjs
+          tests/scripts/distribution/installer-lifecycle.test.mjs
       - name: Run owned-dialog interop regression tests
         run: node --test --test-concurrency=1 tests/scripts/owned-native-popups.test.mjs tests/scripts/terminal-node-trace.test.mjs
       - name: Run static CD and PowerShell policy tests
@@ -164,7 +164,7 @@ jobs:
           tests/scripts/tectonic-test-bundle.test.mjs tests/scripts/classify-ci-changes.test.mjs tests/scripts/markdown-workflow.test.mjs
           tests/scripts/vendor/*.test.mjs
           tests/scripts/verify-authenticode-image.test.mjs tests/scripts/verify-tauri-package.test.mjs
-          tests/scripts/tauri-package-metadata.test.mjs tests/scripts/tauri-payload-receipt.test.mjs
+          tests/scripts/tauri-payload-receipt.test.mjs
       - name: Run signature policy tests against the downloaded executable fixture
         env:
           MODUTEX_TEST_SIGNATURE_SAMPLE: apps/desktop-tauri/target/release/modutex-desktop-tauri.exe

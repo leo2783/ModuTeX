@@ -439,15 +439,6 @@
 			]
 		},
 		{
-			"path": "apps/frontend/tests/tables/table-initial-draft.test.ts",
-			"origin": "new real Svelte client first-draft/default-session initialization, dirty draft preservation and new-session reset fixture",
-			"reviewStatus": "behavior verified after actual DOM constructor and callback type fixes; independent review pending",
-			"referenceIds": [
-				"approved-plan",
-				"typescript-runtime"
-			]
-		},
-		{
 			"path": "scripts/licensing/frontend-font-metadata.test.mjs",
 			"origin": "real installed font SHA256/metadata binding, twelve actual declarations and exact OFL notices consistency; dummy-only assertions removed",
 			"reviewStatus": "three actual filesystem evidence cases verified; independent clearance pending",
@@ -1057,7 +1048,6 @@
 			"apps/frontend/src/features/pdf/render-queue.ts",
 			"apps/frontend/tests/pdf/pdf-queue.test.ts",
 			"apps/frontend/tests/settings/preferences.test.ts",
-			"apps/frontend/tests/pdf/pdf-render.test.ts",
 			"apps/frontend/tests/workspace/files.test.ts",
 			"apps/frontend/tests/workspace/desktop-lifetime.test.ts",
 			"apps/frontend/src/features/compile/navigation.ts",

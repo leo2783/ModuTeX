@@ -22,10 +22,6 @@ const run = (script, cwd) =>
 		stdio: ['ignore', 'pipe', 'pipe']
 	});
 
-test('the exact CI Bash Markdown command succeeds with real installed Prettier', () => {
-	assert.match(run(command, root), /All matched files use Prettier code style/);
-});
-
 test('CI enumerates only maintained tracked Markdown before invoking Prettier', async (t) => {
 	const cwd = await mkdtemp(join(tmpdir(), 'modutex-markdown-list-'));
 	t.after(() => rm(cwd, { recursive: true, force: true }));

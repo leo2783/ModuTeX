@@ -1,6 +1,18 @@
 # Changelog
 
-## [0.3.1] — Unreleased
+## [0.3.2] — Unreleased
+
+### Fixed
+
+- Verify document parser depth and budget limits independently in the WASM regression suite.
+- Remove a production bundle check for the retired JavaScript parser.
+
+### Changed
+
+- Run Windows package metadata, payload receipt and NSIS uninstall checks once each, and check repository Markdown formatting in its dedicated CI job.
+- Consolidate table initialization, PDF rendering and desktop capability coverage in the existing integration and regression suites.
+
+## [0.3.1] — 2026-11-16
 
 ### Fixed
 
