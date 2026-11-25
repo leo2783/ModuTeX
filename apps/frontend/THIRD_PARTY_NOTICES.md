@@ -754,7 +754,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## svelte 5.56.9
+## svelte 5.57.1
 
 Source: node_modules/svelte/LICENSE.md
 

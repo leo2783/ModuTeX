@@ -30,7 +30,7 @@
 		"prosemirror-model": "1.25.12",
 		"prosemirror-state": "1.4.4",
 		"prosemirror-view": "1.42.6",
-		"svelte": "5.56.9",
+		"svelte": "5.57.1",
 		"@xterm/addon-fit": "0.10.0",
 		"@xterm/xterm": "5.5.0"
 	},

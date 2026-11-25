@@ -50,12 +50,14 @@ test('Vite denies Wasm requests to denied files while serving allowed modules', 
 });
 
 test('SvelteKit cookie dependency rejects header injection and preserves valid cookies', () => {
-	const kitRequire = createRequire(require.resolve('@sveltejs/kit/package.json'));
+	const landingRequire = createRequire(new URL('../../landing/package.json', import.meta.url));
+	const kitRequire = createRequire(landingRequire.resolve('@sveltejs/kit/package.json'));
 	const cookie = kitRequire('cookie');
-	assert.equal(cookie.serialize('session', 'a b', { path: '/', httpOnly: true }), 'session=a%20b; Path=/; HttpOnly');
-	assert.throws(() => cookie.serialize('session; injected', 'value'), TypeError);
-	assert.throws(() => cookie.serialize('session', 'value', { path: '/; injected' }), TypeError);
-	assert.throws(() => cookie.serialize('session', 'value', { domain: 'example.com; injected' }), TypeError);
+	const serialize = (name, value, attributes) => cookie.stringifySetCookie({ ...attributes, name, value });
+	assert.equal(serialize('session', 'a b', { path: '/', httpOnly: true }), 'session=a%20b; Path=/; HttpOnly');
+	assert.throws(() => serialize('session; injected', 'value'), TypeError);
+	assert.throws(() => serialize('session', 'value', { path: '/; injected' }), TypeError);
+	assert.throws(() => serialize('session', 'value', { domain: 'example.com; injected' }), TypeError);
 });
 
 test('Typography selector dependency preserves nested and repeated selectors', () => {

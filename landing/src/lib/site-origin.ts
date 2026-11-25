@@ -1,4 +1,4 @@
-import { env } from '$env/dynamic/public';
+import { PUBLIC_MODUTEX_SITE_ORIGIN } from '$app/env/public';
 import { LOCALE_META } from '$lib/localeMeta';
 
 export const PROJECT_REPOSITORY_URL = 'https://github.com/leo2783/ModuTeX';
@@ -16,7 +16,7 @@ export interface SiteLanguageAlternate {
  * The static landing site must receive its official root https origin at build time as
  * PUBLIC_MODUTEX_SITE_ORIGIN. Leaving that variable unset intentionally disables external site URLs.
  */
-export const SITE_ORIGIN = normalizeSiteOrigin(env.PUBLIC_MODUTEX_SITE_ORIGIN);
+export const SITE_ORIGIN = normalizeSiteOrigin(PUBLIC_MODUTEX_SITE_ORIGIN);
 
 export function normalizeSiteOrigin(value: string | undefined): string | undefined {
 	const candidate = value?.trim();

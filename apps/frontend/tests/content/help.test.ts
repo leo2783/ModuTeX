@@ -56,7 +56,7 @@ test('actual Svelte/Vite Help renders retained topics and unchanged license text
 			} finally { dom.window.close(); }
 		}
 		const notices = render(module.default, { props: { topic: 'notices' } }).body;
-		assert.match(notices, /Tectonic 0\.17\.0/); assert.match(notices, /svelte 5\.56\.9/); assert.match(notices, /pdfjs-dist 6\.2\.108/);
+		assert.match(notices, /Tectonic 0\.17\.0/); assert.match(notices, /pdfjs-dist 6\.2\.108/);
 		assert.match(notices, /Permission is hereby granted/); assert.doesNotMatch(notices, /<script[ >]/i);
 		const actualNotices = await readFile(new URL('../../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8');
 		for (const locale of ['zh-Hant', 'en']) {

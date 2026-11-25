@@ -8,6 +8,7 @@
 - Remove a production bundle check for the retired JavaScript parser.
 - Run the local production test command against the Tauri build that emits bundle evidence.
 - Point the landing site's GitHub and installation links to the current repository and guide.
+- Update SvelteKit and the desktop dependencies flagged by the npm and RustSec audits.
 
 ### Changed
 

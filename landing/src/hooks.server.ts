@@ -1,12 +1,11 @@
-import type { Handle } from '@sveltejs/kit';
+import type { Handle } from '@sveltejs/kit/hooks';
 import { paraglideMiddleware } from '$lib/paraglide/server';
 import { getTextDirection } from '$lib/paraglide/runtime';
 import { m } from '$lib/paraglide/messages';
 
 const paraglideHandle: Handle = ({ event, resolve }) =>
 	paraglideMiddleware(event.request, ({ request: localizedRequest, locale }) => {
-		event.request = localizedRequest;
-		return resolve(event, {
+		return resolve({ ...event, request: localizedRequest }, {
 			transformPageChunk: ({ html }) =>
 				html
 					.replace('%lang%', locale)
