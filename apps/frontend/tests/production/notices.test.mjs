@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 const text = value => value.replaceAll('\r\n', '\n').trimEnd();
 const dist = process.env.MODUTEX_TEST_FRONTEND_DIST
 	? pathToFileURL(resolve(process.env.MODUTEX_TEST_FRONTEND_DIST) + sep)
-	: new URL('../../dist/', import.meta.url);
+	: new URL('../../dist-tauri/', import.meta.url);
 
 test('production ships the complete notice document and unchanged installed license texts', async () => {
 	const source = await readFile(new URL('../../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8');

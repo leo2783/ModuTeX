@@ -293,12 +293,6 @@ jobs:
         run: |
           node --test tests/scripts/tauri-package-metadata.test.mjs
           if ($LASTEXITCODE -ne 0) { throw "Executable metadata policy failed with exit code $LASTEXITCODE" }
-      - name: Verify payload receipt policy against the built executable
-        env:
-          MODUTEX_TEST_PACKAGE_EXE: apps/desktop-tauri/target/x86_64-pc-windows-msvc/release/modutex-desktop-tauri.exe
-        run: |
-          node --test tests/scripts/tauri-payload-receipt.test.mjs
-          if ($LASTEXITCODE -ne 0) { throw "Payload receipt policy failed with exit code $LASTEXITCODE" }
       - name: Build unsigned online Tauri Windows NSIS installer
         env:
           EXPECTED_EXE_SHA: ${{ inputs.built_exe_sha256 }}

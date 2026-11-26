@@ -121,7 +121,7 @@ use windows_sys::Win32::Foundation::{GetHandleInformation, HANDLE_FLAG_INHERIT};
             }
         }
         fn reviewer_node_spec(marker: &std::path::Path) -> ProcessSpec {
-            ProcessSpec::new(PathBuf::from(r"C:\Program Files\nodejs\node.exe"), std::env::temp_dir(), vec![OsString::from("-e"),OsString::from("require('node:fs').writeFileSync(process.argv[1], 'spawned')"), marker.as_os_str().to_owned()],Duration::from_secs(5),65536)
+            ProcessSpec::new(crate::test_node::executable(), std::env::temp_dir(), vec![OsString::from("-e"),OsString::from("require('node:fs').writeFileSync(process.argv[1], 'spawned')"), marker.as_os_str().to_owned()],Duration::from_secs(5),65536)
         }
         #[test]
         fn reviewer_capacity_and_startup_fault_reject_before_child_creation() {

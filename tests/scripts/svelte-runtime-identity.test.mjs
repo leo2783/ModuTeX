@@ -5,12 +5,15 @@ import { resolve } from 'node:path';
 import test from 'node:test';
 
 const ROOT = resolve(import.meta.dirname, '../..');
+const rootManifest = JSON.parse(await readFile(resolve(ROOT, 'package.json'), 'utf8'));
+const svelteVersion = rootManifest.overrides.svelte;
+const landingRequire = createRequire(resolve(ROOT, 'landing/package.json'));
+const landingKitManifest = landingRequire.resolve('@sveltejs/kit/package.json');
 const CONSUMERS = [
 	'apps/frontend',
 	'landing',
 	'node_modules/svelte-check',
 	'node_modules/@sveltejs/vite-plugin-svelte',
-	'node_modules/@sveltejs/kit',
 	'node_modules/@skeletonlabs/skeleton-svelte',
 	'node_modules/@zag-js/svelte',
 	'landing/node_modules/@lucide/svelte',
@@ -19,27 +22,29 @@ const CONSUMERS = [
 
 test('locked workspaces converge onto exactly one reviewed Svelte installation', async () => {
 	const lock = JSON.parse(await readFile(resolve(ROOT, 'package-lock.json'), 'utf8'));
-	const root = JSON.parse(await readFile(resolve(ROOT, 'package.json'), 'utf8'));
-	assert.equal(root.overrides.svelte, '5.56.9');
+	assert.match(svelteVersion, /^\d+\.\d+\.\d+$/);
 	for (const workspace of ['apps/frontend', 'landing']) {
 		const manifest = JSON.parse(await readFile(resolve(ROOT, workspace, 'package.json'), 'utf8'));
-		assert.equal(manifest.dependencies?.svelte ?? manifest.devDependencies?.svelte, '5.56.9');
-		assert.equal(lock.packages[workspace].dependencies?.svelte ?? lock.packages[workspace].devDependencies?.svelte, '5.56.9');
+		assert.equal(manifest.dependencies?.svelte ?? manifest.devDependencies?.svelte, svelteVersion);
+		assert.equal(lock.packages[workspace].dependencies?.svelte ?? lock.packages[workspace].devDependencies?.svelte, svelteVersion);
 	}
 	const entries = Object.entries(lock.packages).filter(([name]) => name === 'node_modules/svelte' || name.endsWith('/node_modules/svelte'));
 	assert.deepEqual(
 		entries.map(([name]) => name),
 		['node_modules/svelte']
 	);
-	assert.equal(entries[0][1].version, '5.56.9');
+	assert.equal(entries[0][1].version, svelteVersion);
 	assert.equal(entries[0][1].license, 'MIT');
-	assert.equal(entries[0][1].resolved, 'https://registry.npmjs.org/svelte/-/svelte-5.56.9.tgz');
+	assert.equal(entries[0][1].resolved, `https://registry.npmjs.org/svelte/-/svelte-${svelteVersion}.tgz`);
 });
 
 test('actual editor/landing/checker/peer runtime and compiler resolution share one real identity', async (context) => {
 	const identities = [];
-	for (const consumer of CONSUMERS) {
-		const owner = resolve(ROOT, consumer, 'package.json');
+	const manifests = [
+		...CONSUMERS.map(consumer => [consumer, resolve(ROOT, consumer, 'package.json')]),
+		['@sveltejs/kit', landingKitManifest]
+	];
+	for (const [consumer, owner] of manifests) {
 		await readFile(owner); // require base must be a genuinely installed consumer
 		const require = createRequire(owner);
 		const identity = {
@@ -48,7 +53,7 @@ test('actual editor/landing/checker/peer runtime and compiler resolution share o
 			runtime: await realpath(require.resolve('svelte')),
 			compiler: await realpath(require.resolve('svelte/compiler'))
 		};
-		assert.equal(JSON.parse(await readFile(identity.package, 'utf8')).version, '5.56.9');
+		assert.equal(JSON.parse(await readFile(identity.package, 'utf8')).version, svelteVersion);
 		identities.push(identity);
 	}
 	for (const key of ['package', 'runtime', 'compiler']) {

@@ -1,6 +1,6 @@
 {
 	"name": "modutex-frontend",
-	"version": "0.3.1",
+	"version": "0.3.2",
 	"private": true,
 	"type": "module",
 	"license": "Apache-2.0",
@@ -14,7 +14,7 @@
 		"build": "vite build",
 		"check": "svelte-check --tsconfig ./tsconfig.json",
 		"test": "node scripts/run-tests.mjs",
-		"test:production": "vite build && node --test tests/production/*.test.mjs"
+		"test:production": "npm run build -- --mode tauri && node --test tests/production/*.test.mjs"
 	},
 	"dependencies": {
 		"@tauri-apps/api": "2.12.4",
@@ -24,13 +24,13 @@
 		"@codemirror/state": "6.7.0",
 		"@codemirror/view": "6.43.15",
 		"@lezer/highlight": "1.2.3",
-		"@modutex/frontend-contracts": "0.3.1",
+		"@modutex/frontend-contracts": "0.3.2",
 		"mathlive": "0.110.0",
 		"pdfjs-dist": "6.2.108",
 		"prosemirror-model": "1.25.12",
 		"prosemirror-state": "1.4.4",
 		"prosemirror-view": "1.42.6",
-		"svelte": "5.56.9",
+		"svelte": "5.57.1",
 		"@xterm/addon-fit": "0.10.0",
 		"@xterm/xterm": "5.5.0"
 	},

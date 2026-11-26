@@ -291,43 +291,13 @@ mod reviewer_supervision_tests {
         );
     }
 
-    fn resolve_test_node_exe() -> PathBuf {
-        if let Some(configured) = std::env::var_os("MODUTEX_TEST_NODE") {
-            let configured = PathBuf::from(configured);
-            assert!(
-                configured.is_absolute() && configured.is_file(),
-                "MODUTEX_TEST_NODE must identify an existing absolute Node executable"
-            );
-            return fs::canonicalize(&configured).expect("canonical test Node executable");
-        }
-        let standard = PathBuf::from(r"C:\Program Files\nodejs\node.exe");
-        if standard.is_file() {
-            return fs::canonicalize(&standard).unwrap_or(standard);
-        }
-        if let Some(pf) = std::env::var_os("ProgramFiles") {
-            let p = PathBuf::from(pf).join(r"nodejs\node.exe");
-            if p.is_file() {
-                return fs::canonicalize(&p).unwrap_or(p);
-            }
-        }
-        if let Some(path_var) = std::env::var_os("PATH") {
-            for entry in std::env::split_paths(&path_var) {
-                let candidate = entry.join("node.exe");
-                if candidate.is_file() {
-                    return fs::canonicalize(&candidate).unwrap_or(candidate);
-                }
-            }
-        }
-        panic!("node.exe required for ConPTY native parity verification");
-    }
-
     #[test]
     fn reviewer_descendant_node_tree_and_leader_exit_leaves_job_zero() {
         use windows_sys::Win32::{
             Foundation::CloseHandle,
             System::Threading::{OpenProcess, WaitForSingleObject},
         };
-        let node_exe = resolve_test_node_exe();
+        let node_exe = crate::test_node::executable();
         eprintln!("ConPTY fixture Node executable: {}", node_exe.display());
         let path = std::env::temp_dir().join(format!(
             "modutex-terminal-node-tree-{}",
@@ -441,7 +411,7 @@ mod reviewer_supervision_tests {
             Foundation::CloseHandle,
             System::Threading::{OpenProcess, WaitForSingleObject},
         };
-        let node_exe = resolve_test_node_exe();
+        let node_exe = crate::test_node::executable();
         let path = std::env::temp_dir().join(format!(
             "modutex-terminal-node-kill-{}",
             uuid::Uuid::new_v4()

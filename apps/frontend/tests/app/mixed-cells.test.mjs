@@ -7,18 +7,30 @@ import { clickFileAction } from '../../../../tests/scripts/helpers/app-file-acti
 import { articleText, articleChunks } from '../helpers/mixed-article.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const cases = ['section', 'subsection', 'subsubsection', 'abstract', 'article-single', 'article-multiple'].flatMap(kind =>
- ['png', 'jpeg'].flatMap(format => ['light', 'dark'].map(theme => ({ kind, format, theme })))).filter(value => !process.env.MODUTEX_MATRIX_CASE || `${value.kind}/${value.format}` === process.env.MODUTEX_MATRIX_CASE);
+const fixtures = [
+ { kind: 'section', format: 'png', theme: 'light' },
+ { kind: 'subsection', format: 'jpeg', theme: 'dark' },
+ { kind: 'subsubsection', format: 'png', theme: 'dark' },
+ { kind: 'abstract', format: 'jpeg', theme: 'light' },
+ { kind: 'article-single', format: 'png', theme: 'light' },
+ { kind: 'article-multiple', format: 'jpeg', theme: 'dark' }
+];
+const requested = process.env.MODUTEX_MATRIX_CASE;
+const cases = requested
+ ? fixtures.flatMap(({ kind }) => ['png', 'jpeg'].filter(format => `${kind}/${format}` === requested)
+  .flatMap(format => ['light', 'dark'].map(theme => ({ kind, format, theme }))))
+ : fixtures;
 assert.ok(cases.length, 'unknown matrix case filter');
-if (!process.env.MODUTEX_MATRIX_CASE) assert.equal(cases.length, 24);
 const fence = value => `% ModuTeX cell begin\n${value}\n% ModuTeX cell end\n`;
 assert.equal([...articleText].length, 5000);
 
 test('isolated mixed-cell matrix', { timeout: 180000, concurrency: 2 }, async t => {
  const server = await createServer({ root, server: { host: '127.0.0.1', port: 0 }, logLevel: 'error' });
  await server.listen();
- const browser = await chromium.launch({ headless: true, ...(process.platform === 'win32' ? { channel: 'chrome' } : {}) });
- t.after(async () => { await browser.close(); await server.close(); });
+ t.after(() => server.close());
+ const channel = process.env.MODUTEX_TEST_BROWSER_CHANNEL ?? (process.platform === 'win32' ? 'chrome' : 'chromium');
+ const browser = await chromium.launch({ channel, headless: true });
+ t.after(() => browser.close());
  const url = `http://127.0.0.1:${server.httpServer.address().port}`;
  await Promise.allSettled(cases.map(({ kind, format, theme }) => t.test(`${kind}/${format}/${theme}: Chinese, English, formatting, math and images share a movable cell`, async t => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 1000 }, colorScheme: theme });

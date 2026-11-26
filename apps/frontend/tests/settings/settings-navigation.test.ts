@@ -451,6 +451,9 @@ test('genuine Svelte runes harness updates locale and preferences without steali
 		// 2. User focuses on language select
 		const langSelect = dom.window.document.querySelector<HTMLSelectElement>('#language-value');
 		assert.ok(langSelect);
+		assert.equal(langSelect.labels?.[0]?.textContent, '語言');
+		assert.equal(langSelect.value, 'zh-Hant');
+		assert.deepEqual(Array.from(langSelect.options, option => option.value), ['zh-Hant', 'en']);
 		langSelect.focus();
 		assert.equal(dom.window.document.activeElement, langSelect, 'Language select must hold active focus');
 
@@ -461,6 +464,7 @@ test('genuine Svelte runes harness updates locale and preferences without steali
 		// Assert DOM headings truthfully update to English
 		assert.equal(mainHeading.textContent, 'Settings', 'Main heading must update to English "Settings"');
 		assert.equal(generalHeading.textContent, 'General', 'General section heading must update to English "General"');
+		assert.equal(langSelect.labels?.[0]?.textContent, 'Language');
 
 		// Assert activeElement remains on language select across locale update (no focus steal)
 		assert.equal(dom.window.document.activeElement, langSelect, 'Focus must remain on language select across locale update');

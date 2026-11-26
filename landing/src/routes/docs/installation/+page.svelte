@@ -2,6 +2,7 @@
 	import { ArrowRight } from '@lucide/svelte';
 	import DocsHead from '$lib/docs/DocsHead.svelte';
 	import Section from '$lib/docs/Section.svelte';
+	import { PROJECT_INSTALLATION_GUIDE_URL } from '$lib/site-origin';
 
 	let { data }: { data: { verify: string } } = $props();
 </script>
@@ -31,7 +32,7 @@
 		<ArrowRight class="h-4 w-4" />
 	</a>
 	<a
-		href="https://github.com/leo2783/latex/blob/main/docs/INSTALLATION.md"
+		href={PROJECT_INSTALLATION_GUIDE_URL}
 		target="_blank"
 		rel="noopener noreferrer"
 		class="text-primary-600 hover:text-primary-700 mt-4 ml-5 inline-flex items-center gap-1.5 font-medium transition-colors"

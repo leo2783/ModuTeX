@@ -178,7 +178,7 @@ fn offsets_magnification_nested_boxes_and_page_hints_are_applied() {
 #[test]
 fn parses_the_owned_tectonic_fixture_and_accepts_empty_input_labels() {
     let fixture = r"SyncTeX Version:1
-Input:1:C:\Users\qet63\Documents\ModuTeX\.verification-artifacts\tauri\engine-runtime-20261018-b\src\main.tex
+Input:1:C:\work\測試文件\src\main.tex
 Input:2:
 Input:3:
 Input:4:
@@ -232,12 +232,8 @@ Post scriptum:
 ";
     let index = SynctexIndex::parse(fixture.as_bytes()).expect("owned Tectonic fixture");
     assert!(index
-		.forward_search(
-			r"C:\Users\qet63\Documents\ModuTeX\.verification-artifacts\tauri\engine-runtime-20261018-b\src\main.tex",
-			6,
-			Some(1),
-		)
-		.is_some());
+        .forward_search(r"C:\work\測試文件\src\main.tex", 6, Some(1),)
+        .is_some());
 }
 
 #[test]

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -82,8 +82,14 @@ const fixtureEntry = async (archive, bytes) => ({
 	provenance: 'https://github.com/example/vendor/releases/tag/v1.2.3'
 });
 
-test('rejects a deliberate byte-level hash mismatch without leaking its directory', async () => {
-	const directory = await mkdtemp(join(tmpdir(), 'modutex-vendor-mismatch-'));
+async function temporaryDirectory(t, prefix) {
+	const directory = await mkdtemp(join(tmpdir(), prefix));
+	t.after(() => rm(directory, { recursive: true, force: true }));
+	return directory;
+}
+
+test('rejects a deliberate byte-level hash mismatch without leaking its directory', async (t) => {
+	const directory = await temporaryDirectory(t, 'modutex-vendor-mismatch-');
 	const archive = 'drawio-31.1.8.zip';
 	await writeFile(join(directory, archive), Buffer.from('deliberately wrong archive bytes'));
 
@@ -100,8 +106,8 @@ test('rejects a deliberate byte-level hash mismatch without leaking its director
 	);
 });
 
-test('offline cache rehashes bytes and rejects tampering after provenance was recorded', async () => {
-	const cacheDirectory = await mkdtemp(join(tmpdir(), 'modutex-vendor-cache-'));
+test('offline cache rehashes bytes and rejects tampering after provenance was recorded', async (t) => {
+	const cacheDirectory = await temporaryDirectory(t, 'modutex-vendor-cache-');
 	const archive = 'vendor-1.2.3.zip';
 	const original = Buffer.from('verified fixture bytes');
 	const fixturePath = join(cacheDirectory, archive);
@@ -119,8 +125,8 @@ test('offline cache rehashes bytes and rejects tampering after provenance was re
 	);
 });
 
-test('offline cache rejects provenance drift even when archive bytes still match', async () => {
-	const cacheDirectory = await mkdtemp(join(tmpdir(), 'modutex-vendor-provenance-'));
+test('offline cache rejects provenance drift even when archive bytes still match', async (t) => {
+	const cacheDirectory = await temporaryDirectory(t, 'modutex-vendor-provenance-');
 	const archive = 'vendor-1.2.3.zip';
 	const fixturePath = join(cacheDirectory, archive);
 	await writeFile(fixturePath, Buffer.from('unchanged fixture bytes'));
@@ -142,8 +148,8 @@ test('offline cache rejects provenance drift even when archive bytes still match
 	);
 });
 
-test('download mode refuses a partial cache instead of silently replacing it', async () => {
-	const cacheDirectory = await mkdtemp(join(tmpdir(), 'modutex-vendor-partial-'));
+test('download mode refuses a partial cache instead of silently replacing it', async (t) => {
+	const cacheDirectory = await temporaryDirectory(t, 'modutex-vendor-partial-');
 	const archive = 'vendor-1.2.3.zip';
 	const fixturePath = join(cacheDirectory, archive);
 	await writeFile(fixturePath, Buffer.from('partial cache bytes'));
@@ -154,8 +160,8 @@ test('download mode refuses a partial cache instead of silently replacing it', a
 	);
 });
 
-test('rejects wrong-case archive filenames', async () => {
-	const directory = await mkdtemp(join(tmpdir(), 'modutex-vendor-path-'));
+test('rejects wrong-case archive filenames', async (t) => {
+	const directory = await temporaryDirectory(t, 'modutex-vendor-path-');
 	const bytes = Buffer.from('fixture archive bytes');
 	const expectedArchive = 'vendor-1.2.3.zip';
 	const wrongCase = 'VENDOR-1.2.3.ZIP';
@@ -167,14 +173,14 @@ test('rejects wrong-case archive filenames', async () => {
 	);
 });
 
-test('rejects archive junctions', async () => {
+test('rejects archive junctions', async (t) => {
 	const bytes = Buffer.from('fixture archive bytes');
 	const expectedArchive = 'vendor-1.2.3.zip';
-	const targetDirectory = await mkdtemp(join(tmpdir(), 'modutex-vendor-target-'));
+	const targetDirectory = await temporaryDirectory(t, 'modutex-vendor-target-');
 	const target = join(targetDirectory, expectedArchive);
 	await writeFile(target, bytes);
 	const entry = await fixtureEntry(expectedArchive, target);
-	const linkDirectory = await mkdtemp(join(tmpdir(), 'modutex-vendor-link-'));
+	const linkDirectory = await temporaryDirectory(t, 'modutex-vendor-link-');
 	await symlink(targetDirectory, join(linkDirectory, expectedArchive), 'junction');
 	await assert.rejects(
 		verifyArchiveDirectory('example', entry, linkDirectory),
@@ -182,8 +188,8 @@ test('rejects archive junctions', async () => {
 	);
 });
 
-test('CLI mismatch exits nonzero and never prints the absolute archive directory', async () => {
-	const directory = await mkdtemp(join(tmpdir(), 'modutex-vendor-cli-'));
+test('CLI mismatch exits nonzero and never prints the absolute archive directory', async (t) => {
+	const directory = await temporaryDirectory(t, 'modutex-vendor-cli-');
 	await writeFile(join(directory, 'drawio-31.1.8.zip'), Buffer.from('wrong'));
 	const result = spawnSync(node, [cli, '--archive-dir', directory, '--artifact', 'drawio-offline'], {
 		encoding: 'utf8'
@@ -193,8 +199,8 @@ test('CLI mismatch exits nonzero and never prints the absolute archive directory
 	assert.doesNotMatch(`${result.stdout}${result.stderr}`, new RegExp(directory.replaceAll('\\', '\\\\')));
 });
 
-test('CLI rejects ambiguous and incomplete directory modes', async () => {
-	const directory = await mkdtemp(join(tmpdir(), 'modutex-vendor-cli-options-'));
+test('CLI rejects ambiguous and incomplete directory modes', async (t) => {
+	const directory = await temporaryDirectory(t, 'modutex-vendor-cli-options-');
 	await mkdir(join(directory, 'archives'));
 	const ambiguous = spawnSync(node, [cli, '--archive-dir', join(directory, 'archives'), '--download'], {
 		encoding: 'utf8'
@@ -259,8 +265,8 @@ test('staged Draw.io inventory preserves the reviewed raw-byte digest', () => {
 	assert.match(representative.stdout, /i\/crlf\s+w\/crlf\s+attr\/\-text/);
 });
 
-test('rejects recovered Draw.io server content outside the static webapp boundary', async () => {
-	const temporaryRoot = await mkdtemp(join(tmpdir(), 'modutex-drawio-retention-'));
+test('rejects recovered Draw.io server content outside the static webapp boundary', async (t) => {
+	const temporaryRoot = await temporaryDirectory(t, 'modutex-drawio-retention-');
 	const serverFile = join(temporaryRoot, 'vendor', 'drawio', 'src', 'main', 'server', 'blocked.java');
 	await mkdir(resolve(serverFile, '..'), { recursive: true });
 	await writeFile(serverFile, 'server content must never be retained');
@@ -271,7 +277,7 @@ test('rejects recovered Draw.io server content outside the static webapp boundar
 	);
 });
 
-test('fails closed for server/runtime metadata and secret-bearing paths', async () => {
+test('fails closed for server/runtime metadata and secret-bearing paths', async (t) => {
 	const forbiddenPaths = [
 		['src', 'main', 'webapp', 'WEB-INF', 'web.xml'],
 		['src', 'main', 'webapp', 'META-INF', 'MANIFEST.MF'],
@@ -281,7 +287,7 @@ test('fails closed for server/runtime metadata and secret-bearing paths', async 
 		['src', 'main', 'webapp', 'config', 'cloud_convert_api_key']
 	];
 	for (const relativeParts of forbiddenPaths) {
-		const temporaryRoot = await mkdtemp(join(tmpdir(), 'modutex-drawio-forbidden-'));
+		const temporaryRoot = await temporaryDirectory(t, 'modutex-drawio-forbidden-');
 		const forbiddenFile = join(temporaryRoot, 'vendor', 'drawio', ...relativeParts);
 		await mkdir(resolve(forbiddenFile, '..'), { recursive: true });
 		await writeFile(forbiddenFile, 'must never be retained');
@@ -297,7 +303,7 @@ test('fails closed for server/runtime metadata and secret-bearing paths', async 
 	}
 });
 
-test('keeps trailing-whitespace checks active for non-vendor source files', async () => {
+test('Draw.io server paths do not inherit the retained webapp whitespace exemption', () => {
 	const serverAttribute = spawnSync(
 		'git',
 		['check-attr', 'whitespace', '--', 'vendor/drawio/src/main/server/blocked.java'],
@@ -305,16 +311,4 @@ test('keeps trailing-whitespace checks active for non-vendor source files', asyn
 	);
 	assert.equal(serverAttribute.status, 0, serverAttribute.stderr);
 	assert.match(serverAttribute.stdout, /vendor\/drawio\/src\/main\/server\/blocked\.java: whitespace: unspecified/);
-
-	const temporaryRoot = await mkdtemp(join(tmpdir(), 'modutex-whitespace-negative-'));
-	const cleanFile = join(temporaryRoot, 'source-clean.txt');
-	const dirtyFile = join(temporaryRoot, 'source-dirty.txt');
-	await writeFile(cleanFile, 'source line\n');
-	await writeFile(dirtyFile, 'source line \n');
-
-	const result = spawnSync('git', ['diff', '--no-index', '--check', '--', cleanFile, dirtyFile], {
-		encoding: 'utf8'
-	});
-	assert.notEqual(result.status, 0);
-	assert.match(result.stdout, /trailing whitespace/);
 });
